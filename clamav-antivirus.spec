@@ -52,12 +52,12 @@ Développé par Dukiwi SA, Estavayer-le-Lac, Suisse.
 rm -rf %{buildroot}
 mkdir -p %{buildroot}
 cp -a tree/. %{buildroot}/
-install -D -m 644 linux-shield.repo %{buildroot}%{_sysconfdir}/yum.repos.d/linux-shield.repo
+install -D -m 644 dukiwi.repo %{buildroot}%{_sysconfdir}/yum.repos.d/dukiwi.repo
 
 %post
 mkdir -p /var/lib/clamav-antivirus
-# Ancien nom du fichier de dépôt (< 1.25.1) : même dépôt, retiré pour ne pas le lister deux fois
-rm -f /etc/yum.repos.d/dukiwi-clamav.repo /etc/yum.repos.d/dukiwi-clamav.repo.rpmsave
+# Anciens noms du fichier de dépôt (dukiwi-clamav < 1.25.1, linux-shield = 1.25.1) : même dépôt, retiré pour ne pas le lister deux fois
+rm -f /etc/yum.repos.d/dukiwi-clamav.repo /etc/yum.repos.d/dukiwi-clamav.repo.rpmsave /etc/yum.repos.d/linux-shield.repo /etc/yum.repos.d/linux-shield.repo.rpmsave
 if [ "$1" = "1" ] && [ ! -f /var/lib/clamav-antivirus/state.json ]; then
     touch /var/lib/clamav-antivirus/first-scan-pending
 fi
@@ -104,7 +104,7 @@ udevadm control --reload-rules >/dev/null 2>&1 || true
 %{_datadir}/nemo/actions/clamav-antivirus-nemo.nemo_action
 %{_datadir}/polkit-1/actions/com.dukiwi.clamav-antivirus.policy
 %config(noreplace) %{_sysconfdir}/xdg/autostart/clamav-antivirus-autostart.desktop
-%config(noreplace) %{_sysconfdir}/yum.repos.d/linux-shield.repo
+%config(noreplace) %{_sysconfdir}/yum.repos.d/dukiwi.repo
 
 %changelog
 * Thu Oct 15 2026 Dukiwi SA <info@dukiwi.ch> - %{version}-1

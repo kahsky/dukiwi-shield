@@ -534,6 +534,12 @@ function renderVulns(refreshing = false) {
         vendorNote.hidden = !nv;
         if (nv) vendorNote.textContent = t('security.vulns.vendor_note', { n: formatNumber(nv), pkgs: Object.keys(ven).join(', '), versions: Object.entries(ven).map(([p, ver]) => `${p} ${ver}`).join(', ') });
     }
+    const headersNote = $('vulnHeadersNote');
+    if (headersNote) {
+        const nh = c.na_headers || 0;
+        headersNote.hidden = !nh;
+        if (nh) headersNote.textContent = t('security.vulns.headers_note', { n: formatNumber(nh), pkgs: Object.entries(v.headers || {}).map(([p, ver]) => `${p} ${ver}`).join(', ') });
+    }
     const kernelNote = $('vulnKernelNote');
     if (kernelNote) {
         const nk = c.kernel_pending || 0;
@@ -552,7 +558,7 @@ function renderVulns(refreshing = false) {
             <div class="cve-head">
                 <a class="cve-id" href="#" onclick="sendToBackend({action:'open_url', url:'${escapeJs(i.url)}'}); return false;">${escapeHtml(i.cve)}</a>
                 <span class="scope-badge prio-badge prio-${i.priority}">${t(`priority.${i.priority}`) !== `priority.${i.priority}` ? t(`priority.${i.priority}`) : escapeHtml(i.priority)}</span>
-                <span class="scope-badge scope-system">${escapeHtml(i.package)}</span>${(v.embedded || {})[i.package] ? `<span class="scope-badge scope-user">${t('security.vulns.embedded_badge')}</span>` : (v.vendor || {})[i.package] ? `<span class="scope-badge scope-user">${t('security.vulns.vendor_badge')}</span>` : ''}
+                <span class="scope-badge scope-system">${escapeHtml(i.package)}</span>${(v.embedded || {})[i.package] ? `<span class="scope-badge scope-user">${t('security.vulns.embedded_badge')}</span>` : (v.vendor || {})[i.package] ? `<span class="scope-badge scope-user">${t('security.vulns.vendor_badge')}</span>` : (v.headers || {})[i.package] ? `<span class="scope-badge scope-user">${t('security.vulns.headers_badge')}</span>` : ''}
                 <span class="cve-versions">${escapeHtml(i.installed)}${i.fixed ? ` → ${escapeHtml(i.fixed)}` : ''}</span>
                 ${i.hwe_fixed ? `<span class="scope-badge scope-phased" title="${escapeHtml(i.hwe_fixed)}">${t('security.vulns.hwe_badge', { pkg: escapeHtml(i.hwe_fixed.split(' ')[0]) })}</span>` : ''}
                 ${i.cvss ? `<span class="cve-versions">${escapeHtml(i.cvss)}</span>` : ''}

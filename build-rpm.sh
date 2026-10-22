@@ -17,7 +17,7 @@ mkdir -p "$SRC" "$WORK/rpmbuild"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 # Fedora : les unités et règles udev vivent sous /usr/lib (lib → usr/lib est un lien, mais le RPM doit lister /usr/lib)
 mkdir -p "$SRC/tree/usr"
 if [ -d "$SRC/tree/lib" ]; then cp -a "$SRC/tree/lib/." "$SRC/tree/usr/lib/"; rm -rf "$SRC/tree/lib"; fi
-cp "$SCRIPT_DIR/linux-shield.repo" "$SRC/"
+cp "$SCRIPT_DIR/dukiwi.repo" "$SRC/"
 tar -C "$WORK" -czf "$WORK/rpmbuild/SOURCES/${APP_NAME}-${VERSION}.tar.gz" "${APP_NAME}-${VERSION}"
 rpmbuild -bb --define "_topdir $WORK/rpmbuild" --define "version $VERSION" --define "dist %{nil}" \
          --define "_unitdir /usr/lib/systemd/system" --define "_udevrulesdir /usr/lib/udev/rules.d" \

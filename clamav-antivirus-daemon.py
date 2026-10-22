@@ -80,7 +80,7 @@ from clamav_common import (  # noqa: E402
 )
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
-KEYRING = os.path.join(APP_DIR, "keys", "linux-shield.gpg")
+KEYRING = os.path.join(APP_DIR, "keys", "dukiwi.gpg")
 INTEGRITY_FILE = os.path.join(APP_DIR, "integrity.json")
 MANIFEST_URL = os.environ.get("CLAMAV_ANTIVIRUS_MANIFEST_URL",
                               "https://www.dukiwi.com/repo/clamav-antivirus/manifest.json")
@@ -652,6 +652,16 @@ O_LARGEFILE = 0o100000
 FAN_EVENT = struct.Struct("=IBBHQii")   # event_len, vers, reserved, metadata_len, mask, fd, pid
 
 TRUSTED_EXE_PREFIXES = ("/usr/", "/bin/", "/sbin/", "/lib", "/opt/", "/snap/", "/var/lib/flatpak/", "/app/")
+# Outils de maintenance connus pour écrire beaucoup de fichiers d'un coup (gestionnaires de paquets, caches, images de
+# démarrage, sauvegardes) : leurs rafales sont attendues, aucun popup d'information (télémétrie : 24 alertes « burst » en
+# une semaine pour fc-cache du snap Firefox, utilisateurs qui approuvent dpkg, flatpak-system-helper, update-mime-database).
+# Seulement pour un exécutable de confiance (emplacement système, snap, flatpak) : un « dpkg » sous /tmp reste surveillé.
+QUIET_BURST_BASENAMES = frozenset({
+    "dpkg", "apt", "apt-get", "aptd", "unattended-upgrade", "synaptic", "mintupdate", "mintupdate-cli", "packagekitd", "gnome-software",
+    "plasma-discover", "rpm", "dnf", "dnf5", "yum", "flatpak", "flatpak-system-helper", "revokefs-fuse", "snapd", "snap", "snap-update-ns",
+    "fc-cache", "update-mime-database", "update-icon-caches", "gtk-update-icon-cache", "update-desktop-database", "mandb", "ldconfig",
+    "ldconfig.real", "update-initramfs", "mkinitramfs", "dracut", "dkms", "depmod", "timeshift", "rsync", "rclone", "borg", "restic",
+})
 UNTRUSTED_EXE_PREFIXES = ("/tmp/", "/var/tmp/", "/dev/shm/", "/run/user/", "/home/", "/root/", "/media/", "/mnt/")
 
 
@@ -883,6 +893,9 @@ class ActivityMonitor(threading.Thread):
             self.reported[pid] = now          # programme approuvé : plus aucune alerte
             return
         trusted = self.exe_trusted(info["exe"])
+        if trusted and os.path.basename(exe_path) in QUIET_BURST_BASENAMES:
+            self.reported[pid] = now          # gestionnaire de paquets, cache, sauvegarde : rafale attendue, silence
+            return
         infected_exe = self.clamd_check([exe_path]) if exe_path and os.path.exists(exe_path) else []
         sample = sorted(track["paths"])[:200]
         infected_files = self.clamd_check(sample[:12])
@@ -1975,6 +1988,9 @@ def installed_sources():
     return sources
 
 
+KERNEL_SOURCE_RE = re.compile(r"^linux(-signed)?(-(hwe|oem|lowlatency|generic|aws|azure|gcp|gke|gkeop|ibm|kvm|raspi|nvidia|riscv|realtime|intel|xilinx|oracle|bluefield|laptop|fde)(-[\d.]+)?)*$")
+
+
 def running_kernel_source(sources):
     """Paquet source du noyau en cours d'exécution (uname -r), ex. linux (6.8 GA) ou linux-hwe-7.0."""
     release = os.uname().release
@@ -2168,9 +2184,13 @@ def reclassify_vulns(vulns):
     counts.setdefault("not_applicable", 0)
     embedded = dict(out.get("embedded") or {})
     vendor = dict(out.get("vendor") or {})
+    headers = dict(out.get("headers") or {})
     by_priority, items = {}, []
     r = run_quiet(["dpkg-query", "-W", "-f", "${Package}\n", "libmozjs*"], timeout=30)
     mozjs_bins = [ln.strip() for ln in (r.stdout or "").splitlines() if ln.strip()]
+    r = run_quiet(["dpkg-query", "-W", "-f", "${source:Package}\n", "linux-image-*", "linux-modules-*"], timeout=30)
+    image_sources = {ln.strip().replace("linux-signed", "linux") for ln in (r.stdout or "").splitlines() if ln.strip()}
+    running = (out.get("running_kernel") or {}).get("source") or ""
     for it in out.get("items") or []:
         it = dict(it)
         if it.get("status") == "unfixed" and EMBEDDED_ENGINE_RE.match(it.get("package") or "") \
@@ -2185,13 +2205,23 @@ def reclassify_vulns(vulns):
             counts["unfixed"] = max(0, int(counts.get("unfixed") or 0) - 1)
             counts["not_applicable"] += 1
             vendor[it["package"]] = it.get("installed") or ""
+        elif it.get("status") in ("unfixed", "pro_only") and KERNEL_SOURCE_RE.match(it.get("package") or "") \
+                and it["package"] not in image_sources and it["package"].replace("linux-signed", "linux") not in image_sources:
+            counts[it["status"]] = max(0, int(counts.get(it["status"]) or 0) - 1)
+            it["status"] = "not_applicable"     # en-têtes / outils seulement : ce noyau n'est pas installé
+            counts["not_applicable"] += 1
+            headers[it["package"]] = it.get("installed") or ""
+        if it.get("hwe_fixed") and (it.get("package") != "linux" or running != "linux" or it.get("status") not in ("unfixed", "kernel_pending")):
+            it["hwe_fixed"] = ""                # conseil HWE seulement quand le noyau d'origine tourne vraiment
         if it.get("status") not in ("kernel_pending", "not_applicable") and not it.get("dormant"):
             pr = it.get("priority") or "untriaged"
             by_priority[pr] = by_priority.get(pr, 0) + 1
         items.append(it)
     counts["na_embedded"] = sum(1 for it in items if it.get("status") == "not_applicable" and it.get("package") in embedded)
     counts["na_vendor"] = sum(1 for it in items if it.get("status") == "not_applicable" and it.get("package") in vendor)
-    out.update(items=items, counts=counts, by_priority=by_priority, embedded=embedded, vendor=vendor)
+    counts["na_headers"] = sum(1 for it in items if it.get("status") == "not_applicable" and it.get("package") in headers)
+    counts["kernel_hwe_fixed"] = sum(1 for it in items if it.get("hwe_fixed"))
+    out.update(items=items, counts=counts, by_priority=by_priority, embedded=embedded, vendor=vendor, headers=headers)
     return annotate_vulns(out)
 
 
@@ -2200,8 +2230,8 @@ def collect_vulnerabilities(previous=None):
     ecosystem = ubuntu_osv_ecosystem()
     result = {"checked_at": now_iso(), "ok": True, "error": "", "ecosystem": ecosystem,
               "sources": 0, "items": [], "counts": {"unfixed": 0, "pro_only": 0, "fix_available": 0, "kernel_pending": 0, "not_applicable": 0, "na_embedded": 0, "na_vendor": 0,
-                         "kernel_hwe_fixed": 0, "dormant": 0},
-              "embedded": {}, "vendor": {},
+                         "na_headers": 0, "kernel_hwe_fixed": 0, "dormant": 0},
+              "embedded": {}, "vendor": {}, "headers": {},
               "running_kernel": {}, "dormant_kernels": [],
               "by_priority": {}, "flatpak": [], "snap": [], "cache": {}}
     if distro.is_rpm() or not ecosystem:
@@ -2220,6 +2250,10 @@ def collect_vulnerabilities(previous=None):
         kernel_sources = {n for n, info in sources.items() if n.startswith("linux")
                           and any(re.match(r"linux-(image|modules)(-unsigned)?-\d", b) for b in info.get("binaries", []))}
         dormant = {n for n in kernel_sources if running_src and kernel_family(n) != kernel_family(running_src)}
+        # Source noyau présente seulement par ses en-têtes ou outils (linux-libc-dev, linux-headers, linux-tools) : aucune image
+        # de ce noyau n'est installée (Mint livré en HWE 6.14 : « linux » 6.8 n'existe que par linux-libc-dev). Ses failles
+        # visent un noyau qui ne tourne pas ici → non applicables, et surtout pas de conseil « installer le noyau HWE ».
+        headers_only = {n for n in sources if KERNEL_SOURCE_RE.match(n) and n not in kernel_sources}
         ubuntu_rel = distro.ubuntu_release()
         result["running_kernel"] = {"release": release, "source": running_src,
                                     "version": (sources.get(running_src) or {}).get("version", ""),
@@ -2250,6 +2284,10 @@ def collect_vulnerabilities(previous=None):
                     status = "unfixed"          # aucun correctif publié par Ubuntu pour ce paquet
                 if status == "unfixed" and running_src and kernel_family(source) == kernel_family(running_src):
                     status = "kernel_pending"   # noyau en cours : correctif attendu d'Ubuntu, livré par les mises à jour
+                elif status in ("unfixed", "pro_only") and source in headers_only:
+                    status = "not_applicable"   # en-têtes / outils seulement : ce noyau n'est pas installé
+                    result["counts"]["na_headers"] += 1
+                    result["headers"][source] = installed
                 elif status == "unfixed" and EMBEDDED_ENGINE_RE.match(source) and not ENGINE_TERMS.search(d.get("summary") or ""):
                     # Moteur JavaScript extrait de Firefox : Ubuntu y rattache toutes les failles du navigateur (« needed »)
                     # sans jamais les corriger ; celles qui décrivent le navigateur (contenu web, médias, onglets…) ne
@@ -2273,7 +2311,8 @@ def collect_vulnerabilities(previous=None):
                 # dans un noyau HWE de la même version d'Ubuntu (linux-hwe-6.14, linux-hwe-7.0…) ; une version sans HWE
                 # (26.04 en 7.0 aujourd'hui) n'a rien de tel, la fiche OSV ne cite que ses propres paquets.
                 hwe = ""
-                if status in ("unfixed", "kernel_pending") and source == "linux" and not is_dormant:
+                if status in ("unfixed", "kernel_pending") and source == "linux" and not is_dormant \
+                        and kernel_family(running_src) == "linux":          # seulement si le noyau d'origine tourne vraiment
                     fixed_hwe = {k: v for k, v in (d.get("fixed_by_pkg") or {}).items() if k.startswith("linux-hwe-") and v}
                     if fixed_hwe:
                         k = min(fixed_hwe, key=hwe_version_key)
@@ -4077,7 +4116,8 @@ class Daemon:
                 # écarté, le relevé quotidien le refait dans la minute sur le bon écosystème.
                 log(f"Failles : relevé {stored_vulns.get('ecosystem')!r} écarté, le système est {current_eco or 'unsupported'!r}")
                 stored_vulns = {}
-            if stored_vulns.get("items") and ("na_vendor" not in (stored_vulns.get("counts") or {}) or "context" not in stored_vulns):
+            if stored_vulns.get("items") and any(k not in (stored_vulns.get("counts") or {}) for k in ("na_vendor", "na_headers")) \
+                    or (stored_vulns.get("items") and "context" not in stored_vulns):
                 stored_vulns = reclassify_vulns(stored_vulns)
                 log("Failles : relevé reclassé (moteur JavaScript intégré)")
             if stored_vulns.get("items") and (self.state.get("acknowledged_vulns") or "acknowledged" not in (stored_vulns.get("counts") or {})):
@@ -6150,7 +6190,7 @@ class Daemon:
             "alerts_7d": {k: alerts.count(k) for k in set(alerts)},
             "trusted_programs": [anonymize_path(t.get("exe")) for t in (self.state.get("trusted_programs") or [])][:50],
             "acknowledged_persistence": [anonymize_path(k) for k in (self.state.get("acknowledged_persistence") or [])][:50],
-            "vulns": {k: vulns.get(k) for k in ("unfixed", "fix_available", "pro_only", "kernel_pending", "not_applicable", "na_embedded", "na_vendor", "kernel_hwe_fixed")},
+            "vulns": {k: vulns.get(k) for k in ("unfixed", "fix_available", "pro_only", "kernel_pending", "not_applicable", "na_embedded", "na_vendor", "na_headers", "kernel_hwe_fixed")},
             "integrity_warnings": (self.state.get("integrity") or {}).get("warnings"),
             "timeshift": bool((self.state.get("timeshift") or {}).get("schedule")),
             "policy": bool(self.policy),

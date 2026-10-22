@@ -18,8 +18,8 @@ The `noble` suite serves all these releases:
 
 ```bash
 sudo mkdir -p /usr/share/keyrings
-curl -fsSL https://www.dukiwi.com/repo/apt/linux-shield.gpg | sudo tee /usr/share/keyrings/linux-shield.gpg > /dev/null
-echo "deb [signed-by=/usr/share/keyrings/linux-shield.gpg] https://www.dukiwi.com/repo/apt noble main" | sudo tee /etc/apt/sources.list.d/linux-shield.list
+curl -fsSL https://www.dukiwi.com/repo/apt/dukiwi.gpg | sudo tee /usr/share/keyrings/dukiwi.gpg > /dev/null
+echo "deb [signed-by=/usr/share/keyrings/dukiwi.gpg] https://www.dukiwi.com/repo/apt noble main" | sudo tee /etc/apt/sources.list.d/dukiwi.list
 echo "msmtp msmtp/apparmor boolean false" | sudo debconf-set-selections   # answers the only question asked during installation (see below)
 sudo apt update && sudo apt install -y linux-shield
 ```
@@ -35,8 +35,8 @@ answers in advance. Without it, `DEBIAN_FRONTEND=noninteractive` in front of `ap
 ### Fedora 44+ (and derivatives: Nobara, Ultramarine…) — signed dnf repository
 
 ```bash
-sudo curl -fsSL -o /etc/yum.repos.d/linux-shield.repo https://www.dukiwi.com/repo/rpm/linux-shield.repo
-sudo rpm --import https://www.dukiwi.com/repo/rpm/linux-shield.asc
+sudo curl -fsSL -o /etc/yum.repos.d/dukiwi.repo https://www.dukiwi.com/repo/rpm/dukiwi.repo
+sudo rpm --import https://www.dukiwi.com/repo/rpm/dukiwi.asc
 sudo dnf install linux-shield
 ```
 
@@ -52,15 +52,15 @@ versions itself (popup or Security tab) and can install them on its own when the
 
 ### Direct download
 
-- Mint / Ubuntu: [clamav-antivirus_1.25.1_all.deb](https://www.dukiwi.com/repo/clamav-antivirus/clamav-antivirus_1.25.1_all.deb)
-- Fedora: [clamav-antivirus-1.25.1-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/clamav-antivirus-1.25.1-1.noarch.rpm)
+- Mint / Ubuntu: [clamav-antivirus_1.25.2_all.deb](https://www.dukiwi.com/repo/clamav-antivirus/clamav-antivirus_1.25.2_all.deb)
+- Fedora: [clamav-antivirus-1.25.2-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/clamav-antivirus-1.25.2-1.noarch.rpm)
 - All versions: [www.dukiwi.com/repo](https://www.dukiwi.com/repo)
 
 ### Installing a downloaded package by hand
 
 ```bash
-sudo apt install ./clamav-antivirus_1.25.1_all.deb          # Mint / Ubuntu
-sudo dnf install ./clamav-antivirus-1.25.1-1.noarch.rpm      # Fedora
+sudo apt install ./clamav-antivirus_1.25.2_all.deb          # Mint / Ubuntu
+sudo dnf install ./clamav-antivirus-1.25.2-1.noarch.rpm      # Fedora
 ```
 
 The installation enables the system service and the scheduler, then starts the initial scan:
@@ -210,6 +210,15 @@ sudo dnf remove clamav-antivirus   # Fedora
 - **Telemetry after the first full scan and on demand** — the first full scan completed after consent triggers the
   anonymous report without waiting for the week (performance measurements); "Send telemetry now" button in
   Settings.
+- **Telemetry round 2026-10-23** — bursts of known maintenance tools (package managers, font/mime/icon caches,
+  initramfs, DKMS, Timeshift, rsync/rclone backups) no longer raise information popups when the executable is a
+  trusted system/snap/flatpak path (`QUIET_BURST_BASENAMES`: 24 "burst" alerts in a week for `fc-cache` of the
+  Firefox snap, users approving dpkg or flatpak-system-helper by hand). Kernel source packages present only
+  through headers or tools (`linux-libc-dev`, `linux-headers`, `linux-tools`, no kernel image installed — a Mint
+  shipped on the HWE 6.14 kernel still has `linux` 6.8 through linux-libc-dev) have their vulnerabilities
+  classified "not applicable: headers only, kernel not installed" (note and badge) instead of 49 high "unfixed"
+  ones, and the "install the HWE kernel" advice only appears when the original kernel is really the running one;
+  stored reports are reclassified at service startup. Central allowlist: Claude Code binaries of Claude Desktop.
 - **`linux-shield` metapackage** — `apt install linux-shield` and `dnf install linux-shield` install the technical
   package `clamav-antivirus` (name, paths, units and repository unchanged: transparent for existing installations,
   which keep updating) and the `linux-shield` command. Own version (1.0.0), built by `build-meta.sh` and published
@@ -220,7 +229,8 @@ sudo dnf remove clamav-antivirus   # Fedora
   `clamav-antivirus` so existing installations update without any action. The interface language follows the
   system: environment variables, then the locale configured in /etc/default/locale or /etc/locale.conf if the
   session provides none, English for a language without translation. The repository key, APT list and dnf repo
-  files are named `linux-shield.*` (the former `dukiwi-clamav.*` names remain served for earlier installations).
+  files are named after the repository, `dukiwi.*`, shared with OpenVPN GUI (the former `dukiwi-clamav.*` names remain
+  served for earlier installations).
 - **Process watch: approve or trust from the event** — the alert keeps the full text of the warning: events offer
   "That's normal" (warning approved, even if the process is already gone, without PID) and "Trust" (program), then
   show "approved". Trusted programs are recognised by the watch and by the full audit: by path, and by name when the
@@ -539,8 +549,8 @@ python3 clamav-antivirus.py
 ## Building the packages
 
 ```bash
-./build-deb.sh        # clamav-antivirus_1.25.1_all.deb   (Mint / Ubuntu)
-./build-rpm.sh        # clamav-antivirus-1.25.1-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
+./build-deb.sh        # clamav-antivirus_1.25.2_all.deb   (Mint / Ubuntu)
+./build-rpm.sh        # clamav-antivirus-1.25.2-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
 ./build-meta.sh       # linux-shield_1.0.0_all.deb + linux-shield-1.0.0-1.noarch.rpm (metapackage, published once)
 ```
 
@@ -632,8 +642,8 @@ clamav-antivirus/
 ├── udev/80-clamav-antivirus-usb.rules # USB stick scan before mounting
 ├── clamav-antivirus-unlock          # pkexec helper: administrator session for the daemon
 ├── polkit/com.dukiwi.clamav-antivirus.policy
-├── keys/linux-shield.gpg            # Public key verifying updates
-├── linux-shield.repo                # dnf repository file shipped by the RPM
+├── keys/dukiwi.gpg            # Public key verifying updates
+├── dukiwi.repo                      # dnf repository file shipped by the RPM (shared Dukiwi repository)
 ├── build-meta.sh, linux-shield.spec # linux-shield metapackage (deb + rpm)
 ├── ui/
 │   ├── index.html                   # HTML interface

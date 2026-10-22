@@ -1,7 +1,7 @@
-[linux-shield]
-name=Dukiwi Linux Shield
+[dukiwi]
+name=Dukiwi (Linux Shield, OpenVPN GUI)
 baseurl=https://www.dukiwi.com/repo/rpm/fedora/
 enabled=1
 gpgcheck=1
 repo_gpgcheck=1
-gpgkey=https://www.dukiwi.com/repo/rpm/linux-shield.asc
+gpgkey=https://www.dukiwi.com/repo/rpm/dukiwi.asc
