@@ -1,10 +1,20 @@
-# 🛡️ ClamAV Antivirus GUI
+# 🛡️ Linux Shield
 
-Interface graphique moderne pour **ClamAV** avec service système, protection en temps réel, pare-feu,
-centre de sécurité, sauvegardes et durcissement. **Linux Mint 22**, **Ubuntu 24.04 à 26.04** et **Fedora 44+**.
-Développé par **Dukiwi SA** — Estavayer-le-Lac, Suisse.
+Linux Shield réunit en une seule application les briques qui sécurisent un poste Linux : antivirus **ClamAV**
+avec service système et protection en temps réel, pare-feu, centre de sécurité (failles, intégrité, persistance,
+pot de miel), contrôle des liens et des courriels, sauvegardes et durcissement. **Linux Mint 22**,
+**Ubuntu 24.04 à 26.04** et **Fedora 44+**. L'interface suit la langue du système : français, anglais, allemand,
+italien (anglais pour les autres langues), modifiable dans Paramètres. Développé par **Dukiwi SA** —
+Estavayer-le-Lac, Suisse.
 
-![Interface ClamAV Antivirus GUI](https://www.dukiwi.com/repo/clamav-antivirus/clamav-antivirus.png?v=77063153)
+> **English.** Linux Shield bundles what it takes to secure a Linux desktop in one application: the **ClamAV**
+> antivirus with a system service and real-time protection, firewall, security centre (vulnerabilities, integrity,
+> persistence, honeypot), link and e-mail checking, backups and hardening, for Linux Mint 22, Ubuntu 24.04 to 26.04
+> and Fedora 44+. The interface follows your system language (French, English, German and Italian are built in,
+> English for any other locale) and can be changed in Settings. This documentation is in French; the application
+> itself is fully translated.
+
+![Interface Linux Shield](https://www.dukiwi.com/repo/clamav-antivirus/clamav-antivirus.png?v=77063153)
 
 
 ## Installation
@@ -47,15 +57,15 @@ seule si l'option est activée dans Paramètres.
 
 ### Téléchargement direct
 
-- Mint / Ubuntu : [clamav-antivirus_1.24.5_all.deb](https://www.dukiwi.com/repo/clamav-antivirus/clamav-antivirus_1.24.5_all.deb)
-- Fedora : [clamav-antivirus-1.24.5-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/clamav-antivirus-1.24.5-1.noarch.rpm)
+- Mint / Ubuntu : [clamav-antivirus_1.25.0_all.deb](https://www.dukiwi.com/repo/clamav-antivirus/clamav-antivirus_1.25.0_all.deb)
+- Fedora : [clamav-antivirus-1.25.0-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/clamav-antivirus-1.25.0-1.noarch.rpm)
 - Toutes les versions : [www.dukiwi.com/repo](https://www.dukiwi.com/repo)
 
 ### Installer le paquet téléchargé à la main
 
 ```bash
-sudo apt install ./clamav-antivirus_1.24.5_all.deb          # Mint / Ubuntu
-sudo dnf install ./clamav-antivirus-1.24.5-1.noarch.rpm      # Fedora
+sudo apt install ./clamav-antivirus_1.25.0_all.deb          # Mint / Ubuntu
+sudo dnf install ./clamav-antivirus-1.25.0-1.noarch.rpm      # Fedora
 ```
 
 L'installation active le service système et le planificateur, puis lance le scan initial :
@@ -224,11 +234,18 @@ sudo dnf remove clamav-antivirus   # Fedora
 - **Télémétrie après le premier scan complet et à la demande** — le premier scan complet terminé après l'accord
   déclenche l'envoi du rapport anonyme sans attendre la semaine (mesures de performance) ; bouton « Envoyer la
   télémétrie maintenant » dans Paramètres.
+- **Linux Shield** — nouveau nom du projet (dépôt GitHub `kahsky/linux-shield`) : ce n'est plus seulement une interface
+  pour ClamAV mais un ensemble de protections pour Linux. Le nom change partout où il s'affiche (fenêtre, bouclier,
+  popups, courriers, extensions, fichiers .desktop, services, paquets) ; le nom du paquet, les chemins, les unités
+  systemd et le dépôt restent `clamav-antivirus` pour que les installations existantes se mettent à jour sans rien
+  faire. La langue de l'interface suit le système : variables d'environnement, puis locale configurée dans
+  /etc/default/locale ou /etc/locale.conf si la session n'en fournit aucune, anglais pour une langue sans
+  traduction ; le README dit en anglais ce que fait le programme.
 - **Veille des processus : approuver ou faire confiance depuis l'événement** — l'alerte garde le texte complet de
   l'avertissement : les événements proposent « C'est normal » (avertissement approuvé, même si le processus a déjà
   disparu, sans PID) et « Faire confiance » (programme), puis affichent « approuvé ». Les programmes de confiance sont
   reconnus par la veille et par l'audit complet : par chemin, et par nom quand le chemin de confiance est lui-même un
-  dossier temporaire (binaire de test recompilé sous /tmp). Les anciennes alertes sans détail (avant 1.24.5) sont
+  dossier temporaire (binaire de test recompilé sous /tmp). Les anciennes alertes sans détail (avant 1.25.0) sont
   affichées comme « N avertissement(s) lors de la vérification d'intégrité (processes) » ; le journal (Journaux) garde
   la trace de chaque passage avec, désormais, le programme et son chemin.
 - **Veille des processus : alerte lisible, plus de rouge bloqué** — un processus suspect (exécutable supprimé du
@@ -528,7 +545,7 @@ sudo dnf remove clamav-antivirus   # Fedora
 
 ## Avertissement et limitation de responsabilité
 
-ClamAV Antivirus GUI est fourni par **Dukiwi SA « EN L'ÉTAT » (as is)**, sans aucune garantie,
+Linux Shield est fourni par **Dukiwi SA « EN L'ÉTAT » (as is)**, sans aucune garantie,
 expresse ou implicite. Il constitue tout au plus une **première barrière** : aucun antivirus,
 pare-feu ou outil de détection ne peut identifier toutes les menaces, et un voyant vert ne
 garantit en rien qu'un ordinateur est sain. Seul un comportement prudent et informé de
@@ -572,8 +589,8 @@ python3 clamav-antivirus.py
 ## Construire les paquets
 
 ```bash
-./build-deb.sh        # clamav-antivirus_1.24.5_all.deb   (Mint / Ubuntu)
-./build-rpm.sh        # clamav-antivirus-1.24.5-1.noarch.rpm (Fedora ; nécessite rpmbuild : sudo apt install rpm)
+./build-deb.sh        # clamav-antivirus_1.25.0_all.deb   (Mint / Ubuntu)
+./build-rpm.sh        # clamav-antivirus-1.25.0-1.noarch.rpm (Fedora ; nécessite rpmbuild : sudo apt install rpm)
 ```
 
 Les deux paquets partagent la même arborescence de fichiers (`build-deb.sh --stage-only`) et le même manifeste

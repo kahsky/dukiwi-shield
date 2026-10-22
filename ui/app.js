@@ -3289,7 +3289,7 @@ function openPortsPanel() {
 }
 
 function firewallQuickDeny(port, proto) {
-    sendToBackend({ action: 'security_action', cmd: 'firewall_rule_add', port: String(port), proto, rule_action: 'deny', comment: 'ClamAV Antivirus GUI' });
+    sendToBackend({ action: 'security_action', cmd: 'firewall_rule_add', port: String(port), proto, rule_action: 'deny', comment: 'Linux Shield' });
     showToast(t('ports.blocking', { port: `${port}/${proto}` }), 'info');
 }
 

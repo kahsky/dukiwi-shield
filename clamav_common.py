@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ClamAV Antivirus GUI — module partagé entre le GUI et le daemon système.
+Linux Shield — module partagé entre le GUI et le daemon système.
 Chemins, exclusions de scan, protocole socket (JSON par ligne) et utilitaires.
 (c) 2026 Dukiwi SA - Estavayer-le-Lac
 """
@@ -13,7 +13,7 @@ import struct
 import subprocess
 from datetime import datetime
 
-VERSION = "1.24.5"
+VERSION = "1.25.0"
 
 # ─── Chemins système (daemon root) ───────────────────────────────────────────
 # Surchargeables par variables d'environnement pour les tests sans root.
@@ -417,19 +417,46 @@ def load_i18n():
     return _I18N_CACHE
 
 
+LOCALE_FILES = ("/etc/default/locale", "/etc/locale.conf")      # locale système (Debian / Ubuntu / Mint, puis Fedora)
+
+
+def system_locale(files=LOCALE_FILES):
+    """LANG de la locale système configurée (« fr_CH.UTF-8 »), quand l'environnement n'en donne pas : bouclier relancé
+    par le service, session sans variables de langue. Chaîne vide si rien n'est configuré."""
+    for path in files:
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                values = {}
+                for ln in f:
+                    ln = ln.strip()
+                    if "=" in ln and not ln.startswith("#"):
+                        k, v = ln.split("=", 1)
+                        values[k.strip()] = v.strip().strip('"').strip("'")
+                for k in ("LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"):
+                    if values.get(k):
+                        return values[k]
+        except OSError:
+            continue
+    return ""
+
+
+def _language_code(value):
+    """« fr_CH.UTF-8 » / « en_US:fr » → « fr » / « en » ; vide pour C / POSIX."""
+    code = (value or "").split(":")[0].split("_")[0].split(".")[0].split("@")[0].lower()
+    return "" if code in ("", "c", "posix") else code
+
+
 def pick_language(preferred=None):
-    """Langue de l'interface : préférence explicite, sinon locale du système, sinon anglais."""
+    """Langue de l'interface : préférence explicite (Paramètres), sinon langue du système (variables d'environnement,
+    puis locale configurée dans /etc), sinon anglais. Une langue du système sans traduction donne l'anglais."""
     if preferred in LANGUAGES:
         return preferred
     for var in ("LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"):
-        value = os.environ.get(var)
-        if value:
-            code = value.split(":")[0].split("_")[0].split(".")[0].lower()
-            if code in LANGUAGES:
-                return code
-            if code and code != "c":
-                break
-    return "en"
+        code = _language_code(os.environ.get(var))
+        if code:
+            return code if code in LANGUAGES else "en"
+    code = _language_code(system_locale())
+    return code if code in LANGUAGES else "en"
 
 
 def t(lang, key, **params):

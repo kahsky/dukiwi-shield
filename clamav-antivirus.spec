@@ -1,9 +1,9 @@
-# ClamAV Antivirus GUI — paquet RPM (Fedora et dérivés). Construit par build-rpm.sh à partir de l'arborescence
+# Linux Shield — paquet RPM (Fedora et dérivés). Construit par build-rpm.sh à partir de l'arborescence
 # commune (build-deb.sh --stage-only) : mêmes fichiers que le paquet Debian, manifeste d'intégrité signé inclus.
 Name:           clamav-antivirus
 Version:        %{version}
 Release:        1%{?dist}
-Summary:        ClamAV Antivirus GUI — interface graphique et service de protection pour ClamAV
+Summary:        Linux Shield — suite de sécurité pour Linux : antivirus ClamAV, pare-feu, intégrité, sauvegardes
 License:        Proprietary
 URL:            https://github.com/kahsky/clamav-antivirus
 BuildArch:      noarch

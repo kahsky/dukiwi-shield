@@ -1,5 +1,5 @@
 [Desktop Entry]
-Name=ClamAV Antivirus GUI
+Name=Linux Shield
 Comment=Interface graphique pour ClamAV
 Comment[fr]=Interface graphique pour ClamAV
 Exec=/opt/clamav-antivirus/clamav-antivirus.py

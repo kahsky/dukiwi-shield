@@ -1,4 +1,4 @@
-/* ClamAV Antivirus GUI — client de l'hôte de messagerie native (partagé navigateurs / Thunderbird).
+/* Linux Shield — client de l'hôte de messagerie native (partagé navigateurs / Thunderbird).
    Une connexion native persistante, une file de requêtes identifiées par `id`, reconnexion à la demande.
    L'extension ne décide rien : le service système répond sûr / prudence / danger avec ses raisons. */
 'use strict';

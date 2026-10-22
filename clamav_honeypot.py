@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ClamAV Antivirus GUI — pot de miel réseau (service système, opt-in).
+Linux Shield — pot de miel réseau (service système, opt-in).
 
 Quelques ports TCP « leurres » sont mis à l'écoute : deux ports hauts tirés au sort (mémorisés d'un démarrage à
 l'autre) et les ports telnet 23 et 2323, que plus aucun programme légitime n'utilise sur un poste de travail et que

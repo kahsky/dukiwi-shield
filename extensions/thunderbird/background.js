@@ -1,4 +1,4 @@
-/* ClamAV Antivirus GUI — Protection des courriels (Thunderbird).
+/* Linux Shield — Protection des courriels (Thunderbird).
    À l'affichage d'un message : les liens sont soumis au service système (script de contenu), les pièces jointes
    sont analysées par clamd (par l'hôte natif). Les courriels entrants sont aussi analysés en arrière-plan.
    Un lien dangereux n'ouvre pas le navigateur sans confirmation ; une pièce jointe infectée est signalée dans le

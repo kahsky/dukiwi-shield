@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ClamAV Antivirus GUI - ClamAV GUI for Linux Mint
+Linux Shield — interface graphique (GTK + WebKit) de la suite de sécurité pour Linux
 A modern HTML/CSS/JS interface for ClamAV with system tray integration.
 
 Les opérations privilégiées (scan complet du système, mise à jour des signatures)
@@ -949,7 +949,7 @@ class TrayIcon:
             AppIndicator3.IndicatorCategory.APPLICATION_STATUS
         )
         self.indicator.set_status(AppIndicator3.IndicatorStatus.ACTIVE)
-        self.indicator.set_title("ClamAV Antivirus GUI")
+        self.indicator.set_title("Linux Shield")
 
         menu = Gtk.Menu()
         self.item_show = Gtk.MenuItem(label="")
@@ -1051,7 +1051,7 @@ class ClamAVAntivirusApp:
         self.lang = pick_language(load_state().get("language"))
         load_i18n()
 
-        self.window = Gtk.Window(title="ClamAV Antivirus GUI")
+        self.window = Gtk.Window(title="Linux Shield")
         self.window.set_default_size(1040, 720)
         self.window.set_position(Gtk.WindowPosition.CENTER)
         self.window.set_icon_from_file(os.path.join(ICONS_DIR, "logo.svg"))

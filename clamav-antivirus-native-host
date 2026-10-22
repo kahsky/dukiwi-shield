@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ClamAV Antivirus GUI — hôte de messagerie native (Thunderbird, Firefox, Chrome, Chromium, Edge, Brave).
+Linux Shield — hôte de messagerie native (Thunderbird, Firefox, Chrome, Chromium, Edge, Brave).
 
 Lancé par le navigateur (sans droits particuliers, dans la session de l'utilisateur) pour l'extension « Contrôle des
 liens ». Protocole native messaging : messages JSON précédés de leur longueur (4 octets, boutisme natif) sur

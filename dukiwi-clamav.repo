@@ -1,5 +1,5 @@
 [dukiwi-clamav]
-name=Dukiwi ClamAV Antivirus GUI
+name=Dukiwi Linux Shield
 baseurl=https://www.dukiwi.com/repo/rpm/fedora/
 enabled=1
 gpgcheck=1

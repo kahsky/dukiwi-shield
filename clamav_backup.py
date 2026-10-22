@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ClamAV Antivirus GUI — sauvegarde des fichiers de l'utilisateur (disponibilité, le « A » du triptyque CIA).
+Linux Shield — sauvegarde des fichiers de l'utilisateur (disponibilité, le « A » du triptyque CIA).
 
 Tourne avec les droits de l'utilisateur (aucun root nécessaire) :
 - clé USB / disque externe / dossier : instantanés rsync incrémentaux (--link-dest, historique conservé
@@ -377,7 +377,7 @@ class BackupRunner(threading.Thread):
     def _write_readme(base):
         try:
             with open(os.path.join(base, "LISEZ-MOI.txt"), "w", encoding="utf-8") as f:
-                f.write("Sauvegarde ClamAV Antivirus GUI (Dukiwi SA)\n\n"
+                f.write("Sauvegarde Linux Shield (Dukiwi SA)\n\n"
                         "latest/ : dernière sauvegarde complète de vos dossiers.\n"
                         "AAAA-MM-JJ_HH-MM-SS/ : sauvegardes précédentes (fichiers identiques partagés, sans doublon).\n"
                         "Pour restaurer : copiez simplement les dossiers voulus depuis latest/ vers votre dossier personnel.\n")

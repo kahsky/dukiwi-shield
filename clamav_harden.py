@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ClamAV Antivirus GUI — durcissement du système : application (et annulation) des recommandations Lynis.
+"""Linux Shield — durcissement du système : application (et annulation) des recommandations Lynis.
 
 Exécuté par le service (root). Chaque correctif écrit ses propres fichiers (90-clamav-antivirus-*) ou retient la
 valeur précédente, pour pouvoir revenir en arrière. Les recommandations qui pourraient gêner un usage courant sont

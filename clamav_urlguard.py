@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ClamAV Antivirus GUI — contrôle des liens et des courriels (service système).
+Linux Shield — contrôle des liens et des courriels (service système).
 
 Les extensions (Thunderbird, Firefox, Chrome, Chromium, Edge, Brave) interrogent le service par l'hôte de messagerie
 native avant d'ouvrir un lien ou d'afficher un courriel. Le service répond avec un verdict (sûr, prudence, danger) et

@@ -1,4 +1,4 @@
-# ClamAV Antivirus — analyse des supports USB avant leur mise à disposition.
+# Linux Shield — analyse des supports USB avant leur mise à disposition.
 # Quand le service clamav-antivirus-daemon tourne (son socket existe), le montage
 # automatique par udisks est désactivé pour les périphériques de stockage USB :
 # le service monte la clé en privé, l'analyse, puis l'interface la monte pour

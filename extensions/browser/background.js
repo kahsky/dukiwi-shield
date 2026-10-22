@@ -1,4 +1,4 @@
-/* ClamAV Antivirus GUI — Contrôle des liens (Firefox, Chrome, Chromium, Edge, Brave).
+/* Linux Shield — Contrôle des liens (Firefox, Chrome, Chromium, Edge, Brave).
    Avant chaque navigation principale, l'adresse est soumise au service système par l'hôte natif.
    Danger → page d'avertissement (« Retour », « Ouvrir quand même », « Toujours autoriser ce site »).
    Prudence → notification. Service injoignable → navigation laissée libre, badge « ? ». */
