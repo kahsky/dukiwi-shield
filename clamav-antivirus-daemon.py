@@ -80,7 +80,7 @@ from clamav_common import (  # noqa: E402
 )
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
-KEYRING = os.path.join(APP_DIR, "keys", "dukiwi-clamav.gpg")
+KEYRING = os.path.join(APP_DIR, "keys", "linux-shield.gpg")
 INTEGRITY_FILE = os.path.join(APP_DIR, "integrity.json")
 MANIFEST_URL = os.environ.get("CLAMAV_ANTIVIRUS_MANIFEST_URL",
                               "https://www.dukiwi.com/repo/clamav-antivirus/manifest.json")

@@ -1,86 +1,77 @@
 # 🛡️ Linux Shield
 
-Linux Shield réunit en une seule application les briques qui sécurisent un poste Linux : antivirus **ClamAV**
-avec service système et protection en temps réel, pare-feu, centre de sécurité (failles, intégrité, persistance,
-pot de miel), contrôle des liens et des courriels, sauvegardes et durcissement. **Linux Mint 22**,
-**Ubuntu 24.04 à 26.04** et **Fedora 44+**. L'interface suit la langue du système : français, anglais, allemand,
-italien (anglais pour les autres langues), modifiable dans Paramètres. Développé par **Dukiwi SA** —
-Estavayer-le-Lac, Suisse.
+Linux Shield bundles in a single application the building blocks that secure a Linux desktop: the **ClamAV**
+antivirus with a system service and real-time protection, firewall, security centre (vulnerabilities, integrity,
+persistence, honeypot), link and e-mail checking, backups and hardening. **Linux Mint 22**,
+**Ubuntu 24.04 to 26.04** and **Fedora 44+**. The interface follows the system language: French, English, German,
+Italian (English for any other locale), changeable in Settings. Developed by **Dukiwi SA** —
+Estavayer-le-Lac, Switzerland.
 
-> **English.** Linux Shield bundles what it takes to secure a Linux desktop in one application: the **ClamAV**
-> antivirus with a system service and real-time protection, firewall, security centre (vulnerabilities, integrity,
-> persistence, honeypot), link and e-mail checking, backups and hardening, for Linux Mint 22, Ubuntu 24.04 to 26.04
-> and Fedora 44+. The interface follows your system language (French, English, German and Italian are built in,
-> English for any other locale) and can be changed in Settings. This documentation is in French; the application
-> itself is fully translated.
-
-![Interface Linux Shield](https://www.dukiwi.com/repo/clamav-antivirus/clamav-antivirus.png?v=77063153)
+![Linux Shield interface](https://www.dukiwi.com/repo/clamav-antivirus/clamav-antivirus.png?v=1251)
 
 
 ## Installation
 
-### Linux Mint 22 et Ubuntu 24.04 à 26.04 (dépôt APT signé, mises à jour automatiques)
+### Linux Mint 22 and Ubuntu 24.04 to 26.04 (signed APT repository, automatic updates)
 
-Le dépôt `noble` sert toutes ces versions :
+The `noble` suite serves all these releases:
 
 ```bash
 sudo mkdir -p /usr/share/keyrings
-curl -fsSL https://www.dukiwi.com/repo/apt/dukiwi-clamav.gpg | sudo tee /usr/share/keyrings/dukiwi-clamav.gpg > /dev/null
-echo "deb [signed-by=/usr/share/keyrings/dukiwi-clamav.gpg] https://www.dukiwi.com/repo/apt noble main" | sudo tee /etc/apt/sources.list.d/dukiwi-clamav.list
-echo "msmtp msmtp/apparmor boolean false" | sudo debconf-set-selections   # évite la seule question posée à l'installation (voir ci-dessous)
+curl -fsSL https://www.dukiwi.com/repo/apt/linux-shield.gpg | sudo tee /usr/share/keyrings/linux-shield.gpg > /dev/null
+echo "deb [signed-by=/usr/share/keyrings/linux-shield.gpg] https://www.dukiwi.com/repo/apt noble main" | sudo tee /etc/apt/sources.list.d/linux-shield.list
+echo "msmtp msmtp/apparmor boolean false" | sudo debconf-set-selections   # answers the only question asked during installation (see below)
 sudo apt update && sudo apt install -y linux-shield
 ```
 
-`linux-shield` est un métapaquet : il installe le paquet technique `clamav-antivirus` (nom, chemins, services et
-dépôt inchangés : les installations existantes se mettent à jour sans rien faire, et `sudo apt install clamav-antivirus`
-fonctionne toujours) et la commande `linux-shield`.
+`linux-shield` is a metapackage: it installs the technical package `clamav-antivirus` (name, paths, services and
+repository unchanged, so existing installations keep updating without any action, and
+`sudo apt install clamav-antivirus` still works) and the `linux-shield` command.
 
-Installation sans question : chkrootkit recommande un serveur de courrier et le paquet choisit msmtp, le plus
-léger ; msmtp demande au passage s'il faut activer son profil AppArmor (réponse par défaut : non). La ligne
-`debconf-set-selections` répond d'avance. Sans elle, `DEBIAN_FRONTEND=noninteractive` devant `apt install`
-donne le même résultat.
+Unattended installation: chkrootkit recommends a mail server and the package picks msmtp, the lightest one; msmtp
+asks on the way whether to enable its AppArmor profile (default answer: no). The `debconf-set-selections` line
+answers in advance. Without it, `DEBIAN_FRONTEND=noninteractive` in front of `apt install` gives the same result.
 
-### Fedora 44+ (et dérivés : Nobara, Ultramarine…) — dépôt dnf signé
+### Fedora 44+ (and derivatives: Nobara, Ultramarine…) — signed dnf repository
 
 ```bash
-sudo curl -fsSL -o /etc/yum.repos.d/dukiwi-clamav.repo https://www.dukiwi.com/repo/rpm/dukiwi-clamav.repo
-sudo rpm --import https://www.dukiwi.com/repo/rpm/dukiwi-clamav.asc
+sudo curl -fsSL -o /etc/yum.repos.d/linux-shield.repo https://www.dukiwi.com/repo/rpm/linux-shield.repo
+sudo rpm --import https://www.dukiwi.com/repo/rpm/linux-shield.asc
 sudo dnf install linux-shield
 ```
 
-Paquet RPM « noarch » signé, dépôt dnf signé (RPM et index). Sur Fedora, l'application parle dnf et rpm au lieu
-d'apt et dpkg, firewalld au lieu d'UFW (profils Maison / Public / Entreprise ↔ zones home / public / work),
-SELinux au lieu d'AppArmor dans la checklist, `rpm -V` au lieu de debsums, les avis de sécurité dnf (avec
-leurs CVE) dans État du système ; l'inventaire OSV des failles sans correctif n'existe pas pour Fedora. Sous
-GNOME, l'extension AppIndicator (`gnome-shell-extension-appindicator`, recommandée par le paquet) affiche le
-bouclier. Les mises à jour de l'application arrivent par dnf ou Logiciels.
+Signed "noarch" RPM, signed dnf repository (packages and index). On Fedora the application talks dnf and rpm
+instead of apt and dpkg, firewalld instead of UFW (Home / Public / Work profiles ↔ home / public / work zones),
+SELinux instead of AppArmor in the checklist, `rpm -V` instead of debsums, dnf security advisories (with their
+CVEs) in System status; the OSV inventory of unfixed vulnerabilities does not exist for Fedora. Under GNOME, the
+AppIndicator extension (`gnome-shell-extension-appindicator`, recommended by the package) shows the shield.
+Application updates arrive through dnf or Software.
 
-Les mises à jour arrivent ensuite par le Gestionnaire de mises à jour de Mint, Logiciels d'Ubuntu ou dnf.
-L'application signale aussi elle-même les nouvelles versions (popup ou onglet Sécurité) et peut les installer
-seule si l'option est activée dans Paramètres.
+Updates then come through Mint's Update Manager, Ubuntu's Software or dnf. The application also announces new
+versions itself (popup or Security tab) and can install them on its own when the option is enabled in Settings.
 
-### Téléchargement direct
+### Direct download
 
-- Mint / Ubuntu : [clamav-antivirus_1.25.0_all.deb](https://www.dukiwi.com/repo/clamav-antivirus/clamav-antivirus_1.25.0_all.deb)
-- Fedora : [clamav-antivirus-1.25.0-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/clamav-antivirus-1.25.0-1.noarch.rpm)
-- Toutes les versions : [www.dukiwi.com/repo](https://www.dukiwi.com/repo)
+- Mint / Ubuntu: [clamav-antivirus_1.25.1_all.deb](https://www.dukiwi.com/repo/clamav-antivirus/clamav-antivirus_1.25.1_all.deb)
+- Fedora: [clamav-antivirus-1.25.1-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/clamav-antivirus-1.25.1-1.noarch.rpm)
+- All versions: [www.dukiwi.com/repo](https://www.dukiwi.com/repo)
 
-### Installer le paquet téléchargé à la main
+### Installing a downloaded package by hand
 
 ```bash
-sudo apt install ./clamav-antivirus_1.25.0_all.deb          # Mint / Ubuntu
-sudo dnf install ./clamav-antivirus-1.25.0-1.noarch.rpm      # Fedora
+sudo apt install ./clamav-antivirus_1.25.1_all.deb          # Mint / Ubuntu
+sudo dnf install ./clamav-antivirus-1.25.1-1.noarch.rpm      # Fedora
 ```
 
-L'installation active le service système et le planificateur, puis lance le scan initial :
+The installation enables the system service and the scheduler, then starts the initial scan:
 
 ```bash
 systemctl status clamav-antivirus-daemon      # service (root)
-systemctl list-timers clamav-antivirus-update # prochaine recherche de MàJ
-journalctl -u clamav-antivirus-daemon -f      # suivre le scan initial
+systemctl list-timers clamav-antivirus-update # next update check
+journalctl -u clamav-antivirus-daemon -f      # follow the initial scan
 ```
 
-### Désinstaller
+### Uninstalling
 
 ```bash
 sudo apt remove clamav-antivirus   # Mint / Ubuntu
@@ -89,489 +80,440 @@ sudo dnf remove clamav-antivirus   # Fedora
 
 ---
 
-## Fonctionnalités
+## Features
 
-- **Service système** (`clamav-antivirus-daemon`) — tourne en permanence en root et exécute
-  les scans complets et les mises à jour à la demande d'un utilisateur **sans droits admin**,
-  donc **sans mot de passe**. Si le service est absent, l'application demande le mot de passe
-  administrateur (`pkexec`).
-- **Mises à jour planifiées** — recherche de signatures **tous les jours à 07:00** et
-  **5 minutes après chaque démarrage** (timer systemd, rattrapage si l'ordinateur était éteint).
-- **Scan initial automatique** — un scan complet du système démarre tout seul après la
-  première installation (repris automatiquement s'il est interrompu par un arrêt).
-- **Détection comportementale** — le service surveille (fanotify) les programmes qui
-  modifient beaucoup de fichiers en peu de temps : popup d'information (même pour le
-  système), ou **danger potentiel** si le programme est inconnu du système (hors paquet
-  dpkg, lancé depuis /tmp ou le home) ou si `clamd` reconnaît son exécutable / ses fichiers.
-- **Clés USB** — analysées **avant** leur mise à disposition (règle udev + montage privé par
-  le service), popup de progression, puis montage et ouverture automatiques. Les disques
-  durs USB (> 128 Gio) déclenchent une **question** « analyser ou non ».
-- **État du système** — mises à jour de sécurité en attente et **CVE** qu'elles corrigent
-  (extraites des changelogs apt), redémarrage requis, bouton vers le gestionnaire de
-  mises à jour, historique des alertes.
-- **Popups glissants** — en bas à droite, ils sortent de derrière la barre des tâches :
-  signatures à jour, scan terminé sans menace, menaces, activité inhabituelle, USB.
-- **Quatre langues** — français, anglais, allemand, italien (détection de la locale,
-  sélecteur dans la barre latérale).
-- **Vue simple / vue avancée** — la vue simple (par défaut) tient dans la fenêtre sans
-  défilement et rassure un non-initié : « Votre système est protégé », six voyants
-  (antivirus, surveillance, pare-feu, accès à distance, mises à jour, menaces) avec un
-  bouton de correction quand quelque chose cloche. La vue avancée expose tous les onglets.
-- **Paramètres** — seuil d'envoi Internet déclenchant un popup (5 Go par défaut, fenêtre
-  d'observation réglable), seuils de détection comportementale, USB, heure de la recherche
-  de mises à jour, scan complet hebdomadaire, popups à afficher, langue et vue. Les réglages
-  système sont appliqués par le service, sans mot de passe.
-- **Pare-feu et SSH** — état d'UFW (politiques, règles) et du service SSH, activation ou
-  désactivation, règles simples (port, protocole, action) et politiques par défaut, le tout
-  via le service. L'accès à distance est signalé s'il est actif.
-- **Envoi Internet** — le service mesure le volume envoyé (`/proc/net/dev`) et affiche un
-  popup au-delà du seuil, avec la liste des programmes connectés (`ss`).
-- **Centre de sécurité** (onglet Sécurité) — score et checklist (pare-feu, SSH, chiffrement
-  LUKS, Secure Boot, AppArmor, mises à jour automatiques — bouton « Activer » qui enclenche
-  l'automatisation du Gestionnaire de mises à jour de Mint (ou unattended-upgrades) puis les mises à jour
-  automatiques des Spices Cinnamon et des Flatpak —, comptes sans mot de passe, sudo
-  sans mot de passe, ports exposés, services exposés, `ld.so.preload`, antivirus…), inventaire
-  des **failles ouvertes** des paquets installés via OSV.dev (sans correctif / Ubuntu Pro /
-  correctif disponible, priorité Ubuntu et vecteur CVSS), mises à jour Flatpak/Snap, vérification
-  d'intégrité (Lynis, chkrootkit, debsums, fichiers de l'application vs manifeste signé).
-- **Connexions sortantes** — programmes connectés à Internet avec pays/opérateur, alerte pour un
-  programme inconnu du système ou une adresse des listes Feodo Tracker / SSLBL. Géolocalisation via
-  ip-api.com : service gratuit par défaut (HTTP, 15 requêtes groupées/min, usage non commercial), au plus
-  une requête toutes les 5 s, une adresse demandée une fois par 24 h, cache persistant ; une clé
-  **ip-api.com Pro** (HTTPS, sans limite) se saisit dans Paramètres. Le nombre de requêtes sur 24 h est
-  affiché sous la clé.
-- **Persistance** — autostart, unités systemd, cron, `rc.local`, `ld.so.preload`, extensions
-  Chrome/Firefox (hors store signalées) ; alerte à chaque nouvelle entrée.
-- **Réponse automatique** — un programme jugé dangereux est suspendu (SIGSTOP) et le popup propose
-  Terminer / Mettre en quarantaine / Reprendre.
-- **Mode famille et verrouillage admin** — désactiver le pare-feu, ouvrir un port, activer SSH,
-  installer une mise à jour ou changer les réglages (mode famille) exige l'authentification d'un
-  administrateur via polkit (`pkexec`), valable 15 minutes.
-- **Bonnes pratiques (security awareness)** — page visible dès la vue simple (« Apprendre à me
-  protéger ») avec 18 leçons pour utilisateurs non initiés : ne pas cliquer sans lire, phishing,
-  fraude au président, e-mail inhabituel, `salaires.xlsx.exe`, clés USB piégées, virus / ver /
-  cheval de Troie / cryptolocker, qu'est-ce qu'une faille, importance des mises à jour, mots de
-  passe, sauvegardes, faux support, ingénierie sociale, Wi-Fi public, mot de passe admin, réaction
-  à une attaque, extensions. Un **conseil du jour** apparaît en popup au démarrage (bouton
-  « Lire plus » ouvre la leçon ; désactivable dans Paramètres). Contenu dans `ui/awareness.js`.
-- **Type de réseau (pare-feu)** — Maison, Public ou Entreprise, comme sur Windows. Public : aucune
-  connexion entrante. Maison : SSH (s'il est actif), impression CUPS, partage Samba, découverte mDNS et
-  KDE Connect autorisés depuis les plages privées (10/8, 172.16/12, 192.168/16, fe80::/10), selon ce qui
-  est installé. Entreprise : SSH, CUPS et Samba depuis le sous-réseau actuel seulement, journalisation
-  UFW renforcée. Les règles du profil sont taguées `cav-profile` et remplacées à chaque changement ; les
-  règles personnelles restent, et en Public l'application signale celles ouvertes à tout Internet.
-  Le choix du profil ne demande pas de mot de passe (le service applique les règles), sauf en mode famille.
-- **Durcissement Lynis applicable d'un clic** — la carte « Durcissement (Lynis) » de l'onglet Sécurité liste
-  chaque suggestion de l'audit avec une explication en clair : les recommandations sans risque (paramètres
-  sysctl, core dumps, bannières légales, protocoles inutiles, outils d'audit, anciens noyaux, permissions…)
-  s'appliquent d'un clic ou toutes ensemble (`clamav_harden.py` : fichiers `90-clamav-antivirus-*`, valeurs
-  précédentes retenues pour « Annuler »), celles à lire avant d'appliquer (umask, SSH, TMPDIR) restent
-  manuelles, les autres sont expliquées (faux positifs, sans objet sur un poste de travail). Lynis est relancé
-  après chaque application ; réglage « appliquer automatiquement après chaque audit » dans les paramètres.
-- **Moteur d'analyse rapide** — le service analyse par clamd (base de signatures en mémoire, démarré au besoin)
-  avec plusieurs `clamdscan --fdpass` en parallèle (jusqu'à 8 lots de 100 fichiers, 3 pour une clé USB), repli
-  `clamscan --file-list` si clamd manque. **Cache des fichiers sains** : l'empreinte (taille, mtime, ctime,
-  inode) de chaque fichier analysé sain est gardée dans `scan-cache.db` (SQLite) ; un fichier inchangé n'est
-  pas relu pendant `scan_cache_days` jours (30 par défaut, réglable, case « Tout ré-analyser » sur le scan).
-  **Clés USB** : un fichier caché `.clamav` (JSON signé HMAC avec un secret propre à l'installation, jamais sur
-  la clé) liste les fichiers sains ; à la prochaine insertion, seuls les fichiers nouveaux ou modifiés sont
-  lus. **Clé pendant un scan** : le scan en cours est mis en pause (workers suspendus), la clé est analysée
-  tout de suite, puis le scan reprend.
-- **Profil mémorisé par réseau** — le service identifie le réseau courant (connexion NetworkManager qui porte la
-  route par défaut, sinon adresse MAC de la passerelle) et mémorise le profil choisi pour chaque réseau. Un réseau
-  inconnu passe toujours en Public (popup « Nouveau réseau », bouton « Changer » vers l'onglet Pare-feu) ; un
-  réseau connu retrouve son profil à chaque connexion ; « Oublier » un réseau le ramène à Public. À la première
-  mise à jour, le réseau courant hérite du profil déjà choisi.
-- **Règles UFW réellement appliquées** — le service appelle `ufw --force rule allow …` : sans le mot-clé `rule`
-  explicite, ufw ne reconnaît pas une règle placée après `--force` (« Invalid syntax »), ce qui faisait échouer
-  les profils réseau et les règles ajoutées depuis l'application ; le message d'erreur d'ufw est désormais
-  journalisé et affiché.
-- **Avertissements d'intégrité lisibles** — le texte complet est affiché (chkrootkit liste les chemins sous
-  son en-tête « suspicious files » : ils sont conservés), les faux positifs connus sont expliqués (.build-id,
-  .packlist…) et « C'est normal » approuve un avertissement : mis à part, il ne compte plus dans l'état ni
-  dans les prochains relevés (« Retirer » le réactive). Le service classe lui-même les fichiers cachés signalés
-  par chkrootkit : livré par un paquet installé (`dpkg -S`), nom connu (.build-id, .packlist, marqueurs npm/Python)
-  ou inconnu (à vérifier) ; même traitement pour « Linux.Xor.DDoS » (chkrootkit liste tout fichier exécutable de
-  /tmp : extensions Chrome, scripts Timeshift, fichiers texte et dossiers de compilation sont bénins, seul un
-  binaire ELF inconnu reste à vérifier) ; un constat entièrement bénin devient « faux positif connu » sans intervention, et un
-  relevé chkrootkit incomplet (ancienne version) est relancé seul au démarrage.
-- **Failles** — les noyaux installés mais non démarrés ne sont plus interrogés sur OSV (ni comptés, ni
-  affichés) ; les réponses OSV sont paginées, un noyau dépassant les 1000 fiches d'une page. Les failles du
-  moteur JavaScript `mozjs*` (SpiderMonkey extrait de Firefox ESR, utilisé par cjs/gjs/polkit) qui décrivent
-  le navigateur (contenu web, médias, onglets…) sont classées « Non applicables (moteur intégré) » avec la
-  liste des programmes qui l'utilisent ; celles propres au moteur (JIT, WebAssembly, ramasse-miettes) restent
-  « Sans correctif » ; badge « moteur JS intégré, pas Firefox ni Thunderbird » sur ces lignes, relevé existant
-  reclassé au démarrage du service. Les paquets construits par Linux Mint (version `+linuxmint`, Thunderbird,
-  Firefox…) sont hors du suivi CVE d'Ubuntu : leurs failles « needed » sont classées non applicables avec la
-  version installée en note.
-- **Failles sans correctif possible expliquées** — une base intégrée (TunnelVision CVE-2024-3661…) affiche sous
-  la faille ce qu'elle est (défaut de conception, statut « deferred » d'Ubuntu) et si elle vous concerne (VPN
-  configuré ou non) ; la checklist compte les CVE distinctes, pas une fois par paquet.
-- **Bouclier permanent** — le tray est lancé par `clamav-antivirus-tray` dans un service utilisateur transitoire
-  systemd (`Restart=always`) : tué, il revient en une seconde ; le service root vérifie en plus toutes les 20 s
-  que chaque session graphique active a son bouclier et le relance sinon. « Quitter » demande l'authentification
-  administrateur (pkexec), arrête proprement le service utilisateur et prévient le service root de ne pas relancer
-  dans cette session (une nouvelle ouverture de session le relance).
-- **Consentement explicite** — à la première utilisation (après l'avertissement légal), une page entière demande
-  si l'on accepte le relevé anonyme hebdomadaire : à quoi il sert, ce qui n'est jamais envoyé, et l'exemple exact
-  de ce qui partirait de cet ordinateur (commande `telemetry_preview`, rien n'est transmis). Réponse obligatoire,
-  mémorisée, modifiable ensuite dans Paramètres.
-- **Télémétrie exploitable** — l'envoi hebdomadaire (opt-in) ajoute les avertissements d'intégrité approuvés et
-  les classifications bénignes (matière à règles intégrées), les mesures du dernier scan (durée, fichiers, part du
-  cache, moteur), les réglages de durcissement appliqués, les paquets à failles hautes, l'indice Lynis et les
-  réglages principaux. Côté serveur : empreinte d'IP à sel mensuel, conservation douze mois. `repo/api/summarize.py`
-  déduplique par installation, sort les candidats à la liste blanche (seuil d'installations distinctes, déjà
-  couverts ou non), les mesures agrégées, et génère un JSON et une page HTML de statistiques sans identifiant.
-- **Quarantaine lisible et modales maison** — chaque fichier isolé affiche la signature détectée en titre, puis
-  le nom du fichier et son dossier d'origine (index alimenté par les lignes « moved to » de clamdscan/clamscan,
-  côté service et côté scan local) ; les confirmations (suppression, vidage, pare-feu, journaux) passent par
-  une modale dans le thème de l'application, plus jamais par `confirm()` natif.
-- **Service en locale C** — les sorties d'outils analysées (ufw, iptables, dpkg, apt…) sont toujours en anglais :
-  avec un système en français, systemd donnait au service `LANG=fr_CH.UTF-8` et « ufw status » répondait
-  « État : actif », d'où un pare-feu vu inactif après une activation réussie. Secours : présence des chaînes
-  `ufw-user-input` dans le noyau (même test que ufw-init).
-- **Activation du pare-feu vérifiée** — `ufw enable` répond « actif » même quand le chargement des règles échoue
-  si `ufw.conf` disait déjà `ENABLED=yes` ; le service contrôle l'état réel, force disable → enable puis
-  `ufw-init start` pour obtenir l'erreur, l'affiche (« Le pare-feu n'a pas pu être chargé : … »), active
-  `ufw.service` au démarrage et signale un autre gestionnaire de pare-feu actif (firewalld, nftables avec
-  `flush ruleset`, netfilter-persistent). Checklist et score recalculés après chaque action pare-feu/SSH.
-- **Télémétrie après le premier scan complet et à la demande** — le premier scan complet terminé après l'accord
-  déclenche l'envoi du rapport anonyme sans attendre la semaine (mesures de performance) ; bouton « Envoyer la
-  télémétrie maintenant » dans Paramètres.
-- **Métapaquet `linux-shield`** — `apt install linux-shield` et `dnf install linux-shield` installent le paquet technique
-  `clamav-antivirus` (nom, chemins, unités et dépôt inchangés : transparent pour les installations existantes, qui
-  continuent de se mettre à jour) et la commande `linux-shield`. Version propre au métapaquet (1.0.0), construit par
-  `build-meta.sh` et publié une fois ; la dépendance non versionnée tire toujours le dernier clamav-antivirus.
-- **Linux Shield** — nouveau nom du projet (dépôt GitHub `kahsky/linux-shield`) : ce n'est plus seulement une interface
-  pour ClamAV mais un ensemble de protections pour Linux. Le nom change partout où il s'affiche (fenêtre, bouclier,
-  popups, courriers, extensions, fichiers .desktop, services, paquets) ; le nom du paquet, les chemins, les unités
-  systemd et le dépôt restent `clamav-antivirus` pour que les installations existantes se mettent à jour sans rien
-  faire. La langue de l'interface suit le système : variables d'environnement, puis locale configurée dans
-  /etc/default/locale ou /etc/locale.conf si la session n'en fournit aucune, anglais pour une langue sans
-  traduction ; le README dit en anglais ce que fait le programme.
-- **Veille des processus : approuver ou faire confiance depuis l'événement** — l'alerte garde le texte complet de
-  l'avertissement : les événements proposent « C'est normal » (avertissement approuvé, même si le processus a déjà
-  disparu, sans PID) et « Faire confiance » (programme), puis affichent « approuvé ». Les programmes de confiance sont
-  reconnus par la veille et par l'audit complet : par chemin, et par nom quand le chemin de confiance est lui-même un
-  dossier temporaire (binaire de test recompilé sous /tmp). Les anciennes alertes sans détail (avant 1.25.0) sont
-  affichées comme « N avertissement(s) lors de la vérification d'intégrité (processes) » ; le journal (Journaux) garde
-  la trace de chaque passage avec, désormais, le programme et son chemin.
-- **Veille des processus : alerte lisible, plus de rouge bloqué** — un processus suspect (exécutable supprimé du
-  disque, lancé depuis /tmp, LD_PRELOAD inconnu, ptrace) relancé avec un nouveau PID était un « nouvel »
-  avertissement à chaque passage de la veille (toutes les 5 min) : alerte rouge « 1 — processes » sans aucun
-  détail, « C'est normal » sans effet dès que le PID changeait, et l'état global restait « danger » 24 h après la
-  dernière alerte même une fois le relevé redevenu propre. L'avertissement est comparé et approuvé sans les PID ni
-  l'ordre des lignes ; l'alerte, la popup, le courrier et le journal nomment le programme, le motif (traduit) et les
-  lignes pid / nom / chemin ; l'état global et la ligne « Menaces » de la vue simple suivent le relevé d'intégrité
-  courant (vert dès que le processus a disparu ou a été approuvé) au lieu de l'historique des alertes.
-- **Ubuntu 26.04 : failles de la bonne version** — l'inventaire OSV interrogeait l'écosystème d'Ubuntu 24.04 pour
-  toute version inconnue (26.04 « resolute » compris) : un Ubuntu 26.04 en noyau 7.0 voyait les failles et l'alerte
-  « noyau 6.8 » de 24.04 / Mint 22 (issue #1). La version d'Ubuntu est maintenant lue dans os-release (Ubuntu) ou
-  /etc/upstream-release (Mint), les LTS déduites (avril des années paires) ; sans version connue (LMDE…),
-  l'inventaire est « non pris en charge » plutôt que faux. Le contrôle « Noyau » et la note HWE citent le noyau en
-  cours, la version d'Ubuntu, les noyaux HWE trouvés et le paquet `linux-generic-hwe-<version>` réels, sans plus
-  supposer Linux Mint ni le 6.8 ; les conseils chiffrement, Secure Boot et sudo ne supposent plus Mint non plus.
-  Sur Fedora, l'inventaire reste « non pris en charge » (avis dnf dans État du système) et les textes qui citaient
-  UFW, apt ou debsums en dur (pare-feu, mises à jour, intégrité, descriptions Lynis, mentions légales) nomment
-  aussi firewalld, dnf et rpm -V ; l'indice de dépôt de la carte Mise à jour devient celui du dépôt dnf, le service
-  exposant désormais la famille de distribution dans son état.
-- **Plus de fenêtre fantôme après une mise à jour (Ubuntu/GNOME)** — le bouclier relancé après la mise à niveau du
-  paquet mappait puis cachait sa fenêtre (`show_all()` + `hide()`) : GNOME gardait une entrée « clamav-antivirus.py »
-  dans le dock sans rien de visible. En mode bouclier la fenêtre n'est plus jamais mappée tant qu'on ne l'ouvre pas ;
-  `StartupWMClass` dans le lanceur donne au dock le bon nom et la bonne icône quelle que soit la façon de lancer.
-  Et si la fenêtre était ouverte au moment de la mise à jour (SIGTERM du postinst), elle se rouvre d'elle-même une
-  fois la nouvelle version chargée (témoin `window_open_at`, valable 5 min).
-- **chkrootkit « INFECTED » : quatre règles de faux positifs vérifiées** — un media center Ubuntu affichait des
-  constats « INFECTED » de chkrootkit alors que le scan ClamAV complet (221 788 fichiers) était sain. Règles
-  intégrées (version 6, relevés existants reclassés au démarrage sans relancer l'outil) : « Checking `ls'...
-  INFECTED » → bénin si le binaire est livré par un paquet et intact d'après lui (dpkg -V / rpm -V), à vérifier
-  d'urgence s'il est modifié ; « Possible Suckit: /sbin/init INFECTED » → bénin si l'init réel (systemd) est intact
-  d'après son paquet ; « chkproc: Possible LKM Trojan installed » → les processus terminés entre les deux lectures
-  de chkproc ou visibles normalement par ps sont bénins, un processus présent dans /proc mais caché à ps reste à
-  vérifier ; « Possible Slapper / Scalper Worm installed » → même analyse que les bindshells (programme qui écoute
-  vraiment sur les ports 2001, 2002, 4156, 1978, 1812, 2015 : paquet ou application de magasin → bénin).
-- **Contrôle des liens et des courriels : extensions Thunderbird, Firefox, Chrome, Chromium, Edge, Brave** — module
-  `clamav_urlguard.py` du service : listes de sites malveillants téléchargées plusieurs fois par jour (OpenPhish et
-  Phishing.Database sur GitHub, URLhaus chez abuse.ch ; requêtes conditionnelles ETag, index compacts d'empreintes
-  triées : 4 Mo pour 450 000 entrées, 0,4 ms par contrôle) et heuristiques sans liste : adresse IP brute, identifiant
-  avant un « @ », punycode, marque imitée (caractères remplacés « paypa1 », faute de frappe sur touche voisine, marque
-  en sous-domaine, vrai domaine d'une marque en tête d'un autre hôte « paypal.com.exemple.ru », combinaison
-  « paypal-secure »), raccourcisseurs résolus (HEAD sans suivre, 3 sauts) puis contrôlés, page de connexion sans
-  chiffrement, téléchargement d'exécutable, lien dont le texte affiché est une autre adresse (courriels). Verdict sûr /
-  prudence / danger ; les imitations de marque seules sont « prudence », « danger » avec une page de connexion, un
-  domaine douteux ou du punycode (« stream » n'est pas « steam »). Sites « toujours autorisés » par l'utilisateur.
-  Hôte de messagerie native `clamav-antivirus-native-host` (relais vers le socket du service, navigateur reconnu par le
-  processus parent) ; commandes `url_check`, `url_report`, `url_allow`, `url_scan` (pièce jointe déposée dans
-  `/tmp/clamav-antivirus-mail-<uid>/`, propriétaire vérifié, clamd → popup rouge « Pièce jointe infectée »),
-  `urlguard`, `urlguard_refresh`, `urlguard_hello`. Extension navigateur (`extensions/browser`, MV3 Chrome/Edge/Brave/
-  Chromium, MV2 Firefox avec requête bloquante) : page d'avertissement « Retour / Ouvrir quand même / Toujours
-  autoriser ce site », notification pour « prudence », badge, popup d'état. Extension Thunderbird
-  (`extensions/thunderbird`, MV2) : bandeau en haut de chaque message (liens vérifiés, dangereux encadrés en rouge et
-  clic intercepté avec confirmation dans le message), pièces jointes analysées par clamd à l'affichage et à l'arrivée
-  des courriels (notification + popup du service). Installation automatique : `clamav-antivirus-browser-setup`
-  (postinst / %post) écrit les manifestes natifs (`/usr/lib[64]/mozilla`, `/etc/opt/chrome`, `/etc/chromium`,
-  `/etc/opt/edge`, `/etc/opt/brave`), une politique Chrome/Chromium/Edge/Brave (`ExtensionSettings` depuis
-  `https://www.dukiwi.com/repo/extensions/urlguard-update.xml`, CRX3 signé par `crx3-pack.py` avec la clé
-  `repo/keys/chrome-extension.pem`, jamais dans git) et fusionne `ExtensionSettings` dans `policies.json` de
-  Thunderbird (XPI local) et de Firefox (XPI signé sur le dépôt : Mozilla exige la signature AMO, à faire par
-  `web-ext sign --channel unlisted` puis dépôt du fichier dans `repo/extensions/`). `build-extensions.sh` produit
-  XPI, ZIP, CRX, update.xml et `manifest-info.json` ; `publish.sh` les copie dans `repo/extensions/`. Carte
-  Sécurité › Liens et courriels (extensions vues, listes, derniers liens signalés, sites autorisés, aide
-  d'installation), réglages `url_guard`, `url_guard_resolve`, `mail_scan_attachments` (actifs par défaut). Testé :
-  hôte natif (hello, check, allow, EICAR en pièce jointe reconnu), Edge headless avec l'extension (hameçonnage et
-  sosie redirigés vers la page d'avertissement, site sain laissé passer), Thunderbird headless (extension acceptée).
-- **Arrêt du service immédiat** — après « Daemon arrêté », l'interpréteur attendait les pools de threads encore en
-  vol (requêtes OSV des tâches quotidiennes, lancées 15 s après le démarrage) : `systemctl stop` et la mise à niveau
-  du paquet pouvaient patienter plusieurs minutes. Le service sort maintenant tout de suite (état déjà écrit de
-  façon synchrone) ; les leurres du pot de miel et le lecteur du journal du pare-feu sont fermés explicitement.
-- **Pot de miel réseau** — **actif par défaut** (réglage dans Paramètres › Sécurité et famille ; désactivation
-  réservée à l'administrateur en mode famille ; carte Sécurité › Pot de miel réseau avec bouton « Activer » s'il a
-  été coupé). Le service met à l'écoute
-  des ports leurres sans aucun service derrière : deux ports hauts tirés au sort (20000–32000, hors ports
-  « bindshell » de chkrootkit, mémorisés) et telnet 23 / 2323, ouverts dans le pare-feu (ufw ou firewalld, règles
-  `cav-honeypot`, réappliquées toutes les 5 min) et marqués « pot de miel » dans les ports en écoute. Chaque
-  connexion est journalisée avec la source (adresse, nom DNS/mDNS, adresse MAC, passerelle ou non) et l'intention
-  déduite des premiers octets (sondage, SSH, HTTP, requête d'exploitation, TLS, SMB, RDP, SOCKS, SIP, tentative de
-  connexion sur le faux telnet avec l'identifiant essayé, jamais le mot de passe). Un même appareil qui touche
-  plusieurs leurres, tente une connexion ou une exploitation, ou dont le journal du pare-feu (`[UFW BLOCK]`,
-  `LogDenied=unicast` sur firewalld) montre des SYN vers ≥ 5 ports fermés est signalé comme balayage : popup rouge
-  « Un appareil sonde cet ordinateur » avec « Bloquer cet appareil » (règle DENY en tête du pare-feu, jamais la
-  passerelle ni soi-même), « Ignorer » (appareil connu) et « Détails » ; carte Sécurité › Pot de miel réseau
-  (sources, intentions, derniers événements, bloquer / débloquer / oublier), ligne « Réseau local » de la vue
-  simple, état global jaune tant qu'un appareil suspect n'est ni bloqué ni ignoré, courrier si les notifications
-  sont activées. Les connexions venant de cet ordinateur sont ignorées. Rien n'est envoyé à l'extérieur
-  (module `clamav_honeypot.py`).
-- **Fedora : socket clamd activé** — scan.conf livré avec LocalSocket commenté : décommenté par le paquet et par le
-  service, sinon pas de moteur clamd. Paquet RPM construit, signé, installé et vérifié dans un conteneur Fedora 44
-  depuis le dépôt dnf signé.
-- **Fedora et dérivés** — couche de distribution `clamav_distro.py` : dnf (mises à jour, avis de sécurité et
-  CVE via `dnf updateinfo`, redémarrage via `needs-restarting`, dnf-automatic), rpm (propriété des fichiers,
-  `rpm -V` à la place de debsums avec classement des fichiers de configuration), firewalld (zones home / public /
-  work comme profils, services, ports, règles riches, activation), SELinux dans la checklist, `clamd@scan` et
-  `/etc/clamd.d/scan.conf`, mise à jour de l'application par dnf (entrée `rpm` du manifeste), msmtp direct.
-  Paquet RPM noarch (`build-rpm.sh`, `clamav-antivirus.spec`), dépôt dnf signé (`rpm/fedora`) et fichier
-  `.repo` livré par le paquet ; comptage des téléchargements RPM et des lectures de l'index dnf.
-- **Popups sous Ubuntu (Wayland)** — un client Wayland ne peut pas placer ses fenêtres et GNOME centrait les
-  notifications en plein écran ; le bouclier utilise le backend X11 de GTK via XWayland quand une session Wayland
-  l'offre, et les popups glissent de nouveau depuis le bas. Réglage « Position des notifications » : en bas à
-  droite (défaut) ou en bas à gauche.
-- **Notifications par courrier** — Paramètres › Notifications par courrier (administrateur) : serveur SMTP, port,
-  STARTTLS / TLS / aucun, identifiant, mot de passe, expéditeur, destinataires, fréquence immédiate / quotidienne /
-  hebdomadaire (heure et jour du bilan), langue, événements choisis (alertes graves, résultat des analyses, bilan de
-  l'état). Désactivé par défaut : rien n'est envoyé. Le service écrit /etc/msmtprc (root, 600) et envoie par
-  sendmail ; un autre serveur de courrier du système est utilisé tel quel. Courrier de test, bilan à la demande,
-  plafond de 30 envois par jour, journal. L'interface prévient que tout programme du système avec les droits
-  administrateur pourra alors envoyer des courriers avec ce compte.
-- **Installable sur Ubuntu 26.04** — dépendances `pkexec | policykit-1` (le paquet de transition policykit-1
-  n'existe plus) et `gir1.2-ayatanaappindicator3-0.1 | gir1.2-appindicator3-0.1` (libappindicator retiré) ; le
-  bouclier utilise l'indicateur Ayatana quand il est présent. Sur GNOME, l'extension AppIndicator
-  (gnome-shell-extension-appindicator, installée par défaut sur Ubuntu) est nécessaire pour voir l'icône.
-- **Un seul bouclier par session** — après un redémarrage, deux icônes et des notifications en double pouvaient
-  apparaître : le service système relançait le bouclier avant que la session soit prête (repli hors service), puis le
-  démarrage automatique du bureau en lançait un second. Désormais : verrou d'instance exclusif dans le programme,
-  lanceur qui attend le gestionnaire utilisateur au lieu de se replier et verrouille la création de l'unité, service
-  système qui laisse 90 s au bureau, exige le bus utilisateur et termine les doublons.
-- **« Ignorer » une faille ou un port, clé USB sans analyse ou de confiance : jamais de mot de passe** — même en
-  mode famille ; chaque choix est inscrit au journal. Restent réservés à un administrateur en mode famille :
-  « C'est normal » sur un avertissement d'intégrité, confiance à un programme ou à un démarrage automatique,
-  réglages, durcissement.
-- **État relu après « Ignorer »** — trois secondes après un « Ignorer », « C'est normal », « Faire confiance » ou
-  « Réafficher », l'interface relit tout l'état (bouclier, vue simple, score de la checklist, failles, intégrité,
-  sauvegardes) pour afficher le nouveau statut sans changer d'onglet.
-- **Bleu = information, partout** — la vue simple affiche l'état « information » (bouclier bleu, « Pour
-  information seulement ») quand le service est bleu (failles sans correctif), au lieu du jaune ; la ligne
-  « Mises à jour du système » propose « Ignorer ». « Tout ignorer » (carte Failles, point « Failles ouvertes » de la
-  checklist, vue simple) ignore toutes les failles ouvertes, toutes priorités confondues : bouclier vert ensuite.
-- **Tableau de bord lisible avec des textes longs** — la tuile « Système » affiche l'état en une ligne et les
-  détails (mises à jour décalées, retenues par apt) sur une seconde ligne discrète ; la colonne latérale est
-  bornée en largeur et passe sous le titre sur une fenêtre étroite.
-- **Contrôle du noyau et des processus (comportemental)** — deux contrôles intégrés, à chaque vérification
-  d'intégrité et toutes les 5 minutes : *Noyau* (module caché : vivant dans `/sys/module` mais absent de
-  `/proc/modules`, module chargé sans fichier pour ce noyau, taint « chargé de force », modules DKMS listés
-  comme bénins, état lockdown / signature / `modules_disabled`) et *Processus* (exécutable supprimé du disque,
-  exécution depuis /tmp ou /dev/shm, bibliothèque injectée par LD_PRELOAD, processus suivi par ptrace ; verdicts
-  bénins : programme mis à jour, AppImage, bibliothèque d'un paquet / Steam / magasin, débogueur connu). Un nouvel
-  avertissement déclenche un popup rouge et le bouclier rouge ; « C'est normal » reste disponible.
-- **« Ignorer » sans mot de passe** — commande dédiée pour la sauvegarde des fichiers et Timeshift (mode famille
-  compris) ; la ligne « Sauvegardes » distingue Timeshift suspendu (espace faible), trop ancien, sans instantané.
-- **chkrootkit « bindshell » classé** — « Potential bindshell installed: infected ports: 145 » est vérifié sur
-  place : programme réellement à l'écoute (livré par un paquet ou une application de magasin → bénin), aucun
-  programme (détection passagère, ou dernier octet de l'adresse IP pris pour un port par la regex de chkrootkit →
-  bénin), programme hors dpkg → à vérifier. Ligne « WARNING » seule (artefact du mode verbeux) ignorée.
-  Durcissement « purger les restes » : architecture conservée (libvdpau1:i386) et purge paquet par paquet.
-- **Vue simple : jamais un rouge sans explication** — le sous-titre cite le motif exact du service (« intégrité
-  compromise », « failles sans correctif »…) et une ligne « Intégrité du système » (rootkits, fichiers de paquets ou
-  de l'application modifiés → rouge, recommandations Lynis → jaune) mène aux détails et au bouton « C'est normal ».
-- **Clé USB : continuer sans analyse, faire confiance** — le popup d'analyse d'une clé (et la question pour un
-  disque volumineux) propose « Continuer sans analyse » et « Faire confiance à cette clé » : l'analyse en cours est
-  annulée et la clé est montée tout de suite pour l'utilisateur, sans mot de passe (mode famille : administrateur).
-  Une clé de confiance (numéro de série + UUID) n'est plus analysée à l'insertion (popup « clé de confiance »
-  avec « Analyser quand même ») ; liste et « Retirer » dans Paramètres › Programmes de confiance.
-- **Activer Timeshift répond tout de suite** — le service met l'état à jour à partir de la configuration (sans
-  `timeshift --list`, qui peut durer des minutes quand un instantané est en cours) et lance le premier instantané
-  puis le relevé complet en arrière-plan ; l'interface interroge le service hors du fil principal avec un délai
-  large (plus de « timed out » ni d'interface figée).
-- **Planification Timeshift automatique même si Timeshift est déjà configuré** — bouton « Planification
-  automatique (recommandée) » quand la planification n'est pas celle de l'application (badge « planification gérée
-  par l'application » sinon) : applique sans mot de passe quotidien (5) / hebdomadaire (3) / mensuel (2) avec le
-  garde-fou d'espace, en conservant l'emplacement des instantanés. Un compte sans droits d'administration n'a
-  plus besoin d'ouvrir Timeshift.
-- **Profil réseau sans mot de passe pour tous** — le changement Maison / Public / Entreprise ne demande plus
-  jamais les droits d'administration, même en mode famille.
-- **Sauvegarde des fichiers ignorable** — la ligne « Sauvegardes » combine la sauvegarde de vos fichiers et
-  Timeshift ; chacune a son « Ignorer » / « Réafficher » (assistant de la vue simple, onglet Sauvegardes) :
-  réglages `backup_check` (fichiers) et `timeshift_check` (Timeshift), indépendants. Une ligne verte = tout ce qui
-  reste compté est en ordre.
-- **État de Timeshift ignorable** — bouton « Ignorer » (onglet Sauvegardes et assistant de la vue simple) pour les
-  PC sans place pour les instantanés : réglage `timeshift_check`, plus de jaune ni d'alerte « espace faible »,
-  badge « ignoré par vous » et « Réafficher ».
-- **Ports ouverts ignorés** — « Ignorer » sur le point « Ports ouverts » de la checklist et sur chaque port joignable
-  de la liste « Ports en écoute » (clé port/protocole/programme) : un serveur web de développement voulu ne compte
-  plus dans le score ni les points à corriger ; badge « ignoré par vous » et « Réafficher » ; un autre programme sur
-  le même port est de nouveau signalé.
-- **Failles ignorées** — bouton « Ignorer » sur chaque faille sans correctif (ou Ubuntu Pro) et « Tout ignorer »
-  sur la liste affichée : la CVE, tous paquets confondus, ne compte plus dans la couleur du bouclier, le score ni la
-  vue simple ; section repliée « Failles ignorées » avec « Réafficher » ; les nouvelles CVE publiées ensuite restent
-  signalées. Sans mot de passe (sauf mode famille).
-- **Fichiers debsums classés** — un fichier de paquet signalé modifié est bénin s'il fait partie des ajustements
-  de Linux Mint (`/usr/share/linuxmint/adjustments`, motifs des `.overwrite`, fichiers cités par les `.execute`)
-  ou s'il est détourné par `dpkg-divert` ; sinon il reste « à vérifier ». chkrootkit en mode verbeux : messages
-  d'outils collés à la ligne d'un test et « started/finished » ignorés. Reclassement du relevé au démarrage.
-- **Avertissements Lynis classés** — l'état réel est vérifié avant d'alerter (TIME-3185 : NTP actif et horloge
-  alignée = faux positif connu, sinon « Régler » relance la synchronisation ; KRNL-5788 : redémarrage à faire) ;
-  le relevé existant est reclassé au démarrage.
-- **Progression de l'intégrité visible** — la sortie de chaque outil est lue en continu : sections Lynis, tests
-  chkrootkit, fichiers debsums, phases unhide donnent un pourcentage et l'étape en cours, affichés outil par
-  outil dans le scan (phase intégrité) et dans la carte Intégrité (événement `integrity_progress`).
-- **Moteur résilient** — un lot que clamd refuse (service injoignable, descripteur refusé) est réessayé après
-  attente de clamd, puis confié à clamscan ; au cinquième lot en échec, le reste du scan bascule sur clamscan
-  au lieu d'échouer. chkrootkit : lignes d'outils système (« RTNETLINK answers… ») ignorées, constat
-  « ifpromisc » classé (NetworkManager/wpa_supplicant sur le Wi-Fi = bénin, processus inconnu = à vérifier).
-  L'état global ne passe au rouge que pour des indices de compromission (rootkits, fichiers modifiés) ; les
-  avertissements Lynis seuls donnent du jaune.
-- **Activer Timeshift en un clic** — bouton dans l'onglet Sauvegardes et dans l'assistant de la vue
-  simple, sans mot de passe : le service écrit la configuration recommandée (instantanés du système sur le
-  disque principal, quotidiens 5, hebdomadaires 3, mensuels 2, mode btrfs si la racine est un sous-volume
-  @, sinon rsync en excluant les dossiers personnels), installe la tâche cron horaire et lance le
-  premier instantané. Désactiver demande l'authentification administrateur. **Garde-fou d'espace** : la
-  taille du système est mesurée (`du`, mise en cache une semaine) et l'activation est refusée s'il ne reste
-  pas 1,2 × cette taille + 10 Go libres (message avec les chiffres, bouton « Ouvrir Timeshift » pour
-  choisir un disque dédié) ; la tâche cron ne lance un instantané que s'il reste 10 Go, et le service
-  suspend les planifications (popup, voyant orange) si le disque passe sous ce seuil.
-- **Bilan de la semaine** — popup hebdomadaire (et bouton dans l'onglet Sécurité) : analyses, menaces,
-  alertes, score et sa variation, sauvegarde, conseils lus.
-- **Fuites de données** — test d'un mot de passe via Have I Been Pwned en k-anonymity (5 caractères
-  du SHA-1, jamais le mot de passe) ; surveillance d'adresses e-mail via la base gratuite XposedOrNot, ou Have I Been Pwned avec
-  une clé API personnelle ; revérification hebdomadaire et popup à chaque nouvelle fuite. Seule l'adresse
-  est transmise au service consulté. (Le relais `repo/api/hibp.php` reste disponible si Dukiwi obtient
-  une clé un jour.)
-- **Applications hors dépôts** — inventaire Flatpak (permissions larges, source hors Flathub), Snap
-  (confinement classic, plugs sensibles) et AppImage (sans bac à sable), avec « Faire confiance ».
-- **Coffre chiffré** — dossier gocryptfs (`~/.coffre` chiffré, monté sur `~/Coffre`), création,
-  ouverture et fermeture depuis la vue simple ou l'onglet Sauvegardes, mot de passe saisi dans une
-  boîte de dialogue native, fermeture automatique après 30 min, inclus dans les sauvegardes.
-- **Restauration guidée** — choix de la destination, de la sauvegarde et du dossier, copie dans
-  `~/Restauration` sans jamais écraser les fichiers actuels.
-- **Mode voyage** — un bouton : profil pare-feu Public, sauvegarde si un support est branché, mises
-  à jour, rappels (VPN, verrouillage, double authentification, clés USB) ; le retour rétablit le profil.
-- **Télémétrie anonyme opt-in** — désactivée par défaut ; une fois par semaine : version, système,
-  score, types d'alertes, programmes et entrées approuvés (chemins anonymisés), sans identifiant
-  personnel. Reçue par `repo/api/telemetry.php` (fichiers `api/data/*.jsonl`, résumé avec
-  `api/summarize.py`) pour alimenter la **liste blanche centrale signée** (`api/allowlist.json` +
-  `.sig`, vérifiée avec la clé Dukiwi, téléchargée chaque jour).
-- **Politique d'entreprise** — `/etc/clamav-antivirus/policy.json` déployé par dukiwi-kit (fichier
-  root, signature détachée facultative) : réglages imposés et verrouillés, profil pare-feu, programmes
-  de confiance ; voir `policy.example.json`. Les réglages verrouillés apparaissent grisés.
-- **Noyaux inactifs** — les failles des noyaux installés mais non démarrés (par exemple le 6.8 GA
-  quand le système tourne sur un noyau HWE 7.0) sont comptées à part et n'entrent plus dans le total ;
-  une note indique le noyau en cours (`uname -r`) et comment retirer les anciens.
-- **Noyau HWE** — les failles du noyau d'origine de la version d'Ubuntu (par exemple le 6.8 de 24.04 / Mint 22)
-  déjà corrigées dans un noyau HWE (6.14, 7.0…) sont marquées « corrigée dans le noyau HWE » et comptées ; la
-  carte des failles explique comment installer ce noyau (Mint : Gestionnaire de mises à jour → Noyaux Linux ;
-  Ubuntu : `linux-generic-hwe-<version>`). Le noyau, la version d'Ubuntu et les noyaux HWE cités sont ceux du
-  système, jamais fixés d'avance.
-- **Bouton « Régler »** — chaque contrôle de la checklist qui n'est pas au vert propose « Régler »
-  (action directe : pare-feu, mise à jour, scan, paramètres, liste des ports…) ou « Comment faire »
-  (explication pas à pas : chiffrement, Secure Boot, AppArmor, sudo, comptes…). La liste des ports
-  donne un verdict par port : local seulement, filtré par le pare-feu (rien à faire) ou joignable
-  depuis le réseau, avec une explication par service (SMTP, Apache, Avahi, CUPS, Samba…) et un
-  bouton « Bloquer ce port ». Les règles sudo NOPASSWD livrées par un paquet du système (mintupdate, mintdrivers, mintsystem) et
-  inchangées (vérification dpkg) sont reconnues comme normales ; seules les règles ajoutées à la main ou
-  modifiées sont signalées.
-- **Sauvegardes (disponibilité, le « A » du triptyque CIA)** — tuile « Sauvegardes » en vue simple et
-  page complète en vue avancée. Le service lit l'état de **Timeshift** (installé, planification, dernier
-  instantané) ; l'application copie les dossiers personnels (Documents, Images, Vidéos, Musique, Bureau,
-  modifiables) vers une **clé USB / un disque externe** (instantanés rsync incrémentaux avec liens durs,
-  rétention réglable, miroir simple sur FAT/NTFS), un **dossier** (NAS) ou un **cloud** via rclone
-  (S3 compatible, Infomaniak Swiss Backup S3 ou Swift, kDrive WebDAV, remote rclone existant ; archivage
-  des fichiers remplacés). Assistant minimal en vue simple (« Sauvegarder ici » sur le support détecté),
-  planification automatique quotidienne/hebdomadaire/mensuelle dès que la destination est branchée,
-  historique, consignes de restauration. Fichiers jamais sauvegardés ou Timeshift non planifié : voyant
-  jaune (désactivable dans Paramètres). Tout tourne avec les droits de l'utilisateur, sans mot de passe.
-- **Analyse complète** — « Analyser mon ordinateur » (vue simple, tableau de bord, tray) commence par
-  la vérification d'intégrité (Lynis, chkrootkit, debsums, fichiers de l'application), puis lance le
-  scan antivirus en **ignorant les fichiers système que debsums a confirmés identiques à leur paquet**
-  (plusieurs centaines de milliers de fichiers), d'où une analyse bien plus rapide. Le popup final
-  résume menaces, intégrité et nombre de fichiers ignorés. En vue avancée, l'onglet Scanner propose
-  « Scan complet (intégrité + fichiers) », « Fichiers uniquement » et « Intégrité uniquement ». Lynis,
-  chkrootkit et debsums sont désormais des dépendances du paquet ; Lynis est initialisé à
-  l'installation et remis à jour après chaque passage d'apt (`APT_AUTOGEN`). Comme Lynis, unhide et
-  chkrootkit recommandent un serveur de courrier (apt installerait Postfix, qui ouvre le port 25), le
-  paquet dépend de `msmtp-mta`, un simple client sans démon ni port, qui satisfait cette recommandation.
-- **Installer les mises à jour** — le bouton « Mettre à jour » (vue simple) et « Installer les mises à
-  jour » (État du système) lancent `apt-get update` puis `apt-get upgrade` via le service, dans une unité
-  systemd transitoire ; un popup confirme la fin. Les paquets **décalés** (phasing Ubuntu) ou **retenus**
-  par apt (dépendances, « kept back ») ne comptent pas comme mises à jour manquantes : le voyant reste vert
-  avec la mention « on attend notre tour ». La détection simule `apt upgrade` en mémoire (python3-apt),
-  donc elle reflète exactement ce que la machine installerait.
-- **« C'est moi »** — chaque alerte (programme inconnu du système qui modifie des fichiers ou se
-  connecte à Internet, entrée de démarrage inconnue, extension hors store) propose un bouton
-  « C'est moi » : le programme ou l'entrée passe en liste d'approbation (Paramètres → Programmes
-  approuvés) et ne déclenche plus jamais de message ; un processus suspendu est repris. Un binaire
-  remplacé pendant son exécution (Chrome mis à jour, par exemple) n'est plus considéré comme inconnu.
-- **Conseils lus** — une leçon ouverte au moins 5 secondes via « Lire plus » est marquée « Lu » et ne
-  revient plus en popup ; quand tout est lu, le popup du jour disparaît (badge cliquable pour
-  remettre une leçon en non lu).
-- **Paquets classés** (État du système) — chaque mise à jour en attente est étiquetée
-  **Sécurité** (correctif de faille), **Recommandé** (application / bibliothèque) ou **Décalé**
-  (phased update Ubuntu, avec le pourcentage de déploiement). Si rien n'est en attente, la carte
-  affiche « Tout est à jour » ; sinon un bouton **Installer les paquets décalés** force leur
-  installation (`APT::Get::Always-Include-Phased-Updates=true`, authentification admin).
-- **Avertissement juridique** — affiché au premier lancement (à accepter) et disponible à tout
-  moment via Crédits → Avertissement : logiciel fourni « en l'état », première barrière seulement,
-  exclusion de responsabilité de Dukiwi SA (voir plus bas).
-- **Icône tray** — vert : tout est en ordre ; jaune : mises à jour non critiques, redémarrage,
-  SSH actif, mise à jour de l'app ; bleu : signatures anciennes ou failles ouvertes sans correctif ;
-  rouge : pare-feu inactif, mises à jour de sécurité, danger détecté, intégrité compromise.
-- **Scan moderne** — anneau de progression, étapes (inventaire → analyse), fichiers/s,
-  temps restant estimé, menaces en direct, annulation et reprise, résumé de fin,
-  historique des analyses.
-- **Scan rapide** — `/home`, `/etc`, `/var`, `/opt`, `/usr`, `/tmp` ou un dossier choisi
-  via le sélecteur natif.
-- **Quarantaine** — fichiers infectés isolés (quarantaine système et quarantaine utilisateur).
-- **Interface HTML/CSS** — Facilement modifiable (fichiers dans `ui/`)
+- **System service** (`clamav-antivirus-daemon`) — runs permanently as root and performs full scans and updates
+  on behalf of a user **without admin rights**, hence **without a password**. If the service is missing, the
+  application asks for the administrator password (`pkexec`).
+- **Scheduled updates** — signature check **every day at 07:00** and **5 minutes after each boot** (systemd timer,
+  caught up if the computer was off).
+- **Automatic initial scan** — a full system scan starts on its own after the first installation (resumed
+  automatically if interrupted by a shutdown).
+- **Behavioural detection** — the service watches (fanotify) programs that modify many files in a short time:
+  information popup (even for the system), or **potential danger** if the program is unknown to the system (not
+  from a dpkg package, started from /tmp or the home directory) or if `clamd` recognises its executable or its files.
+- **USB sticks** — scanned **before** they are made available (udev rule + private mount by the service), progress
+  popup, then automatic mount and opening. USB hard drives (> 128 GiB) trigger a **question** "scan or not".
+- **System status** — pending security updates and the **CVEs** they fix (extracted from apt changelogs), reboot
+  required, button to the update manager, alert history.
+- **Sliding popups** — bottom right, they slide out from behind the taskbar: signatures up to date, scan finished
+  without threat, threats, unusual activity, USB.
+- **Four languages** — French, English, German, Italian (locale detection, selector in the sidebar).
+- **Simple view / advanced view** — the simple view (default) fits in the window without scrolling and reassures a
+  non-expert: "Your system is protected", six indicators (antivirus, monitoring, firewall, remote access, updates,
+  threats) with a fix button when something is wrong. The advanced view exposes all tabs.
+- **Settings** — Internet upload threshold triggering a popup (5 GB by default, adjustable observation window),
+  behavioural detection thresholds, USB, update check time, weekly full scan, popups to show, language and view.
+  System settings are applied by the service, without a password.
+- **Firewall and SSH** — UFW state (policies, rules) and SSH service, enable or disable, simple rules (port,
+  protocol, action) and default policies, all through the service. Remote access is flagged when active.
+- **Internet upload** — the service measures the volume sent (`/proc/net/dev`) and shows a popup above the
+  threshold, with the list of connected programs (`ss`).
+- **Security centre** (Security tab) — score and checklist (firewall, SSH, LUKS encryption, Secure Boot, AppArmor,
+  automatic updates — an "Enable" button that turns on Mint's Update Manager automation (or unattended-upgrades)
+  then automatic updates of Cinnamon Spices and Flatpaks —, accounts without password, passwordless sudo, exposed
+  ports, exposed services, `ld.so.preload`, antivirus…), inventory of **open vulnerabilities** of the installed
+  packages through OSV.dev (unfixed / Ubuntu Pro / fix available, Ubuntu priority and CVSS vector), Flatpak/Snap
+  updates, integrity check (Lynis, chkrootkit, debsums, application files vs signed manifest).
+- **Outbound connections** — programs connected to the Internet with country/operator, alert for a program
+  unknown to the system or an address from the Feodo Tracker / SSLBL lists. Geolocation through ip-api.com: free
+  service by default (HTTP, 15 batched requests/min, non-commercial use), at most one request every 5 s, an address
+  requested once per 24 h, persistent cache; an **ip-api.com Pro** key (HTTPS, no limit) can be entered in
+  Settings. The number of requests over 24 h is shown under the key.
+- **Persistence** — autostart, systemd units, cron, `rc.local`, `ld.so.preload`, Chrome/Firefox extensions
+  (out-of-store ones flagged); alert for every new entry.
+- **Automatic response** — a program deemed dangerous is suspended (SIGSTOP) and the popup offers
+  Terminate / Quarantine / Resume.
+- **Family mode and admin lock** — disabling the firewall, opening a port, enabling SSH, installing an update or
+  changing settings (family mode) requires administrator authentication through polkit (`pkexec`), valid for
+  15 minutes.
+- **Good practices (security awareness)** — page reachable from the simple view ("Learn to protect myself") with
+  18 lessons for non-experts: do not click without reading, phishing, CEO fraud, unusual e-mail,
+  `salaries.xlsx.exe`, booby-trapped USB sticks, virus / worm / Trojan / cryptolocker, what a vulnerability is, why
+  updates matter, passwords, backups, fake support, social engineering, public Wi-Fi, admin password, reacting to
+  an attack, extensions. A **tip of the day** appears as a popup at startup ("Read more" opens the lesson; can be
+  disabled in Settings). Content in `ui/awareness.js`.
+- **Network type (firewall)** — Home, Public or Work, as on Windows. Public: no incoming connection. Home: SSH (if
+  active), CUPS printing, Samba sharing, mDNS discovery and KDE Connect allowed from private ranges (10/8,
+  172.16/12, 192.168/16, fe80::/10), depending on what is installed. Work: SSH, CUPS and Samba from the current
+  subnet only, stronger UFW logging. Profile rules are tagged `cav-profile` and replaced at each change; personal
+  rules stay, and in Public the application flags those open to the whole Internet. Choosing the profile does not
+  ask for a password (the service applies the rules), except in family mode.
+- **One-click Lynis hardening** — the "Hardening (Lynis)" card of the Security tab lists every suggestion of the
+  audit with a plain-language explanation: risk-free recommendations (sysctl parameters, core dumps, legal banners,
+  unused protocols, audit tools, old kernels, permissions…) apply with one click or all at once (`clamav_harden.py`:
+  `90-clamav-antivirus-*` files, previous values kept for "Undo"), those to read before applying (umask, SSH,
+  TMPDIR) stay manual, the others are explained (false positives, not relevant on a desktop). Lynis is re-run after
+  each application; "apply automatically after each audit" setting in the settings.
+- **Fast scan engine** — the service scans through clamd (signature database in memory, started on demand) with
+  several parallel `clamdscan --fdpass` (up to 8 batches of 100 files, 3 for a USB stick), falling back to
+  `clamscan --file-list` if clamd is missing. **Clean-file cache**: the fingerprint (size, mtime, ctime, inode) of
+  every scanned clean file is kept in `scan-cache.db` (SQLite); an unchanged file is not read again for
+  `scan_cache_days` days (30 by default, adjustable, "Rescan everything" checkbox on the scan). **USB sticks**: a
+  hidden `.clamav` file (JSON signed with HMAC and a secret specific to the installation, never on the stick)
+  lists the clean files; at the next insertion only new or modified files are read. **Stick during a scan**: the
+  running scan is paused (workers suspended), the stick is scanned right away, then the scan resumes.
+- **Profile remembered per network** — the service identifies the current network (NetworkManager connection
+  holding the default route, otherwise the gateway's MAC address) and remembers the profile chosen for each
+  network. An unknown network always goes Public ("New network" popup, "Change" button to the Firewall tab); a known
+  network gets its profile back at each connection; "Forget" a network sends it back to Public. At the first update
+  the current network inherits the profile already chosen.
+- **UFW rules really applied** — the service calls `ufw --force rule allow …`: without the explicit `rule` keyword,
+  ufw does not recognise a rule placed after `--force` ("Invalid syntax"), which made network profiles and rules
+  added from the application fail; ufw's error message is now logged and shown.
+- **Readable integrity warnings** — the full text is shown (chkrootkit lists paths under its "suspicious files"
+  header: they are kept), known false positives are explained (.build-id, .packlist…) and "That's normal" approves a
+  warning: set aside, it no longer counts in the state nor in the next reports ("Remove" reactivates it). The
+  service classifies the hidden files reported by chkrootkit itself: shipped by an installed package (`dpkg -S`),
+  known name (.build-id, .packlist, npm/Python markers) or unknown (to check); same treatment for "Linux.Xor.DDoS"
+  (chkrootkit lists every executable file in /tmp: Chrome extensions, Timeshift scripts, text files and build
+  directories are benign, only an unknown ELF binary remains to check); a fully benign finding becomes "known false
+  positive" without intervention, and an incomplete chkrootkit report (old version) is re-run alone at startup.
+- **Vulnerabilities** — installed but not running kernels are no longer queried on OSV (neither counted nor shown);
+  OSV answers are paginated, a kernel exceeding the 1000 entries of a page. Vulnerabilities of the `mozjs*`
+  JavaScript engine (SpiderMonkey extracted from Firefox ESR, used by cjs/gjs/polkit) that describe the browser (web
+  content, media, tabs…) are classified "Not applicable (embedded engine)" with the list of programs using it;
+  those specific to the engine (JIT, WebAssembly, garbage collector) stay "Unfixed"; "embedded JS engine, not
+  Firefox nor Thunderbird" badge on those lines, existing report reclassified at service startup. Packages built by
+  Linux Mint (`+linuxmint` version, Thunderbird, Firefox…) are outside Ubuntu's CVE tracking: their "needed"
+  vulnerabilities are classified not applicable with the installed version as a note.
+- **Vulnerabilities with no possible fix explained** — a built-in base (TunnelVision CVE-2024-3661…) shows under
+  the vulnerability what it is (design flaw, Ubuntu's "deferred" status) and whether it concerns you (VPN configured
+  or not); the checklist counts distinct CVEs, not once per package.
+- **Permanent shield** — the tray is launched by `clamav-antivirus-tray` in a transient systemd user service
+  (`Restart=always`): killed, it comes back within a second; the root service also checks every 20 s that each
+  active graphical session has its shield and relaunches it otherwise. "Quit" requires administrator authentication
+  (pkexec), stops the user service cleanly and tells the root service not to relaunch in this session (a new login
+  relaunches it).
+- **Explicit consent** — at first use (after the legal notice), a full page asks whether you accept the weekly
+  anonymous report: what it is for, what is never sent, and the exact example of what would leave this computer
+  (`telemetry_preview` command, nothing is transmitted). Mandatory answer, remembered, changeable later in Settings.
+- **Usable telemetry** — the weekly (opt-in) submission adds approved integrity warnings and benign classifications
+  (material for built-in rules), measurements of the last scan (duration, files, cache share, engine), applied
+  hardening settings, packages with high vulnerabilities, the Lynis index and the main settings. Server side:
+  IP fingerprint with a monthly salt, kept twelve months. `repo/api/summarize.py` deduplicates per installation,
+  outputs allowlist candidates (threshold of distinct installations, already covered or not), aggregated
+  measurements, and generates a JSON and an HTML statistics page without any identifier.
+- **Readable quarantine and in-app modals** — each isolated file shows the detected signature as a title, then the
+  file name and its original folder (index fed by the "moved to" lines of clamdscan/clamscan, service side and local
+  scan side); confirmations (deletion, emptying, firewall, logs) go through a modal in the application's theme,
+  never through a native `confirm()`.
+- **Service in the C locale** — the tool outputs parsed (ufw, iptables, dpkg, apt…) are always in English: with a
+  French system, systemd gave the service `LANG=fr_CH.UTF-8` and "ufw status" answered "État : actif", hence a
+  firewall seen inactive after a successful activation. Fallback: presence of the `ufw-user-input` chains in the
+  kernel (same test as ufw-init).
+- **Verified firewall activation** — `ufw enable` answers "active" even when loading the rules fails if `ufw.conf`
+  already said `ENABLED=yes`; the service checks the real state, forces disable → enable then `ufw-init start` to
+  get the error, shows it ("The firewall could not be loaded: …"), enables `ufw.service` at boot and flags another
+  active firewall manager (firewalld, nftables with `flush ruleset`, netfilter-persistent). Checklist and score are
+  recomputed after each firewall/SSH action.
+- **Telemetry after the first full scan and on demand** — the first full scan completed after consent triggers the
+  anonymous report without waiting for the week (performance measurements); "Send telemetry now" button in
+  Settings.
+- **`linux-shield` metapackage** — `apt install linux-shield` and `dnf install linux-shield` install the technical
+  package `clamav-antivirus` (name, paths, units and repository unchanged: transparent for existing installations,
+  which keep updating) and the `linux-shield` command. Own version (1.0.0), built by `build-meta.sh` and published
+  once; the unversioned dependency always pulls the latest clamav-antivirus.
+- **Linux Shield** — new project name (GitHub repository `kahsky/linux-shield`): no longer just an interface for
+  ClamAV but a set of protections for Linux. The name changes everywhere it is displayed (window, shield, popups,
+  mails, extensions, .desktop files, services, packages); the package name, paths, systemd units and repository stay
+  `clamav-antivirus` so existing installations update without any action. The interface language follows the
+  system: environment variables, then the locale configured in /etc/default/locale or /etc/locale.conf if the
+  session provides none, English for a language without translation. The repository key, APT list and dnf repo
+  files are named `linux-shield.*` (the former `dukiwi-clamav.*` names remain served for earlier installations).
+- **Process watch: approve or trust from the event** — the alert keeps the full text of the warning: events offer
+  "That's normal" (warning approved, even if the process is already gone, without PID) and "Trust" (program), then
+  show "approved". Trusted programs are recognised by the watch and by the full audit: by path, and by name when the
+  trusted path is itself a temporary directory (test binary rebuilt under /tmp). Old alerts without detail (before
+  1.25.0) are shown as "N warning(s) during the integrity check (processes)"; the log (Logs) keeps a trace of each
+  pass with, from now on, the program and its path.
+- **Process watch: readable alert, no more stuck red** — a suspicious process (executable deleted from disk, started
+  from /tmp, unknown LD_PRELOAD, ptrace) relaunched with a new PID was a "new" warning at each pass of the watch
+  (every 5 min): red alert "1 — processes" without any detail, "That's normal" ineffective as soon as the PID
+  changed, and the overall state stayed "danger" for 24 h after the last alert even once the report was clean again.
+  The warning is compared and approved without PIDs nor line order; the alert, the popup, the mail and the log name
+  the program, the reason (translated) and the pid / name / path lines; the overall state and the "Threats" row of
+  the simple view follow the current integrity report (green as soon as the process is gone or approved) instead of
+  the alert history.
+- **Ubuntu 26.04: vulnerabilities of the right release** — the OSV inventory queried the Ubuntu 24.04 ecosystem for
+  any unknown release (26.04 "resolute" included): an Ubuntu 26.04 on kernel 7.0 saw the vulnerabilities and the
+  "kernel 6.8" alert of 24.04 / Mint 22 (issue #1). The Ubuntu release is now read from os-release (Ubuntu) or
+  /etc/upstream-release (Mint), LTS inferred (April of even years); without a known release (LMDE…), the inventory
+  is "unsupported" rather than wrong. The "Kernel" check and the HWE note quote the running kernel, the Ubuntu
+  release, the HWE kernels found and the real `linux-generic-hwe-<release>` package, no longer assuming Linux Mint
+  nor 6.8; the encryption, Secure Boot and sudo advice no longer assume Mint either. On Fedora the inventory stays
+  "unsupported" (dnf advisories in System status) and the texts that hard-coded UFW, apt or debsums (firewall,
+  updates, integrity, Lynis descriptions, legal notices) also name firewalld, dnf and rpm -V; the repository hint of
+  the Update card becomes the dnf repository's, the service now exposing the distribution family in its status.
+- **No more ghost window after an update (Ubuntu/GNOME)** — the shield relaunched after the package upgrade mapped
+  then hid its window (`show_all()` + `hide()`): GNOME kept a "clamav-antivirus.py" entry in the dock with nothing
+  visible. In shield mode the window is never mapped until it is opened; `StartupWMClass` in the launcher gives the
+  dock the right name and icon however it is launched. And if the window was open at the time of the update
+  (postinst SIGTERM), it reopens by itself once the new version is loaded (`window_open_at` marker, valid 5 min).
+- **chkrootkit "INFECTED": four verified false-positive rules** — an Ubuntu media centre showed chkrootkit
+  "INFECTED" findings while the full ClamAV scan (221,788 files) was clean. Built-in rules (version 6, existing
+  reports reclassified at startup without re-running the tool): "Checking `ls'... INFECTED" → benign if the binary
+  is shipped by a package and intact according to it (dpkg -V / rpm -V), to check urgently if modified; "Possible
+  Suckit: /sbin/init INFECTED" → benign if the real init (systemd) is intact according to its package; "chkproc:
+  Possible LKM Trojan installed" → processes that ended between the two readings of chkproc or normally visible to
+  ps are benign, a process present in /proc but hidden from ps remains to check; "Possible Slapper / Scalper Worm
+  installed" → same analysis as bindshells (program really listening on ports 2001, 2002, 4156, 1978, 1812, 2015:
+  package or store application → benign).
+- **Link and e-mail checking: Thunderbird, Firefox, Chrome, Chromium, Edge, Brave extensions** — service module
+  `clamav_urlguard.py`: malicious-site lists downloaded several times a day (OpenPhish and Phishing.Database on
+  GitHub, URLhaus at abuse.ch; conditional ETag requests, compact indexes of sorted fingerprints: 4 MB for
+  450,000 entries, 0.4 ms per check) and list-free heuristics: raw IP address, identifier before an "@", punycode,
+  imitated brand (replaced characters "paypa1", typo on a neighbouring key, brand as a subdomain, real brand domain
+  at the head of another host "paypal.com.example.ru", "paypal-secure" combination), shorteners resolved (HEAD
+  without following, 3 hops) then checked, unencrypted login page, executable download, link whose displayed text
+  is another address (e-mails). Verdict safe / caution / danger; brand imitations alone are "caution", "danger" with
+  a login page, a dubious domain or punycode ("stream" is not "steam"). Sites "always allowed" by the user. Native
+  messaging host `clamav-antivirus-native-host` (relay to the service socket, browser recognised by the parent
+  process); commands `url_check`, `url_report`, `url_allow`, `url_scan` (attachment dropped in
+  `/tmp/clamav-antivirus-mail-<uid>/`, owner verified, clamd → red popup "Infected attachment"), `urlguard`,
+  `urlguard_refresh`, `urlguard_hello`. Browser extension (`extensions/browser`, MV3 Chrome/Edge/Brave/Chromium, MV2
+  Firefox with blocking request): warning page "Back / Open anyway / Always allow this site", notification for
+  "caution", badge, status popup. Thunderbird extension (`extensions/thunderbird`, MV2): banner at the top of each
+  message (links checked, dangerous ones framed in red and click intercepted with confirmation in the message),
+  attachments scanned by clamd when displayed and when e-mails arrive (notification + service popup). Automatic
+  installation: `clamav-antivirus-browser-setup` (postinst / %post) writes the native manifests
+  (`/usr/lib[64]/mozilla`, `/etc/opt/chrome`, `/etc/chromium`, `/etc/opt/edge`, `/etc/opt/brave`), a
+  Chrome/Chromium/Edge/Brave policy (`ExtensionSettings` from
+  `https://www.dukiwi.com/repo/extensions/urlguard-update.xml`, CRX3 signed by `crx3-pack.py` with the
+  `repo/keys/chrome-extension.pem` key, never in git) and merges `ExtensionSettings` into the `policies.json` of
+  Thunderbird (local XPI) and Firefox (XPI signed on the repository: Mozilla requires AMO signing, to be done with
+  `web-ext sign --channel unlisted` then dropping the file in `repo/extensions/`). `build-extensions.sh` produces
+  XPI, ZIP, CRX, update.xml and `manifest-info.json`; `publish.sh` copies them to `repo/extensions/`. Security ›
+  Links and e-mails card (extensions seen, lists, last flagged links, allowed sites, installation help), settings
+  `url_guard`, `url_guard_resolve`, `mail_scan_attachments` (on by default). Tested: native host (hello, check,
+  allow, EICAR attachment recognised), headless Edge with the extension (phishing and lookalike redirected to the
+  warning page, clean site let through), headless Thunderbird (extension accepted).
+- **Immediate service stop** — after "Daemon stopped", the interpreter waited for thread pools still in flight (OSV
+  requests of the daily tasks, launched 15 s after startup): `systemctl stop` and the package upgrade could wait
+  several minutes. The service now exits right away (state already written synchronously); honeypot decoys and the
+  firewall log reader are closed explicitly.
+- **Network honeypot** — **on by default** (setting in Settings › Security and family; disabling reserved to the
+  administrator in family mode; Security › Network honeypot card with an "Enable" button if it was turned off). The
+  service listens on decoy ports with no service behind them: two random high ports (20000–32000, excluding
+  chkrootkit's "bindshell" ports, remembered) and telnet 23 / 2323, opened in the firewall (ufw or firewalld,
+  `cav-honeypot` rules, re-applied every 5 min) and marked "honeypot" in the listening ports. Every connection is
+  logged with its source (address, DNS/mDNS name, MAC address, gateway or not) and the intent inferred from the first
+  bytes (probe, SSH, HTTP, exploitation request, TLS, SMB, RDP, SOCKS, SIP, login attempt on the fake telnet with the
+  identifier tried, never the password). A device that touches several decoys, attempts a login or an exploitation,
+  or whose firewall log (`[UFW BLOCK]`, `LogDenied=unicast` on firewalld) shows SYNs to ≥ 5 closed ports is flagged
+  as a scan: red popup "A device is probing this computer" with "Block this device" (DENY rule at the top of the
+  firewall, never the gateway nor oneself), "Ignore" (known device) and "Details"; Security › Network honeypot card
+  (sources, intents, latest events, block / unblock / forget), "Local network" row of the simple view, yellow
+  overall state as long as a suspicious device is neither blocked nor ignored, e-mail if notifications are enabled.
+  Connections coming from this computer are ignored. Nothing is sent outside (module `clamav_honeypot.py`).
+- **Fedora: clamd socket enabled** — scan.conf is shipped with LocalSocket commented out: uncommented by the package
+  and by the service, otherwise no clamd engine. RPM package built, signed, installed and verified in a Fedora 44
+  container from the signed dnf repository.
+- **Fedora and derivatives** — distribution layer `clamav_distro.py`: dnf (updates, security advisories and CVEs
+  through `dnf updateinfo`, reboot through `needs-restarting`, dnf-automatic), rpm (file ownership, `rpm -V` instead
+  of debsums with classification of configuration files), firewalld (home / public / work zones as profiles,
+  services, ports, rich rules, activation), SELinux in the checklist, `clamd@scan` and `/etc/clamd.d/scan.conf`,
+  application update through dnf (`rpm` entry of the manifest), direct msmtp. Noarch RPM package (`build-rpm.sh`,
+  `clamav-antivirus.spec`), signed dnf repository (`rpm/fedora`) and `.repo` file shipped by the package; count of
+  RPM downloads and dnf index reads.
+- **Popups on Ubuntu (Wayland)** — a Wayland client cannot place its windows and GNOME centred the notifications in
+  the middle of the screen; the shield uses GTK's X11 backend through XWayland when a Wayland session offers it, and
+  the popups slide from the bottom again. "Notification position" setting: bottom right (default) or bottom left.
+- **E-mail notifications** — Settings › E-mail notifications (administrator): SMTP server, port, STARTTLS / TLS /
+  none, username, password, sender, recipients, immediate / daily / weekly frequency (time and day of the digest),
+  language, chosen events (serious alerts, scan results, status digest). Off by default: nothing is sent. The
+  service writes /etc/msmtprc (root, 600) and sends through sendmail; another system mail server is used as is. Test
+  mail, digest on demand, cap of 30 mails per day, log. The interface warns that any program of the system with
+  administrator rights will then be able to send mail with this account.
+- **Installable on Ubuntu 26.04** — dependencies `pkexec | policykit-1` (the policykit-1 transitional package no
+  longer exists) and `gir1.2-ayatanaappindicator3-0.1 | gir1.2-appindicator3-0.1` (libappindicator removed); the
+  shield uses the Ayatana indicator when present. On GNOME, the AppIndicator extension
+  (gnome-shell-extension-appindicator, installed by default on Ubuntu) is needed to see the icon.
+- **One shield per session** — after a reboot, two icons and duplicate notifications could appear: the system
+  service relaunched the shield before the session was ready (fallback outside the service), then the desktop's
+  autostart launched a second one. Now: exclusive instance lock in the program, launcher that waits for the user
+  manager instead of falling back and locks the unit creation, system service that gives the desktop 90 s, requires
+  the user bus and terminates duplicates.
+- **"Ignore" a vulnerability or a port, USB stick without scan or trusted: never a password** — even in family
+  mode; every choice is written to the log. Still reserved to an administrator in family mode: "That's normal" on an
+  integrity warning, trusting a program or an autostart entry, settings, hardening.
+- **State re-read after "Ignore"** — three seconds after an "Ignore", "That's normal", "Trust" or "Show again",
+  the interface re-reads the whole state (shield, simple view, checklist score, vulnerabilities, integrity,
+  backups) to show the new status without changing tab.
+- **Blue = information, everywhere** — the simple view shows the "information" state (blue shield, "For
+  information only") when the service is blue (unfixed vulnerabilities), instead of yellow; the "System updates" row
+  offers "Ignore". "Ignore all" (Vulnerabilities card, "Open vulnerabilities" checklist item, simple view) ignores
+  all open vulnerabilities whatever their priority: green shield afterwards.
+- **Readable dashboard with long texts** — the "System" tile shows the state on one line and the details (phased
+  updates, held back by apt) on a discreet second line; the side column is bounded in width and moves under the
+  title on a narrow window.
+- **Kernel and process check (behavioural)** — two built-in checks, at each integrity check and every 5 minutes:
+  *Kernel* (hidden module: alive in `/sys/module` but absent from `/proc/modules`, module loaded without a file for
+  this kernel, "force loaded" taint, DKMS modules listed as benign, lockdown / signature / `modules_disabled` state)
+  and *Processes* (executable deleted from disk, execution from /tmp or /dev/shm, library injected through
+  LD_PRELOAD, process traced through ptrace; benign verdicts: updated program, AppImage, library from a package /
+  Steam / store, known debugger). A new warning triggers a red popup and the red shield; "That's normal" remains
+  available.
+- **"Ignore" without a password** — dedicated command for the file backup and Timeshift (family mode included); the
+  "Backups" row distinguishes Timeshift suspended (low space), too old, no snapshot.
+- **chkrootkit "bindshell" classified** — "Potential bindshell installed: infected ports: 145" is checked on the
+  spot: program really listening (shipped by a package or a store application → benign), no program (transient
+  detection, or last byte of the IP address taken for a port by chkrootkit's regex → benign), program outside dpkg →
+  to check. Lone "WARNING" line (artefact of verbose mode) ignored. "Purge leftovers" hardening: architecture kept
+  (libvdpau1:i386) and package-by-package purge.
+- **Simple view: never a red without explanation** — the subtitle quotes the service's exact reason ("integrity
+  compromised", "unfixed vulnerabilities"…) and a "System integrity" row (rootkits, modified package or application
+  files → red, Lynis recommendations → yellow) leads to the details and the "That's normal" button.
+- **USB stick: continue without scan, trust** — the stick scan popup (and the question for a large disk) offers
+  "Continue without scan" and "Trust this stick": the running scan is cancelled and the stick is mounted right away
+  for the user, without a password (family mode: administrator). A trusted stick (serial number + UUID) is no
+  longer scanned on insertion ("trusted stick" popup with "Scan anyway"); list and "Remove" in Settings › Trusted
+  programs.
+- **Enabling Timeshift answers right away** — the service updates the state from the configuration (without
+  `timeshift --list`, which can last minutes while a snapshot is running) and starts the first snapshot then the
+  full report in the background; the interface queries the service off the main thread with a generous timeout (no
+  more "timed out" nor frozen interface).
+- **Automatic Timeshift schedule even if Timeshift is already configured** — "Automatic schedule (recommended)"
+  button when the schedule is not the application's ("schedule managed by the application" badge otherwise):
+  applies without a password daily (5) / weekly (3) / monthly (2) with the space guard, keeping the snapshot
+  location. An account without administration rights no longer needs to open Timeshift.
+- **Network profile without a password for everyone** — switching Home / Public / Work never asks for
+  administration rights any more, even in family mode.
+- **Ignorable file backup** — the "Backups" row combines the backup of your files and Timeshift; each has its own
+  "Ignore" / "Show again" (simple-view wizard, Backups tab): independent `backup_check` (files) and
+  `timeshift_check` (Timeshift) settings. A green row = everything still counted is in order.
+- **Ignorable Timeshift state** — "Ignore" button (Backups tab and simple-view wizard) for PCs without room for
+  snapshots: `timeshift_check` setting, no more yellow nor "low space" alert, "ignored by you" badge and "Show
+  again".
+- **Ignored open ports** — "Ignore" on the "Open ports" checklist item and on each reachable port of the
+  "Listening ports" list (port/protocol/program key): a wanted development web server no longer counts in the
+  score nor in the items to fix; "ignored by you" badge and "Show again"; another program on the same port is
+  flagged again.
+- **Ignored vulnerabilities** — "Ignore" button on each unfixed (or Ubuntu Pro) vulnerability and "Ignore all" on
+  the displayed list: the CVE, all packages included, no longer counts in the shield colour, the score nor the
+  simple view; collapsed "Ignored vulnerabilities" section with "Show again"; new CVEs published later remain
+  flagged. Without a password (except family mode).
+- **debsums files classified** — a package file reported modified is benign if it belongs to Linux Mint's
+  adjustments (`/usr/share/linuxmint/adjustments`, `.overwrite` patterns, files cited by `.execute`) or if it is
+  diverted by `dpkg-divert`; otherwise it remains "to check". chkrootkit in verbose mode: tool messages glued to a
+  test line and "started/finished" ignored. Report reclassified at startup.
+- **Lynis warnings classified** — the real state is checked before alerting (TIME-3185: NTP active and clock
+  aligned = known false positive, otherwise "Fix" re-runs the synchronisation; KRNL-5788: reboot needed); the
+  existing report is reclassified at startup.
+- **Visible integrity progress** — the output of each tool is read continuously: Lynis sections, chkrootkit tests,
+  debsums files, unhide phases give a percentage and the current step, shown tool by tool in the scan (integrity
+  phase) and in the Integrity card (`integrity_progress` event).
+- **Resilient engine** — a batch refused by clamd (service unreachable, descriptor refused) is retried after
+  waiting for clamd, then handed to clamscan; at the fifth failed batch, the rest of the scan switches to clamscan
+  instead of failing. chkrootkit: system tool lines ("RTNETLINK answers…") ignored, "ifpromisc" finding classified
+  (NetworkManager/wpa_supplicant on Wi-Fi = benign, unknown process = to check). The overall state only turns red
+  for signs of compromise (rootkits, modified files); Lynis warnings alone give yellow.
+- **Enable Timeshift in one click** — button in the Backups tab and in the simple-view wizard, without a password:
+  the service writes the recommended configuration (system snapshots on the main disk, 5 daily, 3 weekly,
+  2 monthly, btrfs mode if the root is an @ subvolume, otherwise rsync excluding home directories), installs the
+  hourly cron task and starts the first snapshot. Disabling requires administrator authentication. **Space guard**:
+  the system size is measured (`du`, cached for a week) and enabling is refused if less than 1.2 × that size + 10 GB
+  is free (message with the figures, "Open Timeshift" button to pick a dedicated disk); the cron task only starts a
+  snapshot if 10 GB remain, and the service suspends the schedules (popup, orange indicator) if the disk drops
+  below that threshold.
+- **Weekly digest** — weekly popup (and button in the Security tab): scans, threats, alerts, score and its change,
+  backup, tips read.
+- **Data breaches** — password test through Have I Been Pwned with k-anonymity (5 characters of the SHA-1, never
+  the password); monitoring of e-mail addresses through the free XposedOrNot base, or Have I Been Pwned with a
+  personal API key; weekly recheck and popup at every new breach. Only the address is sent to the service
+  consulted. (The `repo/api/hibp.php` relay remains available should Dukiwi obtain a key one day.)
+- **Applications outside repositories** — inventory of Flatpak (broad permissions, source outside Flathub), Snap
+  (classic confinement, sensitive plugs) and AppImage (no sandbox), with "Trust".
+- **Encrypted vault** — gocryptfs folder (`~/.coffre` encrypted, mounted on `~/Coffre`), creation, opening and
+  closing from the simple view or the Backups tab, password entered in a native dialog, automatic closing after
+  30 min, included in backups.
+- **Guided restore** — choice of destination, backup and folder, copy into `~/Restauration` without ever
+  overwriting current files.
+- **Travel mode** — one button: Public firewall profile, backup if a medium is plugged in, updates, reminders (VPN,
+  locking, two-factor authentication, USB sticks); coming back restores the profile.
+- **Opt-in anonymous telemetry** — off by default; once a week: version, system, score, alert types, approved
+  programs and entries (anonymised paths), without personal identifier. Received by `repo/api/telemetry.php`
+  (`api/data/*.jsonl` files, summary with `api/summarize.py`) to feed the **signed central allowlist**
+  (`api/allowlist.json` + `.sig`, verified with the Dukiwi key, downloaded daily).
+- **Enterprise policy** — `/etc/clamav-antivirus/policy.json` deployed by dukiwi-kit (root-owned file, optional
+  detached signature): enforced and locked settings, firewall profile, trusted programs; see
+  `policy.example.json`. Locked settings appear greyed out.
+- **Inactive kernels** — vulnerabilities of installed but not running kernels (for example the 6.8 GA when the
+  system runs an HWE 7.0 kernel) are counted separately and no longer enter the total; a note shows the running
+  kernel (`uname -r`) and how to remove the old ones.
+- **HWE kernel** — vulnerabilities of the original kernel of the Ubuntu release (for example 6.8 of 24.04 /
+  Mint 22) already fixed in an HWE kernel (6.14, 7.0…) are marked "fixed in the HWE kernel" and counted; the
+  vulnerabilities card explains how to install that kernel (Mint: Update Manager → Linux Kernels; Ubuntu:
+  `linux-generic-hwe-<release>`). The kernel, the Ubuntu release and the HWE kernels quoted are those of the
+  system, never fixed in advance.
+- **"Fix" button** — every checklist item that is not green offers "Fix" (direct action: firewall, update, scan,
+  settings, port list…) or "How to" (step-by-step explanation: encryption, Secure Boot, AppArmor, sudo,
+  accounts…). The port list gives a verdict per port: local only, filtered by the firewall (nothing to do) or
+  reachable from the network, with an explanation per service (SMTP, Apache, Avahi, CUPS, Samba…) and a "Block
+  this port" button. NOPASSWD sudo rules shipped by a system package (mintupdate, mintdrivers, mintsystem) and
+  unchanged (dpkg verification) are recognised as normal; only hand-added or modified rules are flagged.
+- **Backups (availability, the "A" of the CIA triad)** — "Backups" tile in the simple view and full page in the
+  advanced view. The service reads the state of **Timeshift** (installed, schedule, last snapshot); the
+  application copies personal folders (Documents, Pictures, Videos, Music, Desktop, editable) to a **USB stick /
+  external disk** (incremental rsync snapshots with hard links, adjustable retention, plain mirror on FAT/NTFS), a
+  **folder** (NAS) or a **cloud** through rclone (S3 compatible, Infomaniak Swiss Backup S3 or Swift, kDrive
+  WebDAV, existing rclone remote; archiving of replaced files). Minimal wizard in the simple view ("Back up here" on
+  the detected medium), automatic daily/weekly/monthly schedule as soon as the destination is plugged in, history,
+  restore instructions. Files never backed up or Timeshift not scheduled: yellow indicator (can be disabled in
+  Settings). Everything runs with the user's rights, without a password.
+- **Full analysis** — "Scan my computer" (simple view, dashboard, tray) starts with the integrity check (Lynis,
+  chkrootkit, debsums, application files), then launches the antivirus scan **skipping the system files that
+  debsums confirmed identical to their package** (several hundred thousand files), hence a much faster analysis.
+  The final popup summarises threats, integrity and the number of skipped files. In the advanced view, the Scanner
+  tab offers "Full scan (integrity + files)", "Files only" and "Integrity only". Lynis, chkrootkit and debsums are
+  now dependencies of the package; Lynis is initialised at installation and refreshed after each apt run
+  (`APT_AUTOGEN`). As Lynis, unhide and chkrootkit recommend a mail server (apt would install Postfix, which opens
+  port 25), the package depends on `msmtp-mta`, a simple client without daemon nor port, which satisfies that
+  recommendation.
+- **Install updates** — the "Update" button (simple view) and "Install updates" (System status) run
+  `apt-get update` then `apt-get upgrade` through the service, in a transient systemd unit; a popup confirms the
+  end. **Phased** packages (Ubuntu phasing) or packages **held back** by apt (dependencies, "kept back") do not
+  count as missing updates: the indicator stays green with the mention "waiting for our turn". Detection simulates
+  `apt upgrade` in memory (python3-apt), so it reflects exactly what the machine would install.
+- **"That's me"** — every alert (program unknown to the system that modifies files or connects to the Internet,
+  unknown startup entry, out-of-store extension) offers a "That's me" button: the program or entry joins the
+  approval list (Settings → Approved programs) and never triggers a message again; a suspended process is resumed.
+  A binary replaced while running (Chrome updated, for example) is no longer considered unknown.
+- **Tips read** — a lesson opened for at least 5 seconds through "Read more" is marked "Read" and no longer comes
+  back as a popup; when everything is read, the daily popup disappears (clickable badge to mark a lesson unread
+  again).
+- **Classified packages** (System status) — every pending update is labelled **Security** (vulnerability fix),
+  **Recommended** (application / library) or **Phased** (Ubuntu phased update, with the roll-out percentage). If
+  nothing is pending, the card shows "Everything is up to date"; otherwise an **Install phased packages** button
+  forces their installation (`APT::Get::Always-Include-Phased-Updates=true`, admin authentication).
+- **Legal notice** — shown at first launch (to accept) and available at any time through Credits → Disclaimer:
+  software provided "as is", first barrier only, exclusion of Dukiwi SA's liability (see below).
+- **Tray icon** — green: all in order; yellow: non-critical updates, reboot, SSH active, app update; blue: old
+  signatures or open vulnerabilities without fix; red: firewall inactive, security updates, danger detected,
+  integrity compromised.
+- **Modern scan** — progress ring, steps (inventory → analysis), files/s, estimated remaining time, live threats,
+  cancel and resume, end summary, scan history.
+- **Quick scan** — `/home`, `/etc`, `/var`, `/opt`, `/usr`, `/tmp` or a folder chosen through the native picker.
+- **Quarantine** — infected files isolated (system quarantine and user quarantine).
+- **HTML/CSS interface** — easy to modify (files in `ui/`).
 
-## Avertissement et limitation de responsabilité
+## Warranty disclaimer and limitation of liability
 
-Linux Shield est fourni par **Dukiwi SA « EN L'ÉTAT » (as is)**, sans aucune garantie,
-expresse ou implicite. Il constitue tout au plus une **première barrière** : aucun antivirus,
-pare-feu ou outil de détection ne peut identifier toutes les menaces, et un voyant vert ne
-garantit en rien qu'un ordinateur est sain. Seul un comportement prudent et informé de
-l'utilisateur (security awareness) limite réellement les risques.
+Linux Shield is provided by **Dukiwi SA "AS IS"**, without any warranty, express or implied. It is at most a
+**first barrier**: no antivirus, firewall or detection tool can identify every threat, and a green indicator in no
+way guarantees that a computer is clean. Only careful and informed behaviour on the user's part (security
+awareness) really limits the risks.
 
-**Dans toute la mesure permise par le droit applicable, Dukiwi SA ne pourra être tenue
-responsable** d'aucun dommage direct ou indirect (perte, chiffrement ou divulgation de données,
-infection non détectée, piratage, hameçonnage, fraude, interruption d'activité, faux positif,
-action déclenchée par le logiciel telle qu'un arrêt de processus, une mise en quarantaine ou une
-règle de pare-feu…) découlant de l'utilisation, de la mauvaise utilisation ou de l'impossibilité
-d'utiliser le logiciel. L'utilisateur est seul responsable de ses sauvegardes, de ses réglages et
-de ses actes. Le texte complet (12 articles, FR/EN/DE/IT) est affiché dans l'application au
-premier lancement et sous Crédits → Avertissement ; en l'utilisant, vous l'acceptez. Ce texte
-n'est pas un avis juridique.
+**To the fullest extent permitted by applicable law, Dukiwi SA shall not be held liable** for any direct or
+indirect damage (loss, encryption or disclosure of data, undetected infection, hacking, phishing, fraud, business
+interruption, false positive, action triggered by the software such as stopping a process, a quarantine or a
+firewall rule…) arising from the use, misuse or inability to use the software. The user alone is responsible for
+their backups, settings and actions. The full text (12 articles, FR/EN/DE/IT) is shown in the application at first
+launch and under Credits → Disclaimer; by using it, you accept it. This text is not legal advice.
 
 ---
 
-## Prérequis (lancement depuis les sources)
+## Requirements (running from source)
 
 ```bash
 # Linux Mint / Ubuntu
@@ -584,7 +526,7 @@ sudo dnf install clamav clamd clamav-update python3-gobject python3-pyudev webki
 
 ---
 
-## Lancement rapide (sans .deb)
+## Quick start (without the .deb)
 
 ```bash
 cd clamav-antivirus/
@@ -594,57 +536,52 @@ python3 clamav-antivirus.py
 
 ---
 
-## Construire les paquets
+## Building the packages
 
 ```bash
-./build-deb.sh        # clamav-antivirus_1.25.0_all.deb   (Mint / Ubuntu)
-./build-rpm.sh        # clamav-antivirus-1.25.0-1.noarch.rpm (Fedora ; nécessite rpmbuild : sudo apt install rpm)
-./build-meta.sh       # linux-shield_1.0.0_all.deb + linux-shield-1.0.0-1.noarch.rpm (métapaquet, publié une fois)
+./build-deb.sh        # clamav-antivirus_1.25.1_all.deb   (Mint / Ubuntu)
+./build-rpm.sh        # clamav-antivirus-1.25.1-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
+./build-meta.sh       # linux-shield_1.0.0_all.deb + linux-shield-1.0.0-1.noarch.rpm (metapackage, published once)
 ```
 
-Les deux paquets partagent la même arborescence de fichiers (`build-deb.sh --stage-only`) et le même manifeste
-d'intégrité signé.
+Both packages share the same file tree (`build-deb.sh --stage-only`) and the same signed integrity manifest.
 
 ---
 
-## Service système et planification
+## System service and scheduling
 
-| Unité systemd                      | Rôle                                                                 |
-|------------------------------------|----------------------------------------------------------------------|
-| `clamav-antivirus-daemon.service`  | Daemon root, socket `/run/clamav-antivirus/daemon.sock` (mode 0666)   |
+| systemd unit                       | Role                                                                  |
+|------------------------------------|-----------------------------------------------------------------------|
+| `clamav-antivirus-daemon.service`  | Root daemon, socket `/run/clamav-antivirus/daemon.sock` (mode 0666)   |
 | `clamav-antivirus-update.timer`    | `OnCalendar=07:00` + `OnBootSec=5min` + `Persistent=true`             |
-| `clamav-antivirus-update.service`  | Oneshot : demande la mise à jour au daemon (`--request update`)       |
+| `clamav-antivirus-update.service`  | Oneshot: asks the daemon for the update (`--request update`)          |
 
-Le daemon accepte, de n'importe quel utilisateur local, un scan de `/` et des répertoires
-système (`/home`, `/etc`, `/var`, `/opt`, `/usr`, `/tmp`, `/boot`, `/root`, `/srv`), des
-supports montés sous `/media` et `/mnt`, ainsi que de tout dossier situé dans le répertoire
-personnel du demandeur (identifié via `SO_PEERCRED`). Les autres chemins sont analysés
-localement avec les droits de l'utilisateur.
+The daemon accepts, from any local user, a scan of `/` and of the system directories (`/home`, `/etc`, `/var`,
+`/opt`, `/usr`, `/tmp`, `/boot`, `/root`, `/srv`), of media mounted under `/media` and `/mnt`, and of any folder
+located in the requester's home directory (identified through `SO_PEERCRED`). Other paths are scanned locally
+with the user's rights.
 
-| Fichier                                  | Rôle                                                              |
+| File                                     | Role                                                              |
 |------------------------------------------|-------------------------------------------------------------------|
-| `/lib/udev/rules.d/80-clamav-antivirus-usb.rules` | Désactive le montage automatique udisks des périphériques USB **uniquement** quand le socket du service existe |
-| `ui/i18n.js`                             | Traductions FR/EN/DE/IT (JSON) partagées par la page et Python    |
-| `ui/awareness.js`                        | Leçons de sensibilisation FR/EN/DE/IT (popup « conseil du jour » et page Bonnes pratiques) |
-| `clamav_backup.py`                       | Moteur de sauvegarde utilisateur (rsync incrémental, rclone cloud, détection des supports) |
-| `clamav_extras.py`                       | Fuites de données (HIBP), applications hors dépôts, coffre gocryptfs, bilan hebdomadaire |
-| `policy.example.json`                    | Exemple de politique d'entreprise pour dukiwi-kit |
+| `/lib/udev/rules.d/80-clamav-antivirus-usb.rules` | Disables udisks automatic mounting of USB devices **only** when the service socket exists |
+| `ui/i18n.js`                             | FR/EN/DE/IT translations (JSON) shared by the page and Python     |
+| `ui/awareness.js`                        | FR/EN/DE/IT awareness lessons ("tip of the day" popup and Good practices page) |
+| `clamav_backup.py`                       | User backup engine (incremental rsync, rclone cloud, media detection) |
+| `clamav_extras.py`                       | Data breaches (HIBP), applications outside repositories, gocryptfs vault, weekly digest |
+| `policy.example.json`                    | Example enterprise policy for dukiwi-kit |
 
-Réglages système (page Paramètres, fichier `/var/lib/clamav-antivirus/settings.json`,
-valeurs par défaut dans `DEFAULT_SETTINGS` de `clamav_common.py`) : seuil et fenêtre d'envoi
-Internet (5 Go / 1 h), seuils de rafale (50 fichiers info, 25 fichiers du home pour un
-programme non fiable, fenêtre 15 s), scan USB automatique et taille limite (128 Gio), heure
-de la recherche de MàJ (07:00, appliquée via un drop-in systemd), scan hebdomadaire.
+System settings (Settings page, `/var/lib/clamav-antivirus/settings.json` file, defaults in `DEFAULT_SETTINGS`
+of `clamav_common.py`): Internet upload threshold and window (5 GB / 1 h), burst thresholds (50 files info,
+25 home files for an untrusted program, 15 s window), automatic USB scan and size limit (128 GiB), update check
+time (07:00, applied through a systemd drop-in), weekly scan.
 
-Les commandes pare-feu/SSH du socket (`firewall_set`, `firewall_defaults`,
-`firewall_rule_add`, `firewall_rule_delete`, `ssh_set`) sont acceptées de tout utilisateur
-local réel (uid ≥ 1000) : c'est voulu (« sans root »), mais à connaître sur une machine
-multi-utilisateurs.
+The firewall/SSH commands of the socket (`firewall_set`, `firewall_defaults`, `firewall_rule_add`,
+`firewall_rule_delete`, `ssh_set`) are accepted from any real local user (uid ≥ 1000): this is intended ("without
+root"), but worth knowing on a multi-user machine.
 
-Fichiers du service : état et quarantaine dans `/var/lib/clamav-antivirus/`, journal dans
-`/var/log/clamav-antivirus/scan.log`.
+Service files: state and quarantine in `/var/lib/clamav-antivirus/`, log in `/var/log/clamav-antivirus/scan.log`.
 
-Client en ligne de commande (diagnostic) :
+Command-line client (diagnostics):
 
 ```bash
 /opt/clamav-antivirus/clamav-antivirus-daemon.py --request status
@@ -655,27 +592,27 @@ Client en ligne de commande (diagnostic) :
 
 ---
 
-## Personnalisation de l'interface
+## Customising the interface
 
-L'interface est en **HTML + CSS + JavaScript** dans le dossier `ui/` :
+The interface is **HTML + CSS + JavaScript** in the `ui/` folder:
 
-| Fichier        | Rôle                                     |
+| File           | Role                                     |
 |----------------|------------------------------------------|
-| `ui/index.html`| Structure HTML de l'interface             |
-| `ui/style.css` | Thème visuel — modifiez les variables CSS |
-| `ui/app.js`    | Logique frontend                          |
+| `ui/index.html`| HTML structure of the interface           |
+| `ui/style.css` | Visual theme — edit the CSS variables     |
+| `ui/app.js`    | Front-end logic                           |
 
-### Variables CSS (début de `style.css`)
+### CSS variables (top of `style.css`)
 
 ```css
 :root {
-    --bg-primary:       #0a0e17;    /* Fond principal */
-    --bg-card:          #1a2234;    /* Fond des cartes */
-    --accent:           #22c55e;    /* Couleur accent (vert) */
-    --accent-blue:      #3b82f6;    /* Bleu */
-    --accent-red:       #ef4444;    /* Rouge */
-    --font-body:        'Segoe UI'; /* Police du texte */
-    --sidebar-width:    260px;      /* Largeur sidebar */
+    --bg-primary:       #0a0e17;    /* Main background */
+    --bg-card:          #1a2234;    /* Card background */
+    --accent:           #22c55e;    /* Accent colour (green) */
+    --accent-blue:      #3b82f6;    /* Blue */
+    --accent-red:       #ef4444;    /* Red */
+    --font-body:        'Segoe UI'; /* Body font */
+    --sidebar-width:    260px;      /* Sidebar width */
 }
 ```
 
@@ -685,32 +622,34 @@ L'interface est en **HTML + CSS + JavaScript** dans le dossier `ui/` :
 
 ```
 clamav-antivirus/
-├── clamav-antivirus.py              # App Python (GTK3 + WebKit2 + AppIndicator)
-├── clamav-antivirus-daemon.py       # Service système root (socket Unix) + client --request
-├── clamav_common.py                 # Chemins, exclusions, protocole partagés
+├── clamav-antivirus.py              # Python app (GTK3 + WebKit2 + AppIndicator)
+├── clamav-antivirus-daemon.py       # Root system service (Unix socket) + --request client
+├── clamav_common.py                 # Shared paths, exclusions, protocol
 ├── systemd/
 │   ├── clamav-antivirus-daemon.service
 │   ├── clamav-antivirus-update.service
-│   └── clamav-antivirus-update.timer # 07:00 quotidien + 5 min après le boot
-├── udev/80-clamav-antivirus-usb.rules # Analyse des clés USB avant montage
-├── clamav-antivirus-unlock          # Helper pkexec : session administrateur pour le daemon
+│   └── clamav-antivirus-update.timer # 07:00 daily + 5 min after boot
+├── udev/80-clamav-antivirus-usb.rules # USB stick scan before mounting
+├── clamav-antivirus-unlock          # pkexec helper: administrator session for the daemon
 ├── polkit/com.dukiwi.clamav-antivirus.policy
-├── keys/dukiwi-clamav.gpg           # Clé publique de vérification des mises à jour
+├── keys/linux-shield.gpg            # Public key verifying updates
+├── linux-shield.repo                # dnf repository file shipped by the RPM
+├── build-meta.sh, linux-shield.spec # linux-shield metapackage (deb + rpm)
 ├── ui/
-│   ├── index.html                   # Interface HTML
-│   ├── style.css                    # Thème CSS (variables modifiables)
-│   ├── app.js                       # Logique JS frontend
-│   ├── i18n.js                      # Traductions FR/EN/DE/IT
-│   └── awareness.js                 # Leçons de sensibilisation FR/EN/DE/IT
+│   ├── index.html                   # HTML interface
+│   ├── style.css                    # CSS theme (editable variables)
+│   ├── app.js                       # Front-end JS logic
+│   ├── i18n.js                      # FR/EN/DE/IT translations
+│   └── awareness.js                 # FR/EN/DE/IT awareness lessons
 ├── icons/
-│   ├── logo.svg                     # Logo de l'application (fenêtre, menu, .desktop)
-│   ├── shield-green.svg             # Tray : tout est en ordre
-│   ├── shield-yellow.svg            # Tray : MàJ non critiques, redémarrage, SSH actif
-│   ├── shield-blue.svg              # Tray : signatures anciennes, failles sans correctif
-│   └── shield-red.svg               # Tray : pare-feu inactif, MàJ de sécurité, danger
-├── clamav-antivirus.desktop         # Entrée menu applications
+│   ├── logo.svg                     # Application logo (window, menu, .desktop)
+│   ├── shield-green.svg             # Tray: all in order
+│   ├── shield-yellow.svg            # Tray: non-critical updates, reboot, SSH active
+│   ├── shield-blue.svg              # Tray: old signatures, unfixed vulnerabilities
+│   └── shield-red.svg               # Tray: firewall inactive, security updates, danger
+├── clamav-antivirus.desktop         # Application menu entry
 ├── clamav-antivirus-autostart.desktop
-├── build-deb.sh                     # Script de build .deb
+├── build-deb.sh                     # .deb build script
 └── README.md
 ```
 
@@ -718,7 +657,7 @@ clamav-antivirus/
 
 ## Licence
 
-Ce projet est distribué sous licence **GNU General Public License v3.0** (GPL v3).
-Voir le fichier [LICENSE](LICENSE) pour les détails.
+This project is distributed under the **GNU General Public License v3.0** (GPL v3).
+See the [LICENSE](LICENSE) file for details.
 
-© 2026 Dukiwi SA — Estavayer-le-Lac, Suisse.
+© 2026 Dukiwi SA — Estavayer-le-Lac, Switzerland.

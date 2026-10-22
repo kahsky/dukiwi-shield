@@ -8,7 +8,7 @@
 set -e
 
 APP_NAME="clamav-antivirus"
-VERSION="1.25.0"
+VERSION="1.25.1"
 ARCH="all"
 PKG_DIR="${APP_NAME}_${VERSION}_${ARCH}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -64,8 +64,8 @@ cp "${SCRIPT_DIR}/ui/i18n.js"                       "${PKG_DIR}/opt/${APP_NAME}/
 cp "${SCRIPT_DIR}/ui/awareness.js"                  "${PKG_DIR}/opt/${APP_NAME}/ui/"
 cp "${SCRIPT_DIR}/udev/"*.rules                     "${PKG_DIR}/lib/udev/rules.d/"
 cp "${SCRIPT_DIR}/clamav-antivirus-unlock"          "${PKG_DIR}/opt/${APP_NAME}/"
-cp "${SCRIPT_DIR}/keys/dukiwi-clamav.gpg"           "${PKG_DIR}/opt/${APP_NAME}/keys/"
-cp "${SCRIPT_DIR}/keys/dukiwi-clamav.asc"           "${PKG_DIR}/opt/${APP_NAME}/keys/"
+cp "${SCRIPT_DIR}/keys/linux-shield.gpg"            "${PKG_DIR}/opt/${APP_NAME}/keys/"
+cp "${SCRIPT_DIR}/keys/linux-shield.asc"            "${PKG_DIR}/opt/${APP_NAME}/keys/"
 cp "${SCRIPT_DIR}/polkit/"*.policy                  "${PKG_DIR}/usr/share/polkit-1/actions/"
 cp "${SCRIPT_DIR}/icons/"*.svg                      "${PKG_DIR}/opt/${APP_NAME}/icons/"
 cp "${SCRIPT_DIR}/clamav-antivirus.desktop"         "${PKG_DIR}/usr/share/applications/"
