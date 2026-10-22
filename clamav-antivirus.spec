@@ -5,7 +5,7 @@ Version:        %{version}
 Release:        1%{?dist}
 Summary:        Linux Shield — suite de sécurité pour Linux : antivirus ClamAV, pare-feu, intégrité, sauvegardes
 License:        Proprietary
-URL:            https://github.com/kahsky/clamav-antivirus
+URL:            https://github.com/kahsky/linux-shield
 BuildArch:      noarch
 Source0:        %{name}-%{version}.tar.gz
 

@@ -28,8 +28,12 @@ sudo mkdir -p /usr/share/keyrings
 curl -fsSL https://www.dukiwi.com/repo/apt/dukiwi-clamav.gpg | sudo tee /usr/share/keyrings/dukiwi-clamav.gpg > /dev/null
 echo "deb [signed-by=/usr/share/keyrings/dukiwi-clamav.gpg] https://www.dukiwi.com/repo/apt noble main" | sudo tee /etc/apt/sources.list.d/dukiwi-clamav.list
 echo "msmtp msmtp/apparmor boolean false" | sudo debconf-set-selections   # évite la seule question posée à l'installation (voir ci-dessous)
-sudo apt update && sudo apt install -y clamav-antivirus
+sudo apt update && sudo apt install -y linux-shield
 ```
+
+`linux-shield` est un métapaquet : il installe le paquet technique `clamav-antivirus` (nom, chemins, services et
+dépôt inchangés : les installations existantes se mettent à jour sans rien faire, et `sudo apt install clamav-antivirus`
+fonctionne toujours) et la commande `linux-shield`.
 
 Installation sans question : chkrootkit recommande un serveur de courrier et le paquet choisit msmtp, le plus
 léger ; msmtp demande au passage s'il faut activer son profil AppArmor (réponse par défaut : non). La ligne
@@ -41,7 +45,7 @@ donne le même résultat.
 ```bash
 sudo curl -fsSL -o /etc/yum.repos.d/dukiwi-clamav.repo https://www.dukiwi.com/repo/rpm/dukiwi-clamav.repo
 sudo rpm --import https://www.dukiwi.com/repo/rpm/dukiwi-clamav.asc
-sudo dnf install clamav-antivirus
+sudo dnf install linux-shield
 ```
 
 Paquet RPM « noarch » signé, dépôt dnf signé (RPM et index). Sur Fedora, l'application parle dnf et rpm au lieu
@@ -234,6 +238,10 @@ sudo dnf remove clamav-antivirus   # Fedora
 - **Télémétrie après le premier scan complet et à la demande** — le premier scan complet terminé après l'accord
   déclenche l'envoi du rapport anonyme sans attendre la semaine (mesures de performance) ; bouton « Envoyer la
   télémétrie maintenant » dans Paramètres.
+- **Métapaquet `linux-shield`** — `apt install linux-shield` et `dnf install linux-shield` installent le paquet technique
+  `clamav-antivirus` (nom, chemins, unités et dépôt inchangés : transparent pour les installations existantes, qui
+  continuent de se mettre à jour) et la commande `linux-shield`. Version propre au métapaquet (1.0.0), construit par
+  `build-meta.sh` et publié une fois ; la dépendance non versionnée tire toujours le dernier clamav-antivirus.
 - **Linux Shield** — nouveau nom du projet (dépôt GitHub `kahsky/linux-shield`) : ce n'est plus seulement une interface
   pour ClamAV mais un ensemble de protections pour Linux. Le nom change partout où il s'affiche (fenêtre, bouclier,
   popups, courriers, extensions, fichiers .desktop, services, paquets) ; le nom du paquet, les chemins, les unités
@@ -591,6 +599,7 @@ python3 clamav-antivirus.py
 ```bash
 ./build-deb.sh        # clamav-antivirus_1.25.0_all.deb   (Mint / Ubuntu)
 ./build-rpm.sh        # clamav-antivirus-1.25.0-1.noarch.rpm (Fedora ; nécessite rpmbuild : sudo apt install rpm)
+./build-meta.sh       # linux-shield_1.0.0_all.deb + linux-shield-1.0.0-1.noarch.rpm (métapaquet, publié une fois)
 ```
 
 Les deux paquets partagent la même arborescence de fichiers (`build-deb.sh --stage-only`) et le même manifeste
