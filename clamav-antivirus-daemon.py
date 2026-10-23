@@ -2980,11 +2980,13 @@ def collect_checklist(daemon):
         except OSError:
             pass
         add("empty_passwords", "fail" if empty else "ok", 10, ", ".join(empty))
-        nopass, mint_ok = [], []
+        nopass, mint_ok, sudo_ignored, sudo_flagged = [], [], [], {}
+        sudo_acks = daemon.state.get("acknowledged_sudoers") or {}
         for path in ["/etc/sudoers"] + sorted(str(p) for p in Path("/etc/sudoers.d").glob("*") if p.is_file()):
             try:
-                with open(path) as f:
-                    has_rule = any("NOPASSWD" in line and not line.strip().startswith("#") for line in f)
+                with open(path, "rb") as f:
+                    raw = f.read()
+                has_rule = any(b"NOPASSWD" in line and not line.strip().startswith(b"#") for line in raw.splitlines())
             except OSError:
                 continue
             if not has_rule:
@@ -2994,11 +2996,21 @@ def collect_checklist(daemon):
             pkg, modified = sudoers_file_origin(path) if path != "/etc/sudoers" else ("", False)
             if pkg and not modified:
                 mint_ok.append(f"{os.path.basename(path)} ({pkg})")
-            else:
-                nopass.append(os.path.basename(path) + (" (modifié)" if modified else ""))
+                continue
+            # « Ignorer » : règle voulue (raccourci clavier, script maison…) approuvée par l'utilisateur pour CE contenu ;
+            # toute modification du fichier la fait réapparaître
+            digest = hashlib.sha256(raw).hexdigest()
+            if (sudo_acks.get(path) or {}).get("sha256") == digest:
+                sudo_ignored.append(os.path.basename(path))
+                continue
+            sudo_flagged[path] = digest
+            nopass.append(os.path.basename(path) + (" (modifié)" if modified else ""))
         nopass, mint_ok = sorted(set(nopass)), sorted(set(mint_ok))
+        daemon.sudoers_flagged = sudo_flagged
         add("nopasswd_sudo", "warn" if nopass else "ok", 5, ", ".join(nopass))
-        if not nopass and mint_ok:
+        if not nopass and sudo_ignored:
+            items[-1].update(detail_key="check.nopasswd_sudo.acknowledged", detail_params={"files": ", ".join(sorted(sudo_ignored))})
+        elif not nopass and mint_ok:
             items[-1].update(detail_key="check.nopasswd_sudo.mint", detail_params={"files": ", ".join(mint_ok)})
     else:
         add("empty_passwords", "unknown", 10)
@@ -6923,7 +6935,7 @@ class Daemon:
         # « Ignorer » une faille sans correctif ou un port ouvert voulu, monter une clé USB sans analyse ou lui faire
         # confiance : jamais de mot de passe, même en mode famille (acknowledge_vuln, acknowledge_port, ignore_check,
         # usb_skip, untrust_usb ne figurent pas ici). Le choix est journalisé ; on fait confiance à l'utilisateur.
-        if cmd in ("set_settings", "trust_program", "untrust_program", "acknowledge_persistence", "acknowledge_integrity", "hid_allow", "hid_forget", "network_gateway_accept",
+        if cmd in ("set_settings", "trust_program", "untrust_program", "acknowledge_persistence", "acknowledge_integrity", "acknowledge_sudoers", "hid_allow", "hid_forget", "network_gateway_accept",
                    "system_upgrade", "harden_apply", "forget_network"):
             return bool(self.settings.get("family_mode"))
         return False
@@ -7665,7 +7677,8 @@ class Daemon:
             return {"ok": True, "programs": self.state.get("trusted_programs") or [],
                     "acknowledged": self.state.get("acknowledged_persistence") or [],
                     "usb": [dict(v, id=k) for k, v in (self.state.get("trusted_usb") or {}).items()],
-                    "hid": [dict(v, id=k) for k, v in (self.state.get("trusted_hid") or {}).items()]}
+                    "hid": [dict(v, id=k) for k, v in (self.state.get("trusted_hid") or {}).items()],
+                    "sudoers": [dict(v, path=k) for k, v in (self.state.get("acknowledged_sudoers") or {}).items()]}
 
         if cmd == "hid_allow":
             # « Autoriser ce clavier » (BadUSB) : réactivé et mémorisé ; l'alerte est marquée résolue
@@ -7863,6 +7876,31 @@ class Daemon:
             self.broadcast({"event": "vulns", "vulns": self.public_vulns(vulns)})
             self.refresh_overall()
             return {"ok": True, "count": len(cves), "acknowledged": (vulns.get("counts") or {}).get("acknowledged_cves") or 0}
+
+        if cmd == "acknowledge_sudoers":
+            # « Ignorer » une règle sudo NOPASSWD voulue : mémorisée avec l'empreinte du fichier (réapparaît s'il change)
+            acks = dict(self.state.get("acknowledged_sudoers") or {})
+            if req.get("remove"):
+                path = str(req.get("path") or "")
+                if path not in acks:
+                    return {"ok": False, "error": "not_found"}
+                acks.pop(path)
+                done = [path]
+            else:
+                flagged = dict(getattr(self, "sudoers_flagged", None) or {})
+                if not flagged:
+                    self.refresh_checklist()
+                    flagged = dict(getattr(self, "sudoers_flagged", None) or {})
+                if not flagged:
+                    return {"ok": False, "error": "nothing_to_ignore"}
+                now = now_iso()
+                for path, digest in flagged.items():
+                    acks[path] = {"sha256": digest, "at": now}
+                done = sorted(flagged)
+            self.state.update(acknowledged_sudoers=acks)
+            self.write_log(f"sudoers {'re-enabled' if req.get('remove') else 'acknowledged'} by uid {uid}: {', '.join(done)}")
+            checklist = self.refresh_checklist()
+            return {"ok": True, "n": len(done), "checklist": checklist}
 
         if cmd == "acknowledge_port":
             # « Ignorer » un port joignable voulu (serveur web de développement…) : ne compte plus dans la checklist

@@ -117,7 +117,7 @@ function locale() {
 // « Ignorer », « C'est normal », « Faire confiance », « Réafficher »… : le service recalcule bouclier, score et listes.
 // Trois secondes après, tout l'état affiché est relu pour montrer le nouveau statut sans changer d'onglet.
 const RELOAD_AFTER_ACTIONS = new Set(['acknowledge_vuln', 'acknowledge_port', 'acknowledge_integrity', 'acknowledge_persistence',
-    'ignore_check', 'timeshift_ignore', 'trust_program', 'untrust_program', 'untrust_usb', 'hid_allow', 'hid_forget', 'network_gateway_accept', 'honeypot_block', 'honeypot_ignore', 'honeypot_forget', 'feature_answer', 'url_allow']);
+    'ignore_check', 'acknowledge_sudoers', 'timeshift_ignore', 'trust_program', 'untrust_program', 'untrust_usb', 'hid_allow', 'hid_forget', 'network_gateway_accept', 'honeypot_block', 'honeypot_ignore', 'honeypot_forget', 'feature_answer', 'url_allow']);
 let statusReloadTimer = null;
 
 function scheduleStatusReload(delay = 3000) {
@@ -1180,16 +1180,23 @@ function gatewayAccept(key) { sendToBackend({ action: 'network_gateway_accept', 
 function acknowledgePersistence(key, remove = false) { sendToBackend({ action: 'acknowledge_persistence', key, remove }); }
 
 function onTrustedList(data) {
-    trustedData = { programs: (data && data.programs) || [], acknowledged: (data && data.acknowledged) || [], usb: (data && data.usb) || [], hid: (data && data.hid) || [] };
+    trustedData = { programs: (data && data.programs) || [], acknowledged: (data && data.acknowledged) || [], usb: (data && data.usb) || [], hid: (data && data.hid) || [], sudoers: (data && data.sudoers) || [] };
     renderTrusted();
 }
 
 function renderTrusted() {
     const el = $('trustedList');
     if (!el) return;
-    const progs = trustedData.programs, ack = trustedData.acknowledged, usb = trustedData.usb || [], hid = trustedData.hid || [];
-    if (!progs.length && !ack.length && !usb.length && !hid.length) { el.innerHTML = `<p class="text-muted">${t('settings.trusted.none')}</p>`; return; }
+    const progs = trustedData.programs, ack = trustedData.acknowledged, usb = trustedData.usb || [], hid = trustedData.hid || [], sud = trustedData.sudoers || [];
+    if (!progs.length && !ack.length && !usb.length && !hid.length && !sud.length) { el.innerHTML = `<p class="text-muted">${t('settings.trusted.none')}</p>`; return; }
     el.innerHTML = [
+        ...sud.map(s => `<div class="package-item">
+            <span class="scope-badge scope-user">${t('settings.trusted.sudoers')}</span>
+            <span class="package-name">${escapeHtml(s.path)}</span>
+            <span class="package-versions" title="sha256 ${escapeHtml(s.sha256 || '')}">sha256 ${escapeHtml((s.sha256 || '').slice(0, 12))}…</span>
+            <span class="alert-meta">${s.at ? formatDateTime(s.at) : ''}</span>
+            <button class="btn btn-secondary btn-sm" onclick="sendToBackend({action:'acknowledge_sudoers', remove:true, path:'${escapeJs(s.path)}'})">${t('settings.trusted.remove')}</button>
+        </div>`),
         ...hid.map(h => `<div class="package-item">
             <span class="scope-badge scope-user">${t('settings.trusted.hid')}</span>
             <span class="package-name">${escapeHtml(h.name || h.id)}</span>
@@ -3419,7 +3426,7 @@ const CHECK_FIX = {
 const CHECK_FIX_LABEL = { auto_updates: 'check.auto_updates.action', firmware: 'check.firmware.action' };
 
 /** Contrôles que l'utilisateur peut ignorer en connaissance de cause (« Ignorer ») : ports ouverts voulus (développement web…). */
-const CHECK_ACK = { open_ports: () => ackAllPorts(), open_vulns: () => ackAllVulns() };
+const CHECK_ACK = { open_ports: () => ackAllPorts(), open_vulns: () => ackAllVulns(), nopasswd_sudo: () => ackSudoers() };
 
 // ─── Ports joignables voulus : ignorés par port+programme, ne comptent plus dans la checklist ni le score ───
 // ─── Protections avancées proposées (pot de miel…) : toujours demander, jamais activer d'office ────
@@ -3528,6 +3535,12 @@ function renderUrlGuard() {
 
 function ackPort(key, remove = false) {
     if (key) sendToBackend({ action: 'acknowledge_port', keys: [key], remove });
+}
+
+async function ackSudoers() {
+    const it = ((secData.checklist || {}).items || []).find(i => i.key === 'nopasswd_sudo') || {};
+    const ok = await appConfirm({ title: t('sudoers.ack_title'), message: t('sudoers.ack_msg', { files: it.detail || '' }), ok: t('security.ignore'), cancel: t('modal.cancel') });
+    if (ok) sendToBackend({ action: 'acknowledge_sudoers' });
 }
 
 async function ackAllPorts() {

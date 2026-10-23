@@ -52,15 +52,15 @@ versions itself (popup or Security tab) and can install them on its own when the
 
 ### Direct download
 
-- Mint / Ubuntu: [clamav-antivirus_1.30.3_all.deb](https://www.dukiwi.com/repo/clamav-antivirus/clamav-antivirus_1.30.3_all.deb)
-- Fedora: [clamav-antivirus-1.30.3-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/clamav-antivirus-1.30.3-1.noarch.rpm)
+- Mint / Ubuntu: [clamav-antivirus_1.30.4_all.deb](https://www.dukiwi.com/repo/clamav-antivirus/clamav-antivirus_1.30.4_all.deb)
+- Fedora: [clamav-antivirus-1.30.4-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/clamav-antivirus-1.30.4-1.noarch.rpm)
 - All versions: [www.dukiwi.com/repo](https://www.dukiwi.com/repo)
 
 ### Installing a downloaded package by hand
 
 ```bash
-sudo apt install ./clamav-antivirus_1.30.3_all.deb          # Mint / Ubuntu
-sudo dnf install ./clamav-antivirus-1.30.3-1.noarch.rpm      # Fedora
+sudo apt install ./clamav-antivirus_1.30.4_all.deb          # Mint / Ubuntu
+sudo dnf install ./clamav-antivirus-1.30.4-1.noarch.rpm      # Fedora
 ```
 
 The installation enables the system service and the scheduler, then starts the initial scan:
@@ -210,6 +210,10 @@ sudo dnf remove clamav-antivirus   # Fedora
 - **Telemetry after the first full scan and on demand** — the first full scan completed after consent triggers the
   anonymous report without waiting for the week (performance measurements); "Send telemetry now" button in
   Settings.
+- **"Ignore" an intended passwordless sudo rule** — the "Passwordless sudo" checklist item gets an "Ignore" button:
+  the flagged /etc/sudoers.d files are approved together with the SHA-256 of their content, so they no longer count in
+  the score but are flagged again as soon as the file changes (a rule widened to `NOPASSWD: ALL` reappears). Approved
+  rules are listed in Security › Trusted programs with "Remove"; administrator required in family mode.
 - **Thanks to the community** — the Credits window names the people who helped make Linux Shield better: Christiaan
   Van Jaarsveld (the name "Linux Shield") and TimMayle (issues: hard-coded kernel CVEs and Linux Mint texts).
 - **Credits: every component and data source** — the Credits window lists the 26 tools Linux Shield drives, grouped
@@ -613,8 +617,8 @@ python3 clamav-antivirus.py
 ## Building the packages
 
 ```bash
-./build-deb.sh        # clamav-antivirus_1.30.3_all.deb   (Mint / Ubuntu)
-./build-rpm.sh        # clamav-antivirus-1.30.3-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
+./build-deb.sh        # clamav-antivirus_1.30.4_all.deb   (Mint / Ubuntu)
+./build-rpm.sh        # clamav-antivirus-1.30.4-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
 ./build-meta.sh       # linux-shield_1.0.0_all.deb + linux-shield-1.0.0-1.noarch.rpm (metapackage, published once)
 ```
 

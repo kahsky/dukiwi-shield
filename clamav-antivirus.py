@@ -2238,6 +2238,23 @@ class ClamAVAntivirusApp:
             return False
         self.run_admin("feature_answer", {"feature": feature, "enabled": enabled}, done)
 
+    def act_acknowledge_sudoers(self, data):
+        """« Ignorer » une règle sudo NOPASSWD voulue (ou la réafficher depuis Programmes de confiance)."""
+        remove = bool(data.get("remove"))
+        params = {"remove": remove, "path": str(data.get("path") or "")} if remove else {}
+
+        def done(resp):
+            if resp.get("ok"):
+                self.send_to_js("operationResult", {"status": "success", "op": "security",
+                                                    "message": self.T("msg.sudoers_unacknowledged" if remove else "msg.sudoers_acknowledged", n=resp.get("n", 0))})
+                if isinstance(resp.get("checklist"), dict):
+                    self.send_to_js("securityData", {"type": "checklist", "data": resp["checklist"], "available": True})
+                self.act_get_trusted({})
+            else:
+                self.send_to_js("operationResult", {"status": "error", "op": "security", "message": self.daemon_error(resp)})
+            return False
+        self.run_admin("acknowledge_sudoers", params, done)
+
     def act_acknowledge_port(self, data):
         """« Ignorer » un port joignable voulu (ou le réafficher avec remove) : la checklist ne le compte plus."""
         remove = bool(data.get("remove"))
