@@ -229,7 +229,7 @@
                     <option value="de">Deutsch</option>
                     <option value="it">Italiano</option>
                 </select></label>
-                <small class="version">v1.29.1 — <a href="#" class="credits-link" onclick="openCredits(); return false;" data-i18n="sidebar.credits">Crédits</a> · <a href="#" class="credits-link" onclick="openLegal(); return false;" data-i18n="legal.link">Avertissement</a></small>
+                <small class="version">v1.30.0 — <a href="#" class="credits-link" onclick="openCredits(); return false;" data-i18n="sidebar.credits">Crédits</a> · <a href="#" class="credits-link" onclick="openLegal(); return false;" data-i18n="legal.link">Avertissement</a></small>
             </div>
         </div>
     </aside>
@@ -782,7 +782,7 @@
             </div>
 
             <div class="accordion" data-accordion="security">
-                <div data-acc="checklist" class="card card-checklist">
+                <div data-acc="checklist" class="card card-checklist" data-nav-i18n="nav.security.checklist">
                     <div class="card-title-row"><h4 data-i18n="security.section.score">Score et checklist</h4><span class="text-muted" id="checklistCounts"></span></div>
                     <div class="score-banner" id="scoreBanner" data-grade="">
                         <div class="score-ring">
@@ -803,7 +803,7 @@
                     <details class="ports-details" id="portsDetails"><summary data-i18n="security.ports.title">Ports en écoute</summary><div id="portsList" class="ports-list"></div></details>
                 </div>
 
-                <div data-acc="honeypot" class="card card-honeypot" id="cardHoneypot">
+                <div data-acc="honeypot" class="card card-honeypot" id="cardHoneypot" data-nav-i18n="nav.security.honeypot">
                     <div class="card-title-row">
                         <h4 data-i18n="honeypot.title">Pot de miel réseau</h4>
                         <div class="log-actions-right">
@@ -820,7 +820,7 @@
                     <details class="ports-details" id="honeypotEventsDetails"><summary data-i18n="honeypot.events">Dernières connexions aux leurres</summary><div id="honeypotEvents" class="honeypot-events"></div></details>
                 </div>
 
-                <div data-acc="links" class="card card-urlguard" id="cardUrlGuard">
+                <div data-acc="links" class="card card-urlguard" id="cardUrlGuard" data-nav-i18n="nav.security.links">
                     <div class="card-title-row">
                         <h4 data-i18n="urlguard.title">Liens et courriels</h4>
                         <div class="log-actions-right">
@@ -846,7 +846,7 @@
                     <details class="ports-details"><summary data-i18n="urlguard.allowed.title">Sites toujours autorisés</summary><div id="urlguardAllowed" class="urlguard-allowed"></div></details>
                 </div>
 
-                <div data-acc="vulns" class="card card-vulns">
+                <div data-acc="vulns" class="card card-vulns" data-nav-i18n="nav.security.vulns">
                     <div class="card-title-row">
                         <h4 data-i18n="security.vulns.title">Failles connues des programmes installés</h4>
                         <div class="log-actions-right">
@@ -883,7 +883,7 @@
                     <div id="storeUpdates" class="store-updates"></div>
                 </div>
 
-                <div data-acc="integrity" class="card card-integrity">
+                <div data-acc="integrity" class="card card-integrity" data-nav-i18n="nav.security.integrity">
                     <div class="card-title-row">
                         <h4 data-i18n="security.integrity.title">Intégrité et rootkits</h4>
                         <button class="btn btn-secondary btn-sm" id="btnIntegrityRun" onclick="loadSecurityData('integrity', false, true)" data-i18n="security.integrity.run">Vérifier maintenant</button>
@@ -893,7 +893,7 @@
                     <div class="fw-actions"><button class="btn btn-secondary btn-sm" id="btnInstallTools" onclick="sendToBackend({action:'install_tools'})" hidden data-i18n="security.integrity.install_tools">Installer Lynis, unhide, chkrootkit et debsums</button></div>
                 </div>
 
-                <div data-acc="hardening" class="card card-hardening" id="cardHardening">
+                <div data-acc="hardening" class="card card-hardening" id="cardHardening" data-nav-i18n="nav.security.hardening">
                     <div class="card-title-row">
                         <h4 data-i18n="security.hardening.title">Durcissement (Lynis)</h4>
                         <div class="log-actions-right">
@@ -906,7 +906,7 @@
                     <div id="hardeningList" class="checklist-list"><p class="text-muted" data-i18n="security.integrity.none_yet">Aucune vérification effectuée.</p></div>
                 </div>
 
-                <div data-acc="appupdate" class="card card-appupdate" id="cardAppUpdate" data-state="unknown">
+                <div data-acc="appupdate" class="card card-appupdate" id="cardAppUpdate" data-state="unknown" data-nav-i18n="nav.security.appupdate">
                     <div class="card-title-row">
                         <h4 data-i18n="security.update.title">Mise à jour de l'application</h4>
                         <span class="badge" id="appUpdateBadge">…</span>
@@ -920,7 +920,7 @@
                     <p class="text-muted" id="appUpdateRepo"></p>
                 </div>
 
-                <div data-acc="leaks" class="card card-leaks">
+                <div data-acc="leaks" class="card card-leaks" data-nav-i18n="nav.security.leaks">
                     <div class="card-title-row">
                         <h4 data-i18n="security.leaks.title">Fuites de données (Have I Been Pwned)</h4>
                         <button class="btn btn-secondary btn-sm" onclick="sendToBackend({action:'show_report'})" data-i18n="security.report_btn">Bilan de la semaine</button>
@@ -943,7 +943,7 @@
                     <p class="text-muted" id="hibpPwResult"></p>
                 </div>
 
-                <div data-acc="apps" class="card card-apps">
+                <div data-acc="apps" class="card card-apps" data-nav-i18n="nav.security.apps">
                     <div class="card-title-row">
                         <h4 data-i18n="security.apps.title">Applications hors dépôts (Flatpak, Snap, AppImage)</h4>
                         <button class="btn btn-secondary btn-sm" onclick="sendToBackend({action:'get_apps'})" data-i18n="system.refresh">Actualiser</button>
@@ -952,7 +952,7 @@
                     <div id="appsList" class="persistence-list"><p class="text-muted" data-i18n="sidebar.loading">Chargement…</p></div>
                 </div>
 
-                <div class="card card-trusted" data-acc="trusted">
+                <div class="card card-trusted" data-acc="trusted" data-nav-i18n="nav.security.trusted">
                     <h4 data-i18n="settings.trusted">Programmes de confiance</h4>
                     <p class="text-muted" data-i18n="settings.trusted.intro">Programmes, entrées de démarrage et clés USB que vous avez approuvés depuis une alerte ou un popup : ils ne déclenchent plus de message et une clé de confiance n'est plus analysée à l'insertion. Retirez-en un pour être à nouveau averti.</p>
                     <div id="trustedList" class="persistence-list"></div>
@@ -1098,7 +1098,7 @@
             </div>
 
             <div class="accordion" data-accordion="firewall">
-                <div class="card card-fw" id="cardFirewall" data-state="unknown" data-acc="firewall">
+                <div class="card card-fw" id="cardFirewall" data-state="unknown" data-acc="firewall" data-nav-i18n="nav.firewall.firewall">
                     <div class="card-title-row">
                         <h4 data-i18n="firewall.ufw.title">Pare-feu</h4>
                         <span class="badge" id="fwBadge">…</span>
@@ -1120,7 +1120,7 @@
                     </div>
                 </div>
 
-                <div class="card card-fw fw-profile" id="cardFwProfile" data-acc="network">
+                <div class="card card-fw fw-profile" id="cardFwProfile" data-acc="network" data-nav-i18n="nav.firewall.network">
                         <div class="card-title-row">
                             <h4 data-i18n="firewall.profile.title">Type de réseau</h4>
                             <span class="text-muted" id="fwProfileCurrent"></span>
@@ -1137,7 +1137,7 @@
                         <div class="log-actions-right"><span class="text-muted" id="travelStatus"></span><button class="btn btn-secondary btn-sm" id="travelBtnFw" onclick="toggleTravel()"><span data-i18n="travel.btn">✈ Mode voyage</span></button></div>
                 </div>
 
-                <div class="card card-rules" data-acc="rules">
+                <div class="card card-rules" data-acc="rules" data-nav-i18n="nav.firewall.rules">
                     <div class="card-title-row">
                         <h4 data-i18n="firewall.rules.title">Règles du pare-feu</h4>
                         <span class="badge badge-blue" id="fwRulesCount" hidden></span>
@@ -1153,7 +1153,7 @@
                     <div id="ruleList" class="rule-list"><p class="text-muted" data-i18n="sidebar.loading">Chargement…</p></div>
                 </div>
 
-                <div class="card card-ssh" id="cardSsh" data-state="unknown" data-acc="ssh">
+                <div class="card card-ssh" id="cardSsh" data-state="unknown" data-acc="ssh" data-nav-i18n="nav.firewall.ssh">
                     <div class="card-title-row">
                         <h4 data-i18n="firewall.ssh.title">Accès à distance (SSH)</h4>
                         <span class="badge" id="sshBadge">…</span>
@@ -1178,7 +1178,7 @@
 
             <p class="text-muted alerts-intro policy-banner" id="policyBanner" hidden></p>
             <div class="accordion" data-accordion="settings">
-                <div class="card settings-card" data-acc="general">
+                <div class="card settings-card" data-acc="general" data-nav-i18n="nav.settings.general">
                     <h4 data-i18n="settings.general">Général</h4>
                     <label class="setting-row"><span data-i18n="settings.language">Langue</span>
                         <select id="setLanguage" class="lang-select"><option value="fr">Français</option><option value="en">English</option><option value="de">Deutsch</option><option value="it">Italiano</option></select></label>
@@ -1186,7 +1186,7 @@
                         <select id="setViewMode" class="lang-select"><option value="simple" data-i18n="settings.view.simple">Simple</option><option value="advanced" data-i18n="settings.view.advanced">Avancée</option></select></label>
                 </div>
 
-                <div class="card settings-card" data-acc="popups">
+                <div class="card settings-card" data-acc="popups" data-nav-i18n="nav.settings.popups">
                     <h4 data-i18n="settings.popups">Notifications (popups)</h4>
                     <label class="setting-row toggle"><span data-i18n="settings.popup.info">Activité inhabituelle (info)</span><input type="checkbox" id="setPopupInfo"></label>
                     <label class="setting-row toggle"><span data-i18n="settings.popup.upload">Envoi Internet important</span><input type="checkbox" id="setPopupUpload"></label>
@@ -1199,7 +1199,7 @@
                     <p class="text-muted" data-i18n="settings.popup.note">Les dangers potentiels et les menaces détectées sont toujours affichés.</p>
                 </div>
 
-                <div class="card settings-card" data-acc="upload">
+                <div class="card settings-card" data-acc="upload" data-nav-i18n="nav.settings.upload">
                     <h4 data-i18n="settings.upload">Envoi vers Internet</h4>
                     <label class="setting-row toggle"><span data-i18n="settings.upload.enable">Surveiller le volume envoyé</span><input type="checkbox" id="setUploadMonitor"></label>
                     <label class="setting-row"><span data-i18n="settings.upload.threshold">Popup à partir de (Go)</span><input type="number" id="setUploadGb" class="input-field input-sm" min="0.1" step="0.5"></label>
@@ -1207,7 +1207,7 @@
                     <p class="text-muted" id="setUploadCurrent"></p>
                 </div>
 
-                <div class="card settings-card" data-acc="burst">
+                <div class="card settings-card" data-acc="burst" data-nav-i18n="nav.settings.burst">
                     <h4 data-i18n="settings.burst">Détection comportementale</h4>
                     <label class="setting-row toggle"><span data-i18n="settings.burst.enable">Surveiller les rafales d'écritures</span><input type="checkbox" id="setBurstMonitor"></label>
                     <label class="setting-row"><span data-i18n="settings.burst.info">Info à partir de (fichiers)</span><input type="number" id="setBurstInfo" class="input-field input-sm" min="5" step="5"></label>
@@ -1215,13 +1215,13 @@
                     <label class="setting-row"><span data-i18n="settings.burst.window">Fenêtre (secondes)</span><input type="number" id="setBurstWindow" class="input-field input-sm" min="5" max="600" step="5"></label>
                 </div>
 
-                <div class="card settings-card" data-acc="security">
+                <div class="card settings-card" data-acc="security" data-nav-i18n="nav.settings.security">
                     <h4 data-i18n="settings.security">Famille et réponse automatique</h4>
                     <label class="setting-row toggle"><span data-i18n="settings.family_mode">Mode famille : réglages et actions sensibles réservés à un administrateur</span><input type="checkbox" id="setFamilyMode"></label>
                     <label class="setting-row toggle"><span data-i18n="settings.auto_response">Suspendre automatiquement un programme jugé dangereux, puis demander</span><input type="checkbox" id="setAutoResponse"></label>
                 </div>
 
-                <div class="card settings-card" data-acc="realtime">
+                <div class="card settings-card" data-acc="realtime" data-nav-i18n="nav.settings.realtime">
                     <h4 data-i18n="settings.section.realtime">Protections en temps réel</h4>
                     <label class="setting-row toggle"><span data-i18n="settings.on_access_scan">Analyser à l'arrivée les fichiers téléchargés, déposés sur le bureau ou écrits sur un support amovible (quarantaine immédiate)</span><input type="checkbox" id="setOnAccess"></label>
                     <label class="setting-row toggle"><span data-i18n="settings.usb_keyboard_guard">Couper tout nouveau clavier USB jusqu'à votre accord (protection BadUSB)</span><input type="checkbox" id="setHidGuard"></label>
@@ -1229,7 +1229,7 @@
                     <p class="text-muted setting-note" data-i18n="settings.honeypot.note">Actif par défaut. Les ports leurres (deux ports hauts tirés au sort, 23 et 2323) sont ouverts dans le pare-feu et apparaissent comme « pot de miel » dans les ports en écoute ; aucun service ne tourne derrière. Un appareil qui les touche ou balaie d'autres ports fermés est signalé par un popup, avec un bouton pour le bloquer.</p>
                 </div>
 
-                <div class="card settings-card" data-acc="links">
+                <div class="card settings-card" data-acc="links" data-nav-i18n="nav.settings.links">
                     <h4 data-i18n="settings.section.links">Liens et courriels</h4>
                     <label class="setting-row toggle"><span data-i18n="settings.url_guard">Contrôle des liens (extensions Thunderbird et navigateurs) : listes de sites malveillants et heuristiques</span><input type="checkbox" id="setUrlGuard"></label>
                     <label class="setting-row toggle"><span data-i18n="settings.url_guard_resolve">Résoudre les adresses raccourcies (bit.ly, t.co…) pour contrôler la destination réelle</span><input type="checkbox" id="setUrlGuardResolve"></label>
@@ -1237,7 +1237,7 @@
                     <p class="text-muted setting-note" data-i18n="settings.url_guard.note">Actif par défaut. Les listes (OpenPhish et Phishing.Database sur GitHub, URLhaus chez abuse.ch) sont téléchargées par le service plusieurs fois par jour ; aucune adresse visitée n'est envoyée ailleurs qu'au service de cet ordinateur (sauf le raccourcisseur lui-même, interrogé pour connaître la destination).</p>
                 </div>
 
-                <div class="card settings-card" data-acc="connections">
+                <div class="card settings-card" data-acc="connections" data-nav-i18n="nav.settings.connections">
                     <h4 data-i18n="settings.section.connections">Connexions sortantes</h4>
                     <label class="setting-row toggle"><span data-i18n="settings.connection_monitor">Surveiller les connexions sortantes</span><input type="checkbox" id="setConnectionMonitor"></label>
                     <label class="setting-row toggle"><span data-i18n="settings.geoip">Géolocaliser les adresses distantes (ip-api.com)</span><input type="checkbox" id="setGeoip"></label>
@@ -1246,7 +1246,7 @@
                     <p class="text-muted setting-note" data-i18n="settings.geoip.note">Sans clé : service gratuit ip-api.com (HTTP, 15 requêtes groupées par minute, 100 adresses par requête, usage non commercial). Avec une clé Pro : HTTPS et sans limite. Chaque adresse n'est demandée qu'une fois par 24 h et le cache survit au redémarrage.</p>
                 </div>
 
-                <div class="card settings-card" data-acc="integrity">
+                <div class="card settings-card" data-acc="integrity" data-nav-i18n="nav.settings.integrity">
                     <h4 data-i18n="settings.section.integrity">Intégrité et durcissement</h4>
                     <label class="setting-row toggle"><span data-i18n="settings.auto_harden">Appliquer automatiquement les recommandations Lynis sans risque après chaque audit</span><input type="checkbox" id="setAutoHarden"></label>
                     <p class="text-muted setting-note" data-i18n="settings.auto_harden.note">Seules les recommandations marquées sans risque (paramètres du noyau, core dumps, bannières, protocoles inutiles, outils d'audit, anciens noyaux…) sont appliquées ; celles « à lire avant d'appliquer » (umask, SSH, TMPDIR) restent manuelles.</p>
@@ -1256,13 +1256,13 @@
                     <label class="setting-row"><span data-i18n="settings.schedule.weekly_hour">Heure</span><input type="number" id="setIntegrityHour" class="input-field input-sm" min="0" max="23"></label>
                 </div>
 
-                <div class="card settings-card" data-acc="appupdate">
+                <div class="card settings-card" data-acc="appupdate" data-nav-i18n="nav.settings.appupdate">
                     <h4 data-i18n="settings.section.appupdate">Mises à jour de l'application</h4>
                     <label class="setting-row toggle"><span data-i18n="settings.app_update_check">Rechercher les mises à jour de l'application</span><input type="checkbox" id="setAppUpdateCheck"></label>
                     <label class="setting-row toggle"><span data-i18n="settings.app_update_auto">Installer automatiquement les mises à jour signées</span><input type="checkbox" id="setAppUpdateAuto"></label>
                 </div>
 
-                <div class="card settings-card" data-acc="privacy">
+                <div class="card settings-card" data-acc="privacy" data-nav-i18n="nav.settings.privacy">
                     <h4 data-i18n="settings.section.privacy">État global et télémétrie</h4>
                     <label class="setting-row toggle"><span data-i18n="settings.backup_check">Compter la sauvegarde de vos fichiers dans l'état global (décochez si vous sauvegardez autrement)</span><input type="checkbox" id="setBackupCheck"></label>
                     <label class="setting-row toggle"><span data-i18n="settings.timeshift_check">Compter l'état de Timeshift dans l'état global (décochez sur un PC sans place pour les instantanés)</span><input type="checkbox" id="setTimeshiftCheck"></label>
@@ -1272,13 +1272,13 @@
                     <div class="log-actions-right"><button class="btn btn-secondary btn-sm" onclick="sendToBackend({action:'telemetry_send'})" data-i18n="settings.telemetry.send">Envoyer la télémétrie maintenant</button></div>
                 </div>
 
-                <div class="card settings-card" data-acc="usb">
+                <div class="card settings-card" data-acc="usb" data-nav-i18n="nav.settings.usb">
                     <h4 data-i18n="settings.usb">Supports USB</h4>
                     <label class="setting-row toggle"><span data-i18n="settings.usb.auto">Analyser les clés USB avant leur ouverture</span><input type="checkbox" id="setUsbAuto"></label>
                     <label class="setting-row"><span data-i18n="settings.usb.max">Demander au-delà de (Gio)</span><input type="number" id="setUsbMax" class="input-field input-sm" min="1" step="16"></label>
                 </div>
 
-                <div class="card settings-card" data-acc="schedule">
+                <div class="card settings-card" data-acc="schedule" data-nav-i18n="nav.settings.schedule">
                     <h4 data-i18n="settings.schedule">Planification</h4>
                     <label class="setting-row"><span data-i18n="settings.schedule.update_time">Recherche de mises à jour chaque jour à</span><input type="time" id="setUpdateTime" class="input-field input-sm"></label>
                     <label class="setting-row toggle"><span data-i18n="settings.schedule.weekly">Scan complet hebdomadaire</span><input type="checkbox" id="setWeekly"></label>
@@ -1290,7 +1290,7 @@
                     <p class="text-muted" data-i18n="settings.schedule.note">Les mises à jour sont aussi recherchées 5 minutes après chaque démarrage.</p>
                 </div>
 
-                <div class="card settings-card settings-card-wide" id="cardMail" data-acc="mail">
+                <div class="card settings-card settings-card-wide" id="cardMail" data-acc="mail" data-nav-i18n="nav.settings.mail">
                     <h4 data-i18n="settings.mail">Notifications par courrier</h4>
                     <p class="text-muted" data-i18n="settings.mail.intro">Désactivé par défaut : rien n'est envoyé. Une fois activé, le service envoie les événements choisis à la fréquence choisie, par le petit serveur de courrier msmtp installé avec l'application (ou par le serveur de courrier du système s'il y en a un).</p>
                     <p class="setting-note mail-warning" data-i18n="settings.mail.warning">Attention : les réglages SMTP sont enregistrés dans /etc/msmtprc, lisible par l'administrateur seulement. Tous les programmes du système fonctionnant avec ses droits (services, tâches planifiées, rapport quotidien de chkrootkit…) pourront alors envoyer des courriers avec ce compte. Utilisez de préférence un compte ou un mot de passe d'application dédié.</p>

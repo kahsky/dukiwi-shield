@@ -208,6 +208,8 @@ function switchTab(tabId) {
         panel.classList.toggle('active', panel.id === `tab-${tabId}`);
     });
     syncTopbar();
+    expandSubnav(tabId);
+    if (SUBPAGE_TABS.includes(tabId) && !document.querySelector(`#tab-${tabId} .acc-section.sub-active`)) showSubpage(tabId, subpageLoad()[tabId], false);
     if (tabId === 'backup') { loadBackup(); sendToBackend({ action: 'vault_status' }); }
     if (tabId === 'security') { sendToBackend({ action: 'get_apps' }); sendToBackend({ action: 'get_trusted' }); }
 
@@ -2885,6 +2887,7 @@ function setSectionOpen(section, open, persist = true) {
 function initAccordions() {
     const st = accLoad();
     document.querySelectorAll('.accordion').forEach(acc => {
+        if (SUBPAGE_TABS.includes(acc.dataset.accordion)) acc.classList.add('pages');
         const group = acc.dataset.accordion || 'x';
         [...acc.children].filter(c => c.classList.contains('card')).forEach((card, idx) => {
             if (card.classList.contains('acc-section')) return;
@@ -2914,6 +2917,7 @@ function initAccordions() {
             while (head.nextSibling) body.appendChild(head.nextSibling);
             card.appendChild(body);
             const toggle = e => {
+                if (acc.classList.contains('pages')) return;          // mode pages : le sous-menu choisit la section
                 if (e.target.closest('button, input, select, a, label, textarea') && !e.target.closest('.acc-chevron')) return;
                 setSectionOpen(card, !card.classList.contains('open'));
             };
@@ -2923,7 +2927,7 @@ function initAccordions() {
             setSectionOpen(card, saved !== undefined ? !!saved : idx === 0, false);
         });
         // « Tout ouvrir / Tout fermer »
-        if (!acc.previousElementSibling || !acc.previousElementSibling.classList.contains('acc-toolbar')) {
+        if (!acc.classList.contains('pages') && (!acc.previousElementSibling || !acc.previousElementSibling.classList.contains('acc-toolbar'))) {
             const bar = document.createElement('div');
             bar.className = 'acc-toolbar';
             bar.innerHTML = `<button class="btn btn-secondary btn-sm" data-i18n="acc.expand_all">${t('acc.expand_all')}</button><button class="btn btn-secondary btn-sm" data-i18n="acc.collapse_all">${t('acc.collapse_all')}</button>`;
@@ -2935,11 +2939,72 @@ function initAccordions() {
     });
 }
 
+// ─── Sous-menus de la barre latérale : une page par section ────────────────
+// Sécurité, Pare-feu et Paramètres s'ouvrent en accordéon dans le menu ; chaque sous-élément affiche une seule section
+// de l'onglet (les autres sont masquées). Dernière page vue mémorisée par onglet.
+const SUBPAGE_TABS = ['security', 'firewall', 'settings'];
+const SUBPAGE_STORE = 'linuxshield.subpage';
+function subpageLoad() { try { return JSON.parse(localStorage.getItem(SUBPAGE_STORE) || '{}') || {}; } catch (e) { return {}; } }
+
+function sectionsOf(tab) { return [...document.querySelectorAll(`#tab-${tab} .accordion.pages > .acc-section`)]; }
+
+function showSubpage(tab, key, persist = true) {
+    const secs = sectionsOf(tab);
+    if (!secs.length) return;
+    const target = secs.find(s => s.dataset.acc === key) || secs[0];
+    secs.forEach(s => { const on = s === target; s.classList.toggle('sub-active', on); if (on) setSectionOpen(s, true, false); });
+    document.querySelectorAll(`.nav-sub[data-tab="${tab}"] .nav-sub-btn`).forEach(b => b.classList.toggle('active', b.dataset.acc === target.dataset.acc));
+    const activeBtn = document.querySelector(`.nav-sub[data-tab="${tab}"] .nav-sub-btn.active`);
+    if (activeBtn && activeBtn.offsetParent) setTimeout(() => activeBtn.scrollIntoView({ block: 'nearest' }), 30);
+    if (persist) { const st = subpageLoad(); st[tab] = target.dataset.acc; try { localStorage.setItem(SUBPAGE_STORE, JSON.stringify(st)); } catch (e) { /* facultatif */ } }
+    const main = document.querySelector('main.content') || document.scrollingElement;
+    if (main && main.scrollTo) main.scrollTo({ top: 0 });
+}
+
+function expandSubnav(tab) {
+    document.querySelectorAll('.nav-sub').forEach(n => {
+        const on = n.dataset.tab === tab;
+        n.classList.toggle('open', on);
+        const parent = document.querySelector(`.nav-btn[data-tab="${n.dataset.tab}"]`);
+        if (parent) parent.setAttribute('aria-expanded', on ? 'true' : 'false');
+    });
+}
+
+function buildSubnav() {
+    SUBPAGE_TABS.forEach(tab => {
+        const parent = document.querySelector(`.nav-btn[data-tab="${tab}"]`);
+        const secs = sectionsOf(tab);
+        if (!parent || !secs.length || (parent.nextElementSibling && parent.nextElementSibling.classList.contains('nav-sub'))) return;
+        parent.classList.add('has-sub');
+        const chev = document.createElement('span'); chev.className = 'nav-chevron'; chev.setAttribute('aria-hidden', 'true');
+        parent.appendChild(chev);
+        const sub = document.createElement('div');
+        sub.className = 'nav-sub'; sub.dataset.tab = tab;
+        secs.forEach(sec => {
+            const label = sec.querySelector(':scope > .acc-head [data-i18n], :scope > .acc-head.acc-label, :scope > .acc-head .acc-label');
+            const b = document.createElement('button');
+            b.className = 'nav-sub-btn'; b.dataset.acc = sec.dataset.acc;
+            const key = sec.dataset.navI18n || (label && label.dataset.i18n);
+            if (key) { b.dataset.i18n = key; b.textContent = t(key); } else b.textContent = (label || sec.querySelector('.acc-head')).textContent.trim();
+            b.addEventListener('click', () => { if (currentTab !== tab) switchTab(tab); showSubpage(tab, sec.dataset.acc); });
+            sub.appendChild(b);
+        });
+        parent.after(sub);
+        // Clic sur l'élément parent : ouvre l'onglet et son sous-menu ; un second clic replie le sous-menu
+        parent.removeAttribute('onclick');
+        parent.addEventListener('click', () => {
+            if (currentTab === tab && sub.classList.contains('open')) { sub.classList.remove('open'); parent.setAttribute('aria-expanded', 'false'); return; }
+            switchTab(tab);
+        });
+    });
+}
+
 /** Fait défiler jusqu'à un élément en ouvrant d'abord la section accordéon qui le contient. */
 function revealEl(el, block = 'start') {
     if (!el) return;
     const sec = el.closest('.acc-section');
-    if (sec && !sec.classList.contains('open')) setSectionOpen(sec, true);
+    if (sec && sec.parentElement.classList.contains('pages')) showSubpage(sec.dataset.accGroup, sec.dataset.acc);
+    else if (sec && !sec.classList.contains('open')) setSectionOpen(sec, true);
     if (el.tagName === 'DETAILS') el.open = true;
     setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block }), 60);
 }
@@ -2949,12 +3014,15 @@ function openSection(tab, key) {
     switchTab(tab);
     const card = document.querySelector(`#tab-${tab} .acc-section[data-acc="${key}"]`);
     if (!card) return;
+    if (card.parentElement.classList.contains('pages')) { showSubpage(tab, key); return; }
     setSectionOpen(card, true);
     setTimeout(() => card.scrollIntoView({ behavior: 'smooth', block: 'start' }), 120);
 }
 
 document.addEventListener('DOMContentLoaded', () => {
     initAccordions();
+    buildSubnav();
+    SUBPAGE_TABS.forEach(tab => showSubpage(tab, subpageLoad()[tab], false));
     const params = new URLSearchParams(location.search);
     const nav = (params.get('lang') || navigator.language || 'en').slice(0, 2).toLowerCase();
     setLanguage(window.I18N && window.I18N[nav] ? nav : 'en');

@@ -52,15 +52,15 @@ versions itself (popup or Security tab) and can install them on its own when the
 
 ### Direct download
 
-- Mint / Ubuntu: [clamav-antivirus_1.29.1_all.deb](https://www.dukiwi.com/repo/clamav-antivirus/clamav-antivirus_1.29.1_all.deb)
-- Fedora: [clamav-antivirus-1.29.1-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/clamav-antivirus-1.29.1-1.noarch.rpm)
+- Mint / Ubuntu: [clamav-antivirus_1.30.0_all.deb](https://www.dukiwi.com/repo/clamav-antivirus/clamav-antivirus_1.30.0_all.deb)
+- Fedora: [clamav-antivirus-1.30.0-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/clamav-antivirus-1.30.0-1.noarch.rpm)
 - All versions: [www.dukiwi.com/repo](https://www.dukiwi.com/repo)
 
 ### Installing a downloaded package by hand
 
 ```bash
-sudo apt install ./clamav-antivirus_1.29.1_all.deb          # Mint / Ubuntu
-sudo dnf install ./clamav-antivirus-1.29.1-1.noarch.rpm      # Fedora
+sudo apt install ./clamav-antivirus_1.30.0_all.deb          # Mint / Ubuntu
+sudo dnf install ./clamav-antivirus-1.30.0-1.noarch.rpm      # Fedora
 ```
 
 The installation enables the system service and the scheduler, then starts the initial scan:
@@ -210,6 +210,12 @@ sudo dnf remove clamav-antivirus   # Fedora
 - **Telemetry after the first full scan and on demand** — the first full scan completed after consent triggers the
   anonymous report without waiting for the week (performance measurements); "Send telemetry now" button in
   Settings.
+- **Sub-menus in the sidebar, one page per section** — Security, Firewall and Settings unfold in the sidebar like an
+  accordion (chevron; a second click folds the sub-menu); each sub-item opens a page showing only that section, with
+  short translated labels (Firewall: Firewall, Network type, Rules, Remote SSH; Security: Score and checklist,
+  Honeypot, Links and e-mails, Known vulnerabilities, Integrity and rootkits, Hardening, Application update, Data
+  breaches, Apps outside repositories, Trusted programs; Settings: fourteen pages). The last page seen is remembered per
+  tab; links to a card (checklist "Fix", popups, simple view) open its page. The sidebar scrolls when a sub-menu is long.
 - **Security tab in sections** — the Security tab uses the same accordion: Score and checklist (the score ring now sits
   inside this section, counts in its title), Network honeypot, Links and e-mails, Known vulnerabilities, Integrity and
   rootkits, Hardening (Lynis), Application update, Data breaches, Apps outside the repositories and Trusted programs,
@@ -600,8 +606,8 @@ python3 clamav-antivirus.py
 ## Building the packages
 
 ```bash
-./build-deb.sh        # clamav-antivirus_1.29.1_all.deb   (Mint / Ubuntu)
-./build-rpm.sh        # clamav-antivirus-1.29.1-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
+./build-deb.sh        # clamav-antivirus_1.30.0_all.deb   (Mint / Ubuntu)
+./build-rpm.sh        # clamav-antivirus-1.30.0-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
 ./build-meta.sh       # linux-shield_1.0.0_all.deb + linux-shield-1.0.0-1.noarch.rpm (metapackage, published once)
 ```
 
