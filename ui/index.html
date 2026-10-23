@@ -229,7 +229,7 @@
                     <option value="de">Deutsch</option>
                     <option value="it">Italiano</option>
                 </select></label>
-                <small class="version">v1.30.1 — <a href="#" class="credits-link" onclick="openCredits(); return false;" data-i18n="sidebar.credits">Crédits</a> · <a href="#" class="credits-link" onclick="openLegal(); return false;" data-i18n="legal.link">Avertissement</a></small>
+                <small class="version">v1.30.3 — <a href="#" class="credits-link" onclick="openCredits(); return false;" data-i18n="sidebar.credits">Crédits</a> · <a href="#" class="credits-link" onclick="openLegal(); return false;" data-i18n="legal.link">Avertissement</a></small>
             </div>
         </div>
     </aside>
@@ -1442,8 +1442,8 @@
             </div>
             <div class="modal-tabs">
                 <button class="modal-tab active" onclick="switchCreditsTab('app', this)">Linux Shield</button>
-                <button class="modal-tab" onclick="switchCreditsTab('clamav', this)">ClamAV</button>
-                <button class="modal-tab" onclick="switchCreditsTab('freshclam', this)">Freshclam</button>
+                <button class="modal-tab" onclick="switchCreditsTab('components', this)" data-i18n="credits.tab.components">Composants</button>
+                <button class="modal-tab" onclick="switchCreditsTab('sources', this)" data-i18n="credits.tab.sources">Sources de données</button>
                 <button class="modal-tab" onclick="switchCreditsTab('licence', this)" data-i18n="credits.tab.licence">Licence</button>
                 <button class="modal-tab" onclick="switchCreditsTab('legal', this)" data-i18n="legal.link">Avertissement</button>
             </div>
@@ -1464,7 +1464,7 @@
             </svg>
                         <div>
                             <h3>Linux Shield</h3>
-                            <span class="credits-version">Version 1.8.0</span>
+                            <span class="credits-version" id="creditsVersion"></span>
                         </div>
                     </div>
                     <p data-i18n="credits.app.p1">Interface graphique moderne pour ClamAV sur Linux. Conçue pour simplifier la gestion de votre antivirus : mise à jour des signatures, scans de répertoires, quarantaine automatique et surveillance système via un bouclier dans la barre des tâches.</p>
@@ -1484,45 +1484,21 @@
                             <span>Proudly made<br>in Switzerland</span>
                         </div>
                     </div>
+                    <div class="credits-community">
+                        <h4 data-i18n="credits.community">Merci à la communauté</h4>
+                        <p class="text-muted" data-i18n="credits.community.intro">Ces personnes ont aidé à rendre Linux Shield meilleur :</p>
+                        <ul id="creditsCommunity" class="credits-community-list"></ul>
+                    </div>
                 </div>
 
-                <div class="credits-panel" id="credits-clamav">
-                    <h3>ClamAV</h3>
-                    <p data-i18n="credits.clamav.p1">ClamAV est un moteur antivirus open source conçu pour détecter les trojans, virus, malwares et autres menaces. Il est largement utilisé sur les serveurs de messagerie et comme solution antivirus sur les systèmes Unix/Linux.</p>
-                    <div class="credits-features">
-                        <div class="credits-feature">
-                            <strong data-i18n="credits.clamav.engine">Moteur de scan</strong>
-                            <span data-i18n="credits.clamav.engine_text">clamscan — Analyseur en ligne de commande pour scanner fichiers et répertoires de manière récursive.</span>
-                        </div>
-                        <div class="credits-feature">
-                            <strong data-i18n="credits.clamav.daemon">Daemon</strong>
-                            <span data-i18n="credits.clamav.daemon_text">clamd — Service en arrière-plan pour des scans plus rapides via un socket, utilisé pour vérifier instantanément les programmes suspects.</span>
-                        </div>
-                        <div class="credits-feature">
-                            <strong data-i18n="credits.clamav.db">Base de données</strong>
-                            <span data-i18n="credits.clamav.db_text">Signatures virales maintenues par Cisco Talos, mises à jour quotidiennement avec des millions de signatures.</span>
-                        </div>
-                    </div>
-                    <p class="credits-link-ext"><span data-i18n="credits.website">Site officiel :</span> <code>https://www.clamav.net</code></p>
+                <div class="credits-panel" id="credits-components">
+                    <p class="text-muted" data-i18n="credits.components.intro"></p>
+                    <div id="creditsComponents" class="credits-list"></div>
                 </div>
 
-                <div class="credits-panel" id="credits-freshclam">
-                    <h3>Freshclam</h3>
-                    <p data-i18n="credits.freshclam.p1">Freshclam est l'outil de mise à jour automatique des bases de données virales de ClamAV. Il télécharge les dernières signatures depuis les serveurs miroirs de ClamAV.</p>
-                    <div class="credits-features">
-                        <div class="credits-feature">
-                            <strong data-i18n="credits.freshclam.auto">Mise à jour automatique</strong>
-                            <span data-i18n="credits.freshclam.auto_text">Le service clamav-freshclam tourne en arrière-plan ; Linux Shield force en plus une recherche tous les jours à 07:00 et 5 minutes après chaque démarrage.</span>
-                        </div>
-                        <div class="credits-feature">
-                            <strong data-i18n="credits.freshclam.db">Bases de données</strong>
-                            <span data-i18n="credits.freshclam.db_text">main.cvd — Base principale. daily.cvd — Mises à jour quotidiennes. bytecode.cvd — Signatures bytecode avancées.</span>
-                        </div>
-                        <div class="credits-feature">
-                            <strong data-i18n="credits.freshclam.config">Configuration</strong>
-                            <span data-i18n="credits.freshclam.config_text">Configurable via /etc/clamav/freshclam.conf — fréquence, miroirs, proxy, notifications.</span>
-                        </div>
-                    </div>
+                <div class="credits-panel" id="credits-sources">
+                    <p class="text-muted" data-i18n="credits.sources.intro"></p>
+                    <div id="creditsSources" class="credits-list"></div>
                 </div>
 
                 <div class="credits-panel" id="credits-licence">

@@ -75,6 +75,7 @@ function setLanguage(code) {
     document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
     document.querySelectorAll('[data-i18n-placeholder]').forEach(el => { el.placeholder = t(el.dataset.i18nPlaceholder); });
     document.querySelectorAll('[data-i18n-title]').forEach(el => { el.title = t(el.dataset.i18nTitle); });
+    if ($('creditsModal') && $('creditsModal').classList.contains('open')) renderCredits();
     ['langSelect', 'langSelectSimple', 'setLanguage'].forEach(id => { const sel = $(id); if (sel && sel.value !== code) sel.value = code; });
     // Re-rendre les zones dynamiques avec la nouvelle langue
     if (lastStatus) updateDashboardStatus(lastStatus);
@@ -2842,7 +2843,36 @@ function simulateBackend(data) {
 
 // ─── Credits Modal ──────────────────────────────────────────────────────────
 
+// ─── Crédits : composants et sources de données ─────────────────────────────
+const CREDITS_COMPONENTS = [{"g": "antivirus", "id": "clamav", "name": "ClamAV (clamscan, clamd, clamdscan)", "lic": "GPL-2.0", "url": "https://www.clamav.net"}, {"g": "antivirus", "id": "freshclam", "name": "freshclam", "lic": "GPL-2.0", "url": "https://docs.clamav.net/manual/Usage/SignatureManagement.html"}, {"g": "integrity", "id": "lynis", "name": "Lynis", "lic": "GPL-3.0", "url": "https://cisofy.com/lynis/"}, {"g": "integrity", "id": "chkrootkit", "name": "chkrootkit", "lic": "BSD-2-Clause", "url": "https://www.chkrootkit.org"}, {"g": "integrity", "id": "unhide", "name": "unhide, unhide-tcp", "lic": "GPL-3.0", "url": "https://github.com/YJesus/Unhide"}, {"g": "integrity", "id": "debsums", "name": "debsums · rpm -V", "lic": "GPL-2.0", "url": "https://packages.debian.org/debsums"}, {"g": "integrity", "id": "gnupg", "name": "GnuPG (gpgv)", "lic": "GPL-3.0", "url": "https://gnupg.org"}, {"g": "network", "id": "ufw", "name": "UFW · firewalld", "lic": "GPL-3.0 · GPL-2.0", "url": "https://launchpad.net/ufw"}, {"g": "network", "id": "networkmanager", "name": "NetworkManager · iproute2", "lic": "GPL-2.0", "url": "https://networkmanager.dev"}, {"g": "network", "id": "openssh", "name": "OpenSSH", "lic": "BSD", "url": "https://www.openssh.com"}, {"g": "network", "id": "msmtp", "name": "msmtp", "lic": "GPL-3.0", "url": "https://marlam.de/msmtp/"}, {"g": "system", "id": "systemd", "name": "systemd · journald", "lic": "LGPL-2.1", "url": "https://systemd.io"}, {"g": "system", "id": "linux", "name": "Noyau Linux : fanotify, udev, sysfs", "lic": "GPL-2.0", "url": "https://www.kernel.org"}, {"g": "system", "id": "polkit", "name": "polkit (pkexec)", "lic": "LGPL-2.0", "url": "https://github.com/polkit-org/polkit"}, {"g": "system", "id": "packages", "name": "APT (python3-apt) · dnf", "lic": "GPL-2.0", "url": "https://salsa.debian.org/apt-team/apt"}, {"g": "system", "id": "fwupd", "name": "fwupd", "lic": "LGPL-2.1", "url": "https://fwupd.org"}, {"g": "system", "id": "mac", "name": "AppArmor · SELinux · dconf", "lic": "GPL-2.0 · LGPL", "url": "https://apparmor.net"}, {"g": "backup", "id": "timeshift", "name": "Timeshift", "lic": "GPL-3.0", "url": "https://github.com/linuxmint/timeshift"}, {"g": "backup", "id": "rsync", "name": "rsync · rclone", "lic": "GPL-3.0 · MIT", "url": "https://rsync.samba.org"}, {"g": "backup", "id": "gocryptfs", "name": "gocryptfs", "lic": "MIT", "url": "https://nuetzlich.net/gocryptfs/"}, {"g": "backup", "id": "udisks", "name": "UDisks2", "lic": "GPL-2.0", "url": "https://github.com/storaged-project/udisks"}, {"g": "apps", "id": "flatpak", "name": "Flatpak · Snap", "lic": "LGPL-2.1 · GPL-3.0", "url": "https://flatpak.org"}, {"g": "apps", "id": "webext", "name": "Thunderbird · Firefox · Chromium (WebExtensions)", "lic": "MPL-2.0 · BSD", "url": "https://developer.mozilla.org/docs/Mozilla/Add-ons/WebExtensions"}, {"g": "ui", "id": "python", "name": "Python 3 · PyGObject", "lic": "PSF · LGPL-2.1", "url": "https://www.python.org"}, {"g": "ui", "id": "gtk", "name": "GTK 3 · WebKitGTK", "lic": "LGPL-2.1", "url": "https://webkitgtk.org"}, {"g": "ui", "id": "indicator", "name": "Ayatana AppIndicator", "lic": "LGPL-3.0", "url": "https://github.com/AyatanaIndicators"}];
+// Communauté : personnes qui ont aidé à améliorer Linux Shield (nom, apport traduit)
+const CREDITS_COMMUNITY = [
+    { name: 'Christiaan Van Jaarsveld', key: 'credits.community.vanjaarsveld' },
+    { name: 'TimMayle', key: 'credits.community.timmayle' },
+];
+const CREDITS_SOURCES = [{"id": "talos", "name": "Cisco Talos (signatures ClamAV)", "url": "https://www.clamav.net/documents/clamav-virus-database-faq"}, {"id": "osv", "name": "OSV.dev · Ubuntu CVE Tracker", "url": "https://osv.dev"}, {"id": "fedora", "name": "Fedora (dnf updateinfo)", "url": "https://bodhi.fedoraproject.org"}, {"id": "openphish", "name": "OpenPhish", "url": "https://openphish.com"}, {"id": "phishdb", "name": "Phishing.Database", "url": "https://github.com/Phishing-Database/Phishing.Database"}, {"id": "urlhaus", "name": "URLhaus (abuse.ch) via urlhaus-filter", "url": "https://gitlab.com/malware-filter/urlhaus-filter"}, {"id": "abusech", "name": "Feodo Tracker · SSLBL (abuse.ch)", "url": "https://abuse.ch"}, {"id": "ipapi", "name": "ip-api.com", "url": "https://ip-api.com"}, {"id": "hibp", "name": "Have I Been Pwned · XposedOrNot", "url": "https://haveibeenpwned.com"}, {"id": "lvfs", "name": "LVFS (Linux Vendor Firmware Service)", "url": "https://fwupd.org/lvfs/"}];
+function creditsLink(url) {
+    return `<a href="#" class="credits-url" onclick="sendToBackend({action:'open_url', url:'${escapeJs(url)}'}); return false;">${escapeHtml(url.replace(/^https?:\/\//, '').replace(/\/$/, ''))}</a>`;
+}
+function renderCredits() {
+    const v = ((document.querySelector('.sidebar .version') || {}).textContent || '').match(/\d+\.\d+\.\d+/);
+    if ($('creditsVersion')) $('creditsVersion').textContent = v ? `Version ${v[0]}` : '';
+    if ($('creditsCommunity')) $('creditsCommunity').innerHTML = CREDITS_COMMUNITY.map(p => `<li><strong>${escapeHtml(p.name)}</strong> — ${escapeHtml(t(p.key))}</li>`).join('');
+    const groups = [...new Set(CREDITS_COMPONENTS.map(c => c.g))];
+    if ($('creditsComponents')) $('creditsComponents').innerHTML = groups.map(g => `
+        <h4 class="credits-group">${t('credits.g.' + g)}</h4>
+        ${CREDITS_COMPONENTS.filter(c => c.g === g).map(c => `<div class="credits-item">
+            <div class="credits-item-head"><strong>${escapeHtml(c.name)}</strong><span class="scope-badge scope-system" title="${escapeHtml(t('credits.licence_label'))}">${escapeHtml(c.lic)}</span></div>
+            <span>${escapeHtml(t('credits.c.' + c.id))}</span>${creditsLink(c.url)}
+        </div>`).join('')}`).join('');
+    if ($('creditsSources')) $('creditsSources').innerHTML = CREDITS_SOURCES.map(s => `<div class="credits-item">
+            <div class="credits-item-head"><strong>${escapeHtml(s.name)}</strong></div>
+            <span>${escapeHtml(t('credits.s.' + s.id))}</span>${creditsLink(s.url)}
+        </div>`).join('');
+}
+
 function openCredits() {
+    renderCredits();
     $('creditsModal').classList.add('open');
 }
 

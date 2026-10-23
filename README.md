@@ -52,15 +52,15 @@ versions itself (popup or Security tab) and can install them on its own when the
 
 ### Direct download
 
-- Mint / Ubuntu: [clamav-antivirus_1.30.1_all.deb](https://www.dukiwi.com/repo/clamav-antivirus/clamav-antivirus_1.30.1_all.deb)
-- Fedora: [clamav-antivirus-1.30.1-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/clamav-antivirus-1.30.1-1.noarch.rpm)
+- Mint / Ubuntu: [clamav-antivirus_1.30.3_all.deb](https://www.dukiwi.com/repo/clamav-antivirus/clamav-antivirus_1.30.3_all.deb)
+- Fedora: [clamav-antivirus-1.30.3-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/clamav-antivirus-1.30.3-1.noarch.rpm)
 - All versions: [www.dukiwi.com/repo](https://www.dukiwi.com/repo)
 
 ### Installing a downloaded package by hand
 
 ```bash
-sudo apt install ./clamav-antivirus_1.30.1_all.deb          # Mint / Ubuntu
-sudo dnf install ./clamav-antivirus-1.30.1-1.noarch.rpm      # Fedora
+sudo apt install ./clamav-antivirus_1.30.3_all.deb          # Mint / Ubuntu
+sudo dnf install ./clamav-antivirus-1.30.3-1.noarch.rpm      # Fedora
 ```
 
 The installation enables the system service and the scheduler, then starts the initial scan:
@@ -210,6 +210,14 @@ sudo dnf remove clamav-antivirus   # Fedora
 - **Telemetry after the first full scan and on demand** — the first full scan completed after consent triggers the
   anonymous report without waiting for the week (performance measurements); "Send telemetry now" button in
   Settings.
+- **Thanks to the community** — the Credits window names the people who helped make Linux Shield better: Christiaan
+  Van Jaarsveld (the name "Linux Shield") and TimMayle (issues: hard-coded kernel CVEs and Linux Mint texts).
+- **Credits: every component and data source** — the Credits window lists the 26 tools Linux Shield drives, grouped
+  (Antivirus, Integrity and audit, Firewall and network, System, Backups and encryption, Applications and browsers,
+  Interface), each with its role, licence and website, and the 10 data sources and online services it consults (Cisco
+  Talos signatures, OSV.dev and the Ubuntu CVE Tracker, Fedora advisories, OpenPhish, Phishing.Database, URLhaus via
+  urlhaus-filter, Feodo Tracker and SSLBL, ip-api.com, Have I Been Pwned and XposedOrNot, LVFS) with what each is used
+  for; the version shown is the installed one and the description covers the whole security suite.
 - **Sub-menus in the sidebar, one page per section** — Security, Firewall and Settings unfold in the sidebar like an
   accordion (chevron; a second click folds the sub-menu); the item itself opens the main page of the tab (Firewall: firewall and network type; Settings: general and popups;
   Security: score and checklist) and each sub-item opens a page showing only that section, with
@@ -605,8 +613,8 @@ python3 clamav-antivirus.py
 ## Building the packages
 
 ```bash
-./build-deb.sh        # clamav-antivirus_1.30.1_all.deb   (Mint / Ubuntu)
-./build-rpm.sh        # clamav-antivirus-1.30.1-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
+./build-deb.sh        # clamav-antivirus_1.30.3_all.deb   (Mint / Ubuntu)
+./build-rpm.sh        # clamav-antivirus-1.30.3-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
 ./build-meta.sh       # linux-shield_1.0.0_all.deb + linux-shield-1.0.0-1.noarch.rpm (metapackage, published once)
 ```
 
@@ -718,6 +726,15 @@ clamav-antivirus/
 ├── build-deb.sh                     # .deb build script
 └── README.md
 ```
+
+---
+
+## Community
+
+Thanks to the people who helped make Linux Shield better:
+
+- **Christiaan Van Jaarsveld** — the name "Linux Shield"
+- **TimMayle** — issues: hard-coded kernel CVEs and Linux Mint texts
 
 ---
 
