@@ -40,8 +40,11 @@ FEEDS = [
     {"name": "openphish", "label": "OpenPhish", "kind": "urls", "interval": 6 * 3600,
      "url": "https://raw.githubusercontent.com/openphish/public_feed/main/feed.txt",
      "home": "https://github.com/openphish/public_feed"},
-    {"name": "urlhaus", "label": "URLhaus (abuse.ch)", "kind": "urls", "interval": 6 * 3600,
-     "url": "https://urlhaus.abuse.ch/downloads/text_online/", "home": "https://urlhaus.abuse.ch/"},
+    # abuse.ch a retiré ses exports publics (HTTP 410 depuis octobre 2026, API avec clé) : miroir libre urlhaus-filter,
+    # construit depuis l'API URLhaus toutes les 12 h, format adblock (« ||hôte/chemin^$all », hôtes ou IP seuls)
+    {"name": "urlhaus", "label": "URLhaus (abuse.ch, via urlhaus-filter)", "kind": "abp", "interval": 6 * 3600,
+     "url": "https://malware-filter.gitlab.io/malware-filter/urlhaus-filter-online.txt",
+     "home": "https://gitlab.com/malware-filter/urlhaus-filter"},
     {"name": "phishing_db", "label": "Phishing.Database", "kind": "domains", "interval": 7 * 86400,
      "url": "https://raw.githubusercontent.com/Phishing-Database/Phishing.Database/master/phishing-domains-ACTIVE.txt",
      "home": "https://github.com/Phishing-Database/Phishing.Database"},
@@ -432,6 +435,11 @@ class UrlGuard:
             for feed in FEEDS:
                 name = feed["name"]
                 m = dict(self.meta.get(name) or {})
+                if m.get("source") != feed["url"]:
+                    # Source changée (URLhaus → urlhaus-filter) : ni ETag ni date de l'ancienne, téléchargement immédiat
+                    m = {k: v for k, v in m.items() if k not in ("etag", "last_modified", "fetched_at")}
+                    m["source"] = feed["url"]
+                    self.last_attempt.pop(name, None)
                 if not force and now - _parse_iso(m.get("fetched_at")) < feed["interval"]:
                     continue
                 if not force and now - self.last_attempt.get(name, 0) < 1800:
@@ -506,7 +514,20 @@ class UrlGuard:
         entries, hosts = set(), set()
         for line in text.splitlines():
             line = line.strip()
-            if not line or line.startswith("#"):
+            if not line or line.startswith(("#", "!", "[")):
+                continue
+            if feed["kind"] == "abp":
+                # « ||hôte/chemin^$all » : adresse exacte ; « ||hôte^ », hôte ou IP seul : hôte entier malveillant
+                line = line[2:] if line.startswith("||") else line
+                line = line.split("^", 1)[0].split("$", 1)[0].strip()
+                if not line:
+                    continue
+                host, _ = _host_of("http://" + line)
+                if "/" in line:
+                    for v in norm_url_variants("http://" + line):
+                        entries.add(v)
+                if host:
+                    hosts.add(host)
                 continue
             if feed["kind"] == "domains":
                 entries.add(line.lower().rstrip("."))

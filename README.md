@@ -52,15 +52,15 @@ versions itself (popup or Security tab) and can install them on its own when the
 
 ### Direct download
 
-- Mint / Ubuntu: [clamav-antivirus_1.28.0_all.deb](https://www.dukiwi.com/repo/clamav-antivirus/clamav-antivirus_1.28.0_all.deb)
-- Fedora: [clamav-antivirus-1.28.0-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/clamav-antivirus-1.28.0-1.noarch.rpm)
+- Mint / Ubuntu: [clamav-antivirus_1.28.1_all.deb](https://www.dukiwi.com/repo/clamav-antivirus/clamav-antivirus_1.28.1_all.deb)
+- Fedora: [clamav-antivirus-1.28.1-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/clamav-antivirus-1.28.1-1.noarch.rpm)
 - All versions: [www.dukiwi.com/repo](https://www.dukiwi.com/repo)
 
 ### Installing a downloaded package by hand
 
 ```bash
-sudo apt install ./clamav-antivirus_1.28.0_all.deb          # Mint / Ubuntu
-sudo dnf install ./clamav-antivirus-1.28.0-1.noarch.rpm      # Fedora
+sudo apt install ./clamav-antivirus_1.28.1_all.deb          # Mint / Ubuntu
+sudo dnf install ./clamav-antivirus-1.28.1-1.noarch.rpm      # Fedora
 ```
 
 The installation enables the system service and the scheduler, then starts the initial scan:
@@ -210,6 +210,10 @@ sudo dnf remove clamav-antivirus   # Fedora
 - **Telemetry after the first full scan and on demand** — the first full scan completed after consent triggers the
   anonymous report without waiting for the week (performance measurements); "Send telemetry now" button in
   Settings.
+- **URLhaus list restored** — abuse.ch withdrew its public URLhaus exports (HTTP 410 on every download URL, the API now
+  requires a key): the link checker now reads the free urlhaus-filter mirror (malware-filter on GitLab, built from the
+  URLhaus API every 12 hours, adblock format with exact addresses and whole hosts); a changed feed source drops the
+  old ETag and downloads at once.
 - **Six new checklist items** — *Automatic login* (LightDM, GDM, SDDM configuration: a stolen laptop opens straight
   onto the files), *Screen lock* (per user: Cinnamon/GNOME dconf lock-enabled and idle-delay, KDE kscreenlockerrc),
   *Firmware* (fwupd / LVFS updates checked daily, "Update the firmware" runs `fwupdmgr update` through the service,
@@ -306,7 +310,7 @@ sudo dnf remove clamav-antivirus   # Fedora
   package or store application → benign).
 - **Link and e-mail checking: Thunderbird, Firefox, Chrome, Chromium, Edge, Brave extensions** — service module
   `clamav_urlguard.py`: malicious-site lists downloaded several times a day (OpenPhish and Phishing.Database on
-  GitHub, URLhaus at abuse.ch; conditional ETag requests, compact indexes of sorted fingerprints: 4 MB for
+  GitHub, URLhaus via the urlhaus-filter mirror; conditional ETag requests, compact indexes of sorted fingerprints: 4 MB for
   450,000 entries, 0.4 ms per check) and list-free heuristics: raw IP address, identifier before an "@", punycode,
   imitated brand (replaced characters "paypa1", typo on a neighbouring key, brand as a subdomain, real brand domain
   at the head of another host "paypal.com.example.ru", "paypal-secure" combination), shorteners resolved (HEAD
@@ -584,8 +588,8 @@ python3 clamav-antivirus.py
 ## Building the packages
 
 ```bash
-./build-deb.sh        # clamav-antivirus_1.28.0_all.deb   (Mint / Ubuntu)
-./build-rpm.sh        # clamav-antivirus-1.28.0-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
+./build-deb.sh        # clamav-antivirus_1.28.1_all.deb   (Mint / Ubuntu)
+./build-rpm.sh        # clamav-antivirus-1.28.1-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
 ./build-meta.sh       # linux-shield_1.0.0_all.deb + linux-shield-1.0.0-1.noarch.rpm (metapackage, published once)
 ```
 
