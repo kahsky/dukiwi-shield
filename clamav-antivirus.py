@@ -4,7 +4,7 @@ Linux Shield — interface graphique (GTK + WebKit) de la suite de sécurité po
 A modern HTML/CSS/JS interface for ClamAV with system tray integration.
 
 Les opérations privilégiées (scan complet du système, mise à jour des signatures)
-sont déléguées au service système clamav-antivirus-daemon (root) via un socket
+sont déléguées au service système linux-shield-daemon (root) via un socket
 Unix : aucun mot de passe n'est demandé. Si le service est absent, l'application
 se rabat sur pkexec (demande de mot de passe administrateur).
 

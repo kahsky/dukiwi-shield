@@ -1,6 +1,6 @@
 [Unit]
 Description=Linux Shield - recherche de mises à jour des signatures
-After=network-online.target clamav-antivirus-daemon.service
+After=network-online.target linux-shield-daemon.service
 Wants=network-online.target
 
 [Service]

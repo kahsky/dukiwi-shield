@@ -69,12 +69,16 @@ fi
 systemctl enable clamd@scan.service >/dev/null 2>&1 || true
 systemctl enable clamav-freshclam.service >/dev/null 2>&1 || true
 systemctl start clamav-freshclam.service >/dev/null 2>&1 || true
+# Service renommé (1.30.5) : l'ancienne unité (fichier encore présent pendant %post) est arrêtée et désactivée
+if [ -f %{_unitdir}/linux-shield-daemon.service ] && [ ! -L %{_unitdir}/linux-shield-daemon.service ]; then
+    systemctl disable --now clamav-antivirus-daemon.service >/dev/null 2>&1 || true
+fi
 systemctl daemon-reload >/dev/null 2>&1 || true
 udevadm control --reload-rules >/dev/null 2>&1 || true
 /opt/clamav-antivirus/clamav-antivirus-browser-setup install >/dev/null 2>&1 || true
-systemctl enable clamav-antivirus-daemon.service >/dev/null 2>&1 || true
+systemctl enable linux-shield-daemon.service >/dev/null 2>&1 || true
 systemctl enable clamav-antivirus-update.timer >/dev/null 2>&1 || true
-systemctl restart clamav-antivirus-daemon.service >/dev/null 2>&1 || true
+systemctl restart linux-shield-daemon.service >/dev/null 2>&1 || true
 systemctl start clamav-antivirus-update.timer >/dev/null 2>&1 || true
 pkill -f "/opt/clamav-antivirus/clamav-antivirus.py" >/dev/null 2>&1 || true
 if command -v update-desktop-database >/dev/null 2>&1; then update-desktop-database /usr/share/applications/ >/dev/null 2>&1 || true; fi
@@ -86,8 +90,8 @@ if [ "$1" = "0" ]; then
     pkill -f "/opt/clamav-antivirus/clamav-antivirus.py" >/dev/null 2>&1 || true
     systemctl stop clamav-antivirus-update.timer >/dev/null 2>&1 || true
     systemctl disable clamav-antivirus-update.timer >/dev/null 2>&1 || true
-    systemctl stop clamav-antivirus-daemon.service >/dev/null 2>&1 || true
-    systemctl disable clamav-antivirus-daemon.service >/dev/null 2>&1 || true
+    systemctl stop linux-shield-daemon.service >/dev/null 2>&1 || true
+    systemctl disable linux-shield-daemon.service >/dev/null 2>&1 || true
 fi
 
 %postun
@@ -96,7 +100,7 @@ udevadm control --reload-rules >/dev/null 2>&1 || true
 
 %files
 /opt/clamav-antivirus
-%{_unitdir}/clamav-antivirus-daemon.service
+%{_unitdir}/linux-shield-daemon.service
 %{_unitdir}/clamav-antivirus-update.service
 %{_unitdir}/clamav-antivirus-update.timer
 %{_udevrulesdir}/*.rules

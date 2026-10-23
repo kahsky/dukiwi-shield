@@ -52,23 +52,23 @@ versions itself (popup or Security tab) and can install them on its own when the
 
 ### Direct download
 
-- Mint / Ubuntu: [clamav-antivirus_1.30.4_all.deb](https://www.dukiwi.com/repo/clamav-antivirus/clamav-antivirus_1.30.4_all.deb)
-- Fedora: [clamav-antivirus-1.30.4-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/clamav-antivirus-1.30.4-1.noarch.rpm)
+- Mint / Ubuntu: [clamav-antivirus_1.30.5_all.deb](https://www.dukiwi.com/repo/clamav-antivirus/clamav-antivirus_1.30.5_all.deb)
+- Fedora: [clamav-antivirus-1.30.5-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/clamav-antivirus-1.30.5-1.noarch.rpm)
 - All versions: [www.dukiwi.com/repo](https://www.dukiwi.com/repo)
 
 ### Installing a downloaded package by hand
 
 ```bash
-sudo apt install ./clamav-antivirus_1.30.4_all.deb          # Mint / Ubuntu
-sudo dnf install ./clamav-antivirus-1.30.4-1.noarch.rpm      # Fedora
+sudo apt install ./clamav-antivirus_1.30.5_all.deb          # Mint / Ubuntu
+sudo dnf install ./clamav-antivirus-1.30.5-1.noarch.rpm      # Fedora
 ```
 
 The installation enables the system service and the scheduler, then starts the initial scan:
 
 ```bash
-systemctl status clamav-antivirus-daemon      # service (root)
+systemctl status linux-shield-daemon          # service (root)
 systemctl list-timers clamav-antivirus-update # next update check
-journalctl -u clamav-antivirus-daemon -f      # follow the initial scan
+journalctl -u linux-shield-daemon -f          # follow the initial scan
 ```
 
 ### Uninstalling
@@ -82,7 +82,7 @@ sudo dnf remove clamav-antivirus   # Fedora
 
 ## Features
 
-- **System service** (`clamav-antivirus-daemon`) — runs permanently as root and performs full scans and updates
+- **System service** (`linux-shield-daemon`) — runs permanently as root and performs full scans and updates
   on behalf of a user **without admin rights**, hence **without a password**. If the service is missing, the
   application asks for the administrator password (`pkexec`).
 - **Scheduled updates** — signature check **every day at 07:00** and **5 minutes after each boot** (systemd timer,
@@ -214,6 +214,10 @@ sudo dnf remove clamav-antivirus   # Fedora
   the flagged /etc/sudoers.d files are approved together with the SHA-256 of their content, so they no longer count in
   the score but are flagged again as soon as the file changes (a rule widened to `NOPASSWD: ALL` reappears). Approved
   rules are listed in Security › Trusted programs with "Remove"; administrator required in family mode.
+- **Service renamed `linux-shield-daemon`** — the system service unit is now `linux-shield-daemon.service`, with
+  `clamav-antivirus-daemon.service` kept as an alias so existing commands, scripts and logs keep working. On upgrade the
+  package stops the old unit and removes its activation link before enabling the new one (Debian postinst; RPM %post
+  while the old file is still present); package name, paths and socket are unchanged, so automatic updates go through.
 - **Thanks to the community** — the Credits window names the people who helped make Linux Shield better: Christiaan
   Van Jaarsveld (the name "Linux Shield") and TimMayle (issues: hard-coded kernel CVEs and Linux Mint texts).
 - **Credits: every component and data source** — the Credits window lists the 26 tools Linux Shield drives, grouped
@@ -617,8 +621,8 @@ python3 clamav-antivirus.py
 ## Building the packages
 
 ```bash
-./build-deb.sh        # clamav-antivirus_1.30.4_all.deb   (Mint / Ubuntu)
-./build-rpm.sh        # clamav-antivirus-1.30.4-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
+./build-deb.sh        # clamav-antivirus_1.30.5_all.deb   (Mint / Ubuntu)
+./build-rpm.sh        # clamav-antivirus-1.30.5-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
 ./build-meta.sh       # linux-shield_1.0.0_all.deb + linux-shield-1.0.0-1.noarch.rpm (metapackage, published once)
 ```
 
@@ -630,7 +634,7 @@ Both packages share the same file tree (`build-deb.sh --stage-only`) and the sam
 
 | systemd unit                       | Role                                                                  |
 |------------------------------------|-----------------------------------------------------------------------|
-| `clamav-antivirus-daemon.service`  | Root daemon, socket `/run/clamav-antivirus/daemon.sock` (mode 0666)   |
+| `linux-shield-daemon.service`      | Root daemon, socket `/run/clamav-antivirus/daemon.sock` (mode 0666); alias `clamav-antivirus-daemon.service` |
 | `clamav-antivirus-update.timer`    | `OnCalendar=07:00` + `OnBootSec=5min` + `Persistent=true`             |
 | `clamav-antivirus-update.service`  | Oneshot: asks the daemon for the update (`--request update`)          |
 
@@ -704,7 +708,7 @@ clamav-antivirus/
 ├── clamav-antivirus-daemon.py       # Root system service (Unix socket) + --request client
 ├── clamav_common.py                 # Shared paths, exclusions, protocol
 ├── systemd/
-│   ├── clamav-antivirus-daemon.service
+│   ├── linux-shield-daemon.service  # alias clamav-antivirus-daemon.service
 │   ├── clamav-antivirus-update.service
 │   └── clamav-antivirus-update.timer # 07:00 daily + 5 min after boot
 ├── udev/80-clamav-antivirus-usb.rules # USB stick scan before mounting

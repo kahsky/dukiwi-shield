@@ -1,6 +1,6 @@
 [Unit]
 Description=Linux Shield - service système (scans complets et mises à jour sans mot de passe)
-Documentation=https://github.com/dukiwi/clamav-antivirus
+Documentation=https://github.com/kahsky/linux-shield
 After=network.target
 Wants=clamav-antivirus-update.timer
 
@@ -23,3 +23,5 @@ TimeoutStopSec=20
 
 [Install]
 WantedBy=multi-user.target
+# Ancien nom (≤ 1.30.4) : « systemctl status clamav-antivirus-daemon » et « journalctl -u … » restent valables
+Alias=clamav-antivirus-daemon.service

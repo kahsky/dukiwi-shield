@@ -8,7 +8,7 @@
 set -e
 
 APP_NAME="clamav-antivirus"
-VERSION="1.30.4"
+VERSION="1.30.5"
 ARCH="all"
 PKG_DIR="${APP_NAME}_${VERSION}_${ARCH}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -171,13 +171,19 @@ if [ "$1" = "configure" ] && [ ! -f "$STATE_DIR/state.json" ]; then
     FIRST_INSTALL=1
 fi
 
+# Service renommé (1.30.5) : clamav-antivirus-daemon.service → linux-shield-daemon.service (alias de l'ancien nom).
+# L'ancienne unité tourne encore (son fichier vient d'être retiré par dpkg) : arrêt, puis lien d'activation orphelin supprimé.
+if [ -L /etc/systemd/system/multi-user.target.wants/clamav-antivirus-daemon.service ]; then
+    systemctl stop clamav-antivirus-daemon.service 2>/dev/null || true
+    rm -f /etc/systemd/system/multi-user.target.wants/clamav-antivirus-daemon.service
+fi
 systemctl daemon-reload 2>/dev/null || true
 udevadm control --reload-rules 2>/dev/null || true
 # Extensions : hôte natif et politiques pour Thunderbird, Firefox, Chrome, Chromium, Edge, Brave
 /opt/clamav-antivirus/clamav-antivirus-browser-setup install 2>/dev/null || true
-systemctl enable clamav-antivirus-daemon.service 2>/dev/null || true
+systemctl enable linux-shield-daemon.service 2>/dev/null || true
 systemctl enable clamav-antivirus-update.timer 2>/dev/null || true
-systemctl restart clamav-antivirus-daemon.service 2>/dev/null || true
+systemctl restart linux-shield-daemon.service 2>/dev/null || true
 systemctl start clamav-antivirus-update.timer 2>/dev/null || true
 
 # Relancer les GUI ouvertes pour charger la nouvelle version : le service utilisateur (Restart=always) ou la
@@ -196,7 +202,7 @@ echo ""
 echo "  Lancez-le depuis le menu Applications > Système"
 echo "  ou via: /opt/clamav-antivirus/clamav-antivirus.py"
 echo ""
-echo "  Service système : clamav-antivirus-daemon (actif)"
+echo "  Service système : linux-shield-daemon (actif)"
 echo "  Mises à jour    : tous les jours à 07:00 et"
 echo "                    5 minutes après le démarrage"
 echo "  Surveillance    : écritures (fanotify), clés USB (udev)"
@@ -223,8 +229,8 @@ if [ "$1" = "remove" ]; then
     /opt/clamav-antivirus/clamav-antivirus-browser-setup remove 2>/dev/null || true
     systemctl stop clamav-antivirus-update.timer 2>/dev/null || true
     systemctl disable clamav-antivirus-update.timer 2>/dev/null || true
-    systemctl stop clamav-antivirus-daemon.service 2>/dev/null || true
-    systemctl disable clamav-antivirus-daemon.service 2>/dev/null || true
+    systemctl stop linux-shield-daemon.service 2>/dev/null || true
+    systemctl disable linux-shield-daemon.service 2>/dev/null || true
 fi
 exit 0
 EOF
