@@ -209,7 +209,7 @@ function switchTab(tabId) {
     });
     syncTopbar();
     expandSubnav(tabId);
-    if (SUBPAGE_TABS.includes(tabId) && !document.querySelector(`#tab-${tabId} .acc-section.sub-active`)) showSubpage(tabId, subpageLoad()[tabId], false);
+    if (SUBPAGE_TABS.includes(tabId) && !document.querySelector(`#tab-${tabId} .acc-section.sub-active`)) showSubpage(tabId, null, false);
     if (tabId === 'backup') { loadBackup(); sendToBackend({ action: 'vault_status' }); }
     if (tabId === 'security') { sendToBackend({ action: 'get_apps' }); sendToBackend({ action: 'get_trusted' }); }
 
@@ -2948,12 +2948,17 @@ function subpageLoad() { try { return JSON.parse(localStorage.getItem(SUBPAGE_ST
 
 function sectionsOf(tab) { return [...document.querySelectorAll(`#tab-${tab} .accordion.pages > .acc-section`)]; }
 
+// Page principale d'un onglet (clic sur l'élément du menu) : ses sections data-main (Pare-feu : pare-feu et type de réseau ;
+// Paramètres : général et popups ; Sécurité : score et checklist) ; les autres sections sont les pages du sous-menu.
 function showSubpage(tab, key, persist = true) {
     const secs = sectionsOf(tab);
     if (!secs.length) return;
-    const target = secs.find(s => s.dataset.acc === key) || secs[0];
-    secs.forEach(s => { const on = s === target; s.classList.toggle('sub-active', on); if (on) setSectionOpen(s, true, false); });
-    document.querySelectorAll(`.nav-sub[data-tab="${tab}"] .nav-sub-btn`).forEach(b => b.classList.toggle('active', b.dataset.acc === target.dataset.acc));
+    const target = secs.find(s => s.dataset.acc === key && !s.dataset.main);
+    const shown = target ? [target] : secs.filter(s => s.dataset.main);
+    secs.forEach(s => { const on = shown.includes(s); s.classList.toggle('sub-active', on); if (on) setSectionOpen(s, true, false); });
+    document.querySelectorAll(`.nav-sub[data-tab="${tab}"] .nav-sub-btn`).forEach(b => b.classList.toggle('active', !!target && b.dataset.acc === target.dataset.acc));
+    const parentBtn = document.querySelector(`.nav-btn[data-tab="${tab}"]`);
+    if (parentBtn) parentBtn.classList.toggle('on-main', !target);
     const activeBtn = document.querySelector(`.nav-sub[data-tab="${tab}"] .nav-sub-btn.active`);
     if (activeBtn && activeBtn.offsetParent) setTimeout(() => activeBtn.scrollIntoView({ block: 'nearest' }), 30);
     if (persist) { const st = subpageLoad(); st[tab] = target.dataset.acc; try { localStorage.setItem(SUBPAGE_STORE, JSON.stringify(st)); } catch (e) { /* facultatif */ } }
@@ -2980,7 +2985,7 @@ function buildSubnav() {
         parent.appendChild(chev);
         const sub = document.createElement('div');
         sub.className = 'nav-sub'; sub.dataset.tab = tab;
-        secs.forEach(sec => {
+        secs.filter(sec => !sec.dataset.main).forEach(sec => {
             const label = sec.querySelector(':scope > .acc-head [data-i18n], :scope > .acc-head.acc-label, :scope > .acc-head .acc-label');
             const b = document.createElement('button');
             b.className = 'nav-sub-btn'; b.dataset.acc = sec.dataset.acc;
@@ -2993,8 +2998,10 @@ function buildSubnav() {
         // Clic sur l'élément parent : ouvre l'onglet et son sous-menu ; un second clic replie le sous-menu
         parent.removeAttribute('onclick');
         parent.addEventListener('click', () => {
-            if (currentTab === tab && sub.classList.contains('open')) { sub.classList.remove('open'); parent.setAttribute('aria-expanded', 'false'); return; }
+            // Déjà sur la page principale, sous-menu ouvert : replier ; sinon page principale de l'onglet
+            if (currentTab === tab && sub.classList.contains('open') && parent.classList.contains('on-main')) { sub.classList.remove('open'); parent.setAttribute('aria-expanded', 'false'); return; }
             switchTab(tab);
+            showSubpage(tab, null);
         });
     });
 }
@@ -3022,7 +3029,7 @@ function openSection(tab, key) {
 document.addEventListener('DOMContentLoaded', () => {
     initAccordions();
     buildSubnav();
-    SUBPAGE_TABS.forEach(tab => showSubpage(tab, subpageLoad()[tab], false));
+    SUBPAGE_TABS.forEach(tab => showSubpage(tab, null, false));
     const params = new URLSearchParams(location.search);
     const nav = (params.get('lang') || navigator.language || 'en').slice(0, 2).toLowerCase();
     setLanguage(window.I18N && window.I18N[nav] ? nav : 'en');

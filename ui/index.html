@@ -229,7 +229,7 @@
                     <option value="de">Deutsch</option>
                     <option value="it">Italiano</option>
                 </select></label>
-                <small class="version">v1.30.0 — <a href="#" class="credits-link" onclick="openCredits(); return false;" data-i18n="sidebar.credits">Crédits</a> · <a href="#" class="credits-link" onclick="openLegal(); return false;" data-i18n="legal.link">Avertissement</a></small>
+                <small class="version">v1.30.1 — <a href="#" class="credits-link" onclick="openCredits(); return false;" data-i18n="sidebar.credits">Crédits</a> · <a href="#" class="credits-link" onclick="openLegal(); return false;" data-i18n="legal.link">Avertissement</a></small>
             </div>
         </div>
     </aside>
@@ -782,7 +782,7 @@
             </div>
 
             <div class="accordion" data-accordion="security">
-                <div data-acc="checklist" class="card card-checklist" data-nav-i18n="nav.security.checklist">
+                <div data-acc="checklist" data-main="1" class="card card-checklist" data-nav-i18n="nav.security.checklist">
                     <div class="card-title-row"><h4 data-i18n="security.section.score">Score et checklist</h4><span class="text-muted" id="checklistCounts"></span></div>
                     <div class="score-banner" id="scoreBanner" data-grade="">
                         <div class="score-ring">
@@ -1098,7 +1098,7 @@
             </div>
 
             <div class="accordion" data-accordion="firewall">
-                <div class="card card-fw" id="cardFirewall" data-state="unknown" data-acc="firewall" data-nav-i18n="nav.firewall.firewall">
+                <div class="card card-fw" id="cardFirewall" data-state="unknown" data-acc="firewall" data-main="1" data-nav-i18n="nav.firewall.firewall">
                     <div class="card-title-row">
                         <h4 data-i18n="firewall.ufw.title">Pare-feu</h4>
                         <span class="badge" id="fwBadge">…</span>
@@ -1120,7 +1120,7 @@
                     </div>
                 </div>
 
-                <div class="card card-fw fw-profile" id="cardFwProfile" data-acc="network" data-nav-i18n="nav.firewall.network">
+                <div class="card card-fw fw-profile" id="cardFwProfile" data-acc="network" data-main="1" data-nav-i18n="nav.firewall.network">
                         <div class="card-title-row">
                             <h4 data-i18n="firewall.profile.title">Type de réseau</h4>
                             <span class="text-muted" id="fwProfileCurrent"></span>
@@ -1178,7 +1178,7 @@
 
             <p class="text-muted alerts-intro policy-banner" id="policyBanner" hidden></p>
             <div class="accordion" data-accordion="settings">
-                <div class="card settings-card" data-acc="general" data-nav-i18n="nav.settings.general">
+                <div class="card settings-card" data-acc="general" data-main="1" data-nav-i18n="nav.settings.general">
                     <h4 data-i18n="settings.general">Général</h4>
                     <label class="setting-row"><span data-i18n="settings.language">Langue</span>
                         <select id="setLanguage" class="lang-select"><option value="fr">Français</option><option value="en">English</option><option value="de">Deutsch</option><option value="it">Italiano</option></select></label>
@@ -1186,7 +1186,7 @@
                         <select id="setViewMode" class="lang-select"><option value="simple" data-i18n="settings.view.simple">Simple</option><option value="advanced" data-i18n="settings.view.advanced">Avancée</option></select></label>
                 </div>
 
-                <div class="card settings-card" data-acc="popups" data-nav-i18n="nav.settings.popups">
+                <div class="card settings-card" data-acc="popups" data-main="1" data-nav-i18n="nav.settings.popups">
                     <h4 data-i18n="settings.popups">Notifications (popups)</h4>
                     <label class="setting-row toggle"><span data-i18n="settings.popup.info">Activité inhabituelle (info)</span><input type="checkbox" id="setPopupInfo"></label>
                     <label class="setting-row toggle"><span data-i18n="settings.popup.upload">Envoi Internet important</span><input type="checkbox" id="setPopupUpload"></label>

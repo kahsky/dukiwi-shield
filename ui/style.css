@@ -3085,6 +3085,7 @@ input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-o
 .nav-sub-btn.active { color: var(--accent); background: rgba(34,197,94,0.08); font-weight: 500; }
 /* Pages : une seule section visible, titre fixe (ni chevron ni repli) */
 .accordion.pages > .acc-section:not(.sub-active) { display: none; }
+.accordion.pages > .acc-section.sub-active + .acc-section.sub-active { margin-top: 4px !important; }
 .accordion.pages > .acc-section > .acc-head { cursor: default; }
 .accordion.pages > .acc-section > .acc-head .acc-chevron { display: none; }
 .accordion.pages > .acc-section:hover { border-color: var(--border); }
