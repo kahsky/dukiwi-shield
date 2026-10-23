@@ -2819,7 +2819,7 @@ body.mode-simple { position: relative; }
 .ports-intro { font-size: 12px; margin: 6px 0 4px; }
 
 /* ── v1.9.2 : profils réseau du pare-feu ── */
-.fw-profile { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+.fw-profile:not(.card) { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
 .profile-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 8px 0; }
 .profile-btn { text-align: left; display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-surface-2); color: var(--text-primary); cursor: pointer; font: inherit; transition: border-color .15s, box-shadow .15s; }
 .profile-btn:hover { border-color: var(--border-hover, var(--accent)); }
@@ -3037,3 +3037,29 @@ input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-o
 .urlguard-allowed .ug-allowed { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 12px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 999px; }
 .urlguard-allowed .ug-allowed button { background: none; border: 0; color: var(--text-muted); cursor: pointer; font-size: 13px; padding: 0 2px; }
 @media (max-width: 900px) { .urlguard-event { grid-template-columns: 1fr 1fr; } }
+
+/* ─── Sections en accordéon (Pare-feu, Paramètres) ─────────────────────────── */
+.accordion { display: flex; flex-direction: column; gap: 10px; }
+.tab-panel > .accordion { margin-bottom: 20px; }
+.acc-toolbar { display: flex; justify-content: flex-end; gap: 8px; margin: -6px 0 10px; }
+.accordion > .acc-section { padding-top: 0; padding-bottom: 0; margin: 0 !important; transition: border-color .15s ease; }
+.acc-section > .acc-head {
+    display: flex; align-items: center; gap: 10px; cursor: pointer; user-select: none;
+    margin: 0 -2px !important; padding: 16px 2px; min-height: 24px; border-radius: 8px; outline: none;
+}
+.acc-section > h4.acc-head { font-size: 14px; font-weight: 600; }
+.acc-section > .acc-head > h4, .acc-section > .acc-head > .acc-label { flex: 1; margin: 0; }
+.acc-section > .acc-head:hover h4, .acc-section > h4.acc-head:hover { color: var(--text-primary); }
+.acc-section > .acc-head:focus-visible { box-shadow: 0 0 0 2px var(--accent-blue); }
+.acc-chevron {
+    margin-left: auto; width: 9px; height: 9px; flex: none;
+    border-right: 2px solid var(--text-secondary); border-bottom: 2px solid var(--text-secondary);
+    transform: rotate(45deg); transition: transform .18s ease; margin-right: 4px; margin-top: -4px;
+}
+.acc-section.open > .acc-head .acc-chevron { transform: rotate(-135deg); margin-top: 4px; }
+.acc-section > .acc-head .badge, .acc-section > .acc-head .text-muted { white-space: nowrap; }
+.acc-section > .acc-body { display: none; padding-bottom: 18px; }
+.acc-section.open > .acc-body { display: block; animation: accIn .16s ease; }
+.settings-card.acc-section.open > .acc-body { display: flex; flex-direction: column; gap: 10px; }
+.acc-section:not(.open):hover { border-color: rgba(148,163,184,0.35); }
+@keyframes accIn { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }

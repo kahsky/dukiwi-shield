@@ -52,15 +52,15 @@ versions itself (popup or Security tab) and can install them on its own when the
 
 ### Direct download
 
-- Mint / Ubuntu: [clamav-antivirus_1.28.1_all.deb](https://www.dukiwi.com/repo/clamav-antivirus/clamav-antivirus_1.28.1_all.deb)
-- Fedora: [clamav-antivirus-1.28.1-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/clamav-antivirus-1.28.1-1.noarch.rpm)
+- Mint / Ubuntu: [clamav-antivirus_1.29.1_all.deb](https://www.dukiwi.com/repo/clamav-antivirus/clamav-antivirus_1.29.1_all.deb)
+- Fedora: [clamav-antivirus-1.29.1-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/clamav-antivirus-1.29.1-1.noarch.rpm)
 - All versions: [www.dukiwi.com/repo](https://www.dukiwi.com/repo)
 
 ### Installing a downloaded package by hand
 
 ```bash
-sudo apt install ./clamav-antivirus_1.28.1_all.deb          # Mint / Ubuntu
-sudo dnf install ./clamav-antivirus-1.28.1-1.noarch.rpm      # Fedora
+sudo apt install ./clamav-antivirus_1.29.1_all.deb          # Mint / Ubuntu
+sudo dnf install ./clamav-antivirus-1.29.1-1.noarch.rpm      # Fedora
 ```
 
 The installation enables the system service and the scheduler, then starts the initial scan:
@@ -210,6 +210,18 @@ sudo dnf remove clamav-antivirus   # Fedora
 - **Telemetry after the first full scan and on demand** — the first full scan completed after consent triggers the
   anonymous report without waiting for the week (performance measurements); "Send telemetry now" button in
   Settings.
+- **Security tab in sections** — the Security tab uses the same accordion: Score and checklist (the score ring now sits
+  inside this section, counts in its title), Network honeypot, Links and e-mails, Known vulnerabilities, Integrity and
+  rootkits, Hardening (Lynis), Application update, Data breaches, Apps outside the repositories and Trusted programs,
+  moved here from Settings. Status and action buttons stay in each title while collapsed; links that jump to a card
+  (checklist "Fix", simple view, popups) open its section first.
+- **Accordion sections (Firewall, Settings)** — each card of the Firewall and Settings tabs is a collapsible section:
+  the title stays visible with its status badges (firewall and SSH state, current network profile, number of rules),
+  the content folds away, the open/closed state is remembered per section, with "Expand all" / "Collapse all". The
+  Firewall tab is split into Firewall, Network type, Firewall rules and Remote access (SSH); the former "Security and
+  family" settings card is split into Family and automatic response, Real-time protections, Links and e-mails,
+  Outbound connections, Integrity and hardening, Application updates, Overall state and telemetry. "Fix" buttons of
+  the checklist open the matching section directly.
 - **URLhaus list restored** — abuse.ch withdrew its public URLhaus exports (HTTP 410 on every download URL, the API now
   requires a key): the link checker now reads the free urlhaus-filter mirror (malware-filter on GitLab, built from the
   URLhaus API every 12 hours, adblock format with exact addresses and whole hosts); a changed feed source drops the
@@ -588,8 +600,8 @@ python3 clamav-antivirus.py
 ## Building the packages
 
 ```bash
-./build-deb.sh        # clamav-antivirus_1.28.1_all.deb   (Mint / Ubuntu)
-./build-rpm.sh        # clamav-antivirus-1.28.1-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
+./build-deb.sh        # clamav-antivirus_1.29.1_all.deb   (Mint / Ubuntu)
+./build-rpm.sh        # clamav-antivirus-1.29.1-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
 ./build-meta.sh       # linux-shield_1.0.0_all.deb + linux-shield-1.0.0-1.noarch.rpm (metapackage, published once)
 ```
 

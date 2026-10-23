@@ -229,7 +229,7 @@
                     <option value="de">Deutsch</option>
                     <option value="it">Italiano</option>
                 </select></label>
-                <small class="version">v1.28.1 — <a href="#" class="credits-link" onclick="openCredits(); return false;" data-i18n="sidebar.credits">Crédits</a> · <a href="#" class="credits-link" onclick="openLegal(); return false;" data-i18n="legal.link">Avertissement</a></small>
+                <small class="version">v1.29.1 — <a href="#" class="credits-link" onclick="openCredits(); return false;" data-i18n="sidebar.credits">Crédits</a> · <a href="#" class="credits-link" onclick="openLegal(); return false;" data-i18n="legal.link">Avertissement</a></small>
             </div>
         </div>
     </aside>
@@ -781,110 +781,146 @@
                 <p class="subtitle" data-i18n="security.subtitle">Score, failles ouvertes des programmes installés, intégrité du système et mises à jour de l'application</p>
             </div>
 
-            <div class="score-banner" id="scoreBanner" data-grade="">
-                <div class="score-ring">
-                    <svg viewBox="0 0 120 120"><circle class="score-track" cx="60" cy="60" r="52"/><circle class="score-fill" id="scoreFill" cx="60" cy="60" r="52" stroke-dasharray="326.73" stroke-dashoffset="326.73"/></svg>
-                    <div class="score-center"><span class="score-value" id="scoreValue">—</span><span class="score-grade" id="scoreGrade"></span></div>
-                </div>
-                <div class="score-body">
-                    <h2 id="scoreTitle" data-i18n="security.score.title">Score de sécurité</h2>
-                    <p class="text-muted" id="scoreSub" data-i18n="security.score.sub">Calculé à partir de la checklist ci-dessous (pare-feu, chiffrement, mises à jour, comptes, ports, antivirus…).</p>
-                    <p class="text-muted setting-note" data-i18n="security.score.legend">Chaque point de la checklist a un poids : « ok » le compte en entier, « à améliorer » à moitié, « à corriger » pas du tout. Note : A à partir de 90, B de 75, C de 60, D de 40, E en dessous.</p>
-                    <div class="score-actions">
-                        <button class="btn btn-secondary btn-sm" onclick="loadSecurityData('checklist', true)" data-i18n="system.refresh">Actualiser</button>
-                        <span class="text-muted" id="scoreChecked"></span>
+            <div class="accordion" data-accordion="security">
+                <div data-acc="checklist" class="card card-checklist">
+                    <div class="card-title-row"><h4 data-i18n="security.section.score">Score et checklist</h4><span class="text-muted" id="checklistCounts"></span></div>
+                    <div class="score-banner" id="scoreBanner" data-grade="">
+                        <div class="score-ring">
+                            <svg viewBox="0 0 120 120"><circle class="score-track" cx="60" cy="60" r="52"/><circle class="score-fill" id="scoreFill" cx="60" cy="60" r="52" stroke-dasharray="326.73" stroke-dashoffset="326.73"/></svg>
+                            <div class="score-center"><span class="score-value" id="scoreValue">—</span><span class="score-grade" id="scoreGrade"></span></div>
+                        </div>
+                        <div class="score-body">
+                            <h2 id="scoreTitle" data-i18n="security.score.title">Score de sécurité</h2>
+                            <p class="text-muted" id="scoreSub" data-i18n="security.score.sub">Calculé à partir de la checklist ci-dessous (pare-feu, chiffrement, mises à jour, comptes, ports, antivirus…).</p>
+                            <p class="text-muted setting-note" data-i18n="security.score.legend">Chaque point de la checklist a un poids : « ok » le compte en entier, « à améliorer » à moitié, « à corriger » pas du tout. Note : A à partir de 90, B de 75, C de 60, D de 40, E en dessous.</p>
+                            <div class="score-actions">
+                                <button class="btn btn-secondary btn-sm" onclick="loadSecurityData('checklist', true)" data-i18n="system.refresh">Actualiser</button>
+                                <span class="text-muted" id="scoreChecked"></span>
+                            </div>
+                        </div>
                     </div>
+                    <div id="checklistList" class="checklist-list"><p class="text-muted" data-i18n="sidebar.loading">Chargement…</p></div>
+                    <details class="ports-details" id="portsDetails"><summary data-i18n="security.ports.title">Ports en écoute</summary><div id="portsList" class="ports-list"></div></details>
                 </div>
-            </div>
 
-            <div class="card card-checklist">
-                <div class="card-title-row"><h4 data-i18n="security.checklist.title">Checklist</h4><span class="text-muted" id="checklistCounts"></span></div>
-                <div id="checklistList" class="checklist-list"><p class="text-muted" data-i18n="sidebar.loading">Chargement…</p></div>
-                <details class="ports-details" id="portsDetails"><summary data-i18n="security.ports.title">Ports en écoute</summary><div id="portsList" class="ports-list"></div></details>
-            </div>
-
-            <div class="card card-honeypot" id="cardHoneypot">
-                <div class="card-title-row">
-                    <h4 data-i18n="honeypot.title">Pot de miel réseau</h4>
-                    <div class="log-actions-right">
-                        <span class="text-muted" id="honeypotState"></span>
-                        <button class="btn btn-secondary btn-sm" onclick="loadSecurityData('honeypot', true)" data-i18n="system.refresh">Actualiser</button>
+                <div data-acc="honeypot" class="card card-honeypot" id="cardHoneypot">
+                    <div class="card-title-row">
+                        <h4 data-i18n="honeypot.title">Pot de miel réseau</h4>
+                        <div class="log-actions-right">
+                            <span class="text-muted" id="honeypotState"></span>
+                            <button class="btn btn-secondary btn-sm" onclick="loadSecurityData('honeypot', true)" data-i18n="system.refresh">Actualiser</button>
+                        </div>
                     </div>
-                </div>
-                <p class="text-muted alerts-intro" data-i18n="honeypot.intro">Quelques ports « leurres » sont mis à l'écoute (deux ports tirés au sort et le port telnet). Aucun programme légitime ne s'y connecte jamais : tout appareil qui les touche est en train d'explorer cet ordinateur. Le service note qui c'est (adresse, nom, adresse matérielle), ce qu'il tente (simple sondage, SSH, HTTP, requête d'exploitation, tentative de connexion…) et signale un balayage de ports, aussi à partir des refus du pare-feu.</p>
-                <div class="honeypot-enable" id="honeypotEnableRow" hidden>
-                    <span class="text-muted" data-i18n="honeypot.disabled_note">Désactivé. Activez-le pour savoir si un appareil du réseau sonde cet ordinateur.</span>
-                    <button class="btn btn-primary btn-sm" onclick="honeypotEnable()" data-i18n="honeypot.enable">Activer le pot de miel</button>
-                </div>
-                <div id="honeypotList" class="honeypot-list"><p class="text-muted" data-i18n="sidebar.loading">Chargement…</p></div>
-                <details class="ports-details" id="honeypotEventsDetails"><summary data-i18n="honeypot.events">Dernières connexions aux leurres</summary><div id="honeypotEvents" class="honeypot-events"></div></details>
-            </div>
-
-            <div class="card card-urlguard" id="cardUrlGuard">
-                <div class="card-title-row">
-                    <h4 data-i18n="urlguard.title">Liens et courriels</h4>
-                    <div class="log-actions-right">
-                        <span class="text-muted" id="urlguardState"></span>
-                        <button class="btn btn-secondary btn-sm" onclick="urlguardRefresh()" data-i18n="urlguard.refresh">Actualiser les listes</button>
-                        <button class="btn btn-secondary btn-sm" onclick="loadSecurityData('urlguard', true)" data-i18n="system.refresh">Actualiser</button>
+                    <p class="text-muted alerts-intro" data-i18n="honeypot.intro">Quelques ports « leurres » sont mis à l'écoute (deux ports tirés au sort et le port telnet). Aucun programme légitime ne s'y connecte jamais : tout appareil qui les touche est en train d'explorer cet ordinateur. Le service note qui c'est (adresse, nom, adresse matérielle), ce qu'il tente (simple sondage, SSH, HTTP, requête d'exploitation, tentative de connexion…) et signale un balayage de ports, aussi à partir des refus du pare-feu.</p>
+                    <div class="honeypot-enable" id="honeypotEnableRow" hidden>
+                        <span class="text-muted" data-i18n="honeypot.disabled_note">Désactivé. Activez-le pour savoir si un appareil du réseau sonde cet ordinateur.</span>
+                        <button class="btn btn-primary btn-sm" onclick="honeypotEnable()" data-i18n="honeypot.enable">Activer le pot de miel</button>
                     </div>
+                    <div id="honeypotList" class="honeypot-list"><p class="text-muted" data-i18n="sidebar.loading">Chargement…</p></div>
+                    <details class="ports-details" id="honeypotEventsDetails"><summary data-i18n="honeypot.events">Dernières connexions aux leurres</summary><div id="honeypotEvents" class="honeypot-events"></div></details>
                 </div>
-                <p class="text-muted alerts-intro" data-i18n="urlguard.intro">Les extensions pour Thunderbird, Firefox, Chrome, Chromium, Edge et Brave demandent au service, avant d'ouvrir un lien ou d'afficher un courriel, s'il est sûr : listes de sites d'hameçonnage et de logiciels malveillants (OpenPhish, URLhaus, Phishing.Database, mises à jour plusieurs fois par jour) et heuristiques (sites sosies d'une marque, caractères trompeurs, raccourcisseurs résolus, pages de connexion sans chiffrement, lien dont le texte affiché n'est pas la destination…). Les pièces jointes des courriels sont analysées par ClamAV. Un lien dangereux affiche une page d'avertissement avec « Retour », « Ouvrir quand même » et « Toujours autoriser ce site ».</p>
-                <p class="honeypot-ports-line" id="urlguardCounters"></p>
-                <h5 class="sub-title" data-i18n="urlguard.clients.title">Extensions</h5>
-                <div id="urlguardClients" class="urlguard-clients"></div>
-                <details class="ports-details" id="urlguardHelp"><summary data-i18n="urlguard.help.title">Installer les extensions</summary><div class="urlguard-help">
-                    <p data-i18n="urlguard.help.thunderbird">Thunderbird : l'extension « Protection des courriels » est installée automatiquement au prochain démarrage de Thunderbird (politique d'entreprise, fichier local). Un bandeau apparaît en haut de chaque message.</p>
-                    <p data-i18n="urlguard.help.chrome">Chrome, Chromium, Edge, Brave : l'extension « Contrôle des liens » est installée automatiquement au prochain démarrage du navigateur (politique d'entreprise, téléchargée depuis le dépôt Dukiwi). Sans Internet, ou pour un navigateur Flatpak/Snap : chrome://extensions › Mode développeur › Charger l'extension non empaquetée › /opt/clamav-antivirus/extensions/urlguard-chromium.</p>
-                    <p data-i18n="urlguard.help.firefox">Firefox : Mozilla exige une extension signée. Dès que l'extension signée est publiée sur le dépôt Dukiwi, elle s'installe automatiquement ; en attendant, about:debugging › Ce Firefox › Charger un module temporaire › /opt/clamav-antivirus/extensions/urlguard-firefox/manifest.json (à refaire à chaque démarrage).</p>
-                    <p data-i18n="urlguard.help.note">Les navigateurs installés en Flatpak ou Snap (Chromium Snap d'Ubuntu notamment) ne peuvent pas toujours dialoguer avec l'hôte natif : la ligne « extension jamais vue » reste alors affichée.</p>
-                </div></details>
-                <h5 class="sub-title" data-i18n="urlguard.feeds.title">Listes de sites malveillants</h5>
-                <div id="urlguardFeeds" class="urlguard-feeds"></div>
-                <h5 class="sub-title" data-i18n="urlguard.events.title">Derniers liens signalés</h5>
-                <div id="urlguardEvents" class="urlguard-events"></div>
-                <details class="ports-details"><summary data-i18n="urlguard.allowed.title">Sites toujours autorisés</summary><div id="urlguardAllowed" class="urlguard-allowed"></div></details>
-            </div>
 
-            <div class="card card-vulns">
-                <div class="card-title-row">
-                    <h4 data-i18n="security.vulns.title">Failles connues des programmes installés</h4>
-                    <div class="log-actions-right">
-                        <span class="text-muted" id="vulnsChecked"></span>
-                        <button class="btn btn-secondary btn-sm" id="btnVulnsRefresh" onclick="loadSecurityData('vulns', true)" data-i18n="system.refresh">Actualiser</button>
+                <div data-acc="links" class="card card-urlguard" id="cardUrlGuard">
+                    <div class="card-title-row">
+                        <h4 data-i18n="urlguard.title">Liens et courriels</h4>
+                        <div class="log-actions-right">
+                            <span class="text-muted" id="urlguardState"></span>
+                            <button class="btn btn-secondary btn-sm" onclick="urlguardRefresh()" data-i18n="urlguard.refresh">Actualiser les listes</button>
+                            <button class="btn btn-secondary btn-sm" onclick="loadSecurityData('urlguard', true)" data-i18n="system.refresh">Actualiser</button>
+                        </div>
                     </div>
+                    <p class="text-muted alerts-intro" data-i18n="urlguard.intro">Les extensions pour Thunderbird, Firefox, Chrome, Chromium, Edge et Brave demandent au service, avant d'ouvrir un lien ou d'afficher un courriel, s'il est sûr : listes de sites d'hameçonnage et de logiciels malveillants (OpenPhish, URLhaus, Phishing.Database, mises à jour plusieurs fois par jour) et heuristiques (sites sosies d'une marque, caractères trompeurs, raccourcisseurs résolus, pages de connexion sans chiffrement, lien dont le texte affiché n'est pas la destination…). Les pièces jointes des courriels sont analysées par ClamAV. Un lien dangereux affiche une page d'avertissement avec « Retour », « Ouvrir quand même » et « Toujours autoriser ce site ».</p>
+                    <p class="honeypot-ports-line" id="urlguardCounters"></p>
+                    <h5 class="sub-title" data-i18n="urlguard.clients.title">Extensions</h5>
+                    <div id="urlguardClients" class="urlguard-clients"></div>
+                    <details class="ports-details" id="urlguardHelp"><summary data-i18n="urlguard.help.title">Installer les extensions</summary><div class="urlguard-help">
+                        <p data-i18n="urlguard.help.thunderbird">Thunderbird : l'extension « Protection des courriels » est installée automatiquement au prochain démarrage de Thunderbird (politique d'entreprise, fichier local). Un bandeau apparaît en haut de chaque message.</p>
+                        <p data-i18n="urlguard.help.chrome">Chrome, Chromium, Edge, Brave : l'extension « Contrôle des liens » est installée automatiquement au prochain démarrage du navigateur (politique d'entreprise, téléchargée depuis le dépôt Dukiwi). Sans Internet, ou pour un navigateur Flatpak/Snap : chrome://extensions › Mode développeur › Charger l'extension non empaquetée › /opt/clamav-antivirus/extensions/urlguard-chromium.</p>
+                        <p data-i18n="urlguard.help.firefox">Firefox : Mozilla exige une extension signée. Dès que l'extension signée est publiée sur le dépôt Dukiwi, elle s'installe automatiquement ; en attendant, about:debugging › Ce Firefox › Charger un module temporaire › /opt/clamav-antivirus/extensions/urlguard-firefox/manifest.json (à refaire à chaque démarrage).</p>
+                        <p data-i18n="urlguard.help.note">Les navigateurs installés en Flatpak ou Snap (Chromium Snap d'Ubuntu notamment) ne peuvent pas toujours dialoguer avec l'hôte natif : la ligne « extension jamais vue » reste alors affichée.</p>
+                    </div></details>
+                    <h5 class="sub-title" data-i18n="urlguard.feeds.title">Listes de sites malveillants</h5>
+                    <div id="urlguardFeeds" class="urlguard-feeds"></div>
+                    <h5 class="sub-title" data-i18n="urlguard.events.title">Derniers liens signalés</h5>
+                    <div id="urlguardEvents" class="urlguard-events"></div>
+                    <details class="ports-details"><summary data-i18n="urlguard.allowed.title">Sites toujours autorisés</summary><div id="urlguardAllowed" class="urlguard-allowed"></div></details>
                 </div>
-                <p class="text-muted alerts-intro" data-i18n="security.vulns.intro">Comparaison des versions installées avec la base OSV.dev (données du suivi CVE d'Ubuntu). « Sans correctif » : aucune version corrigée n'existe encore pour votre distribution. « Ubuntu Pro » : le correctif n'est fourni qu'aux abonnés Ubuntu Pro. « Correctif disponible » : installez les mises à jour.</p>
-                <div class="vuln-summary" id="vulnSummary"></div>
-                <div class="segmented" id="vulnFilter">
-                    <button class="seg-btn active" data-filter="unfixed" onclick="setVulnFilter('unfixed')" data-i18n="security.vulns.unfixed">Sans correctif</button>
-                    <button class="seg-btn" data-filter="pro_only" onclick="setVulnFilter('pro_only')" data-i18n="security.vulns.pro">Ubuntu Pro</button>
-                    <button class="seg-btn" data-filter="fix_available" onclick="setVulnFilter('fix_available')" data-i18n="security.vulns.fix_available">Correctif disponible</button>
-                    <button class="seg-btn" data-filter="kernel_pending" onclick="setVulnFilter('kernel_pending')" data-i18n="security.vulns.kernel_pending">Noyau (correctif attendu)</button>
-                    <button class="seg-btn" data-filter="not_applicable" onclick="setVulnFilter('not_applicable')" data-i18n="security.vulns.not_applicable">Non applicables (moteur intégré)</button>
-                </div>
-                <div class="vuln-prio-row">
-                    <label class="lang-plain"><select id="vulnPrio" onchange="setVulnPrio(this.value)" aria-label="Priority">
-                        <option value="high" data-i18n="security.vulns.prio.high">Critiques et hautes</option>
-                        <option value="medium" data-i18n="security.vulns.prio.medium">Moyennes et plus</option>
-                        <option value="all" data-i18n="security.vulns.prio.all">Toutes les priorités</option>
-                    </select></label>
-                    <span class="text-muted" id="vulnHidden"></span>
-                    <button class="btn btn-secondary btn-sm vuln-ack-all" id="vulnAckAll" onclick="ackAllVulns()" hidden>Tout ignorer</button>
-                </div>
-                <p class="text-muted alerts-intro" data-i18n="security.vulns.ack_intro">Une faille sans correctif que vous jugez sans importance pour vous peut être ignorée : elle ne compte plus dans la couleur du bouclier, le score ni la vue simple, et reste consultable dans « Failles ignorées ». Les nouvelles failles publiées ensuite sont toujours affichées.</p>
-                <p class="text-muted alerts-intro hwe-note" id="vulnHweNote" hidden></p>
-                <p class="text-muted alerts-intro" id="vulnKernelNote" hidden></p>
-                <p class="text-muted alerts-intro" id="vulnNaNote" hidden></p>
-                <p class="text-muted alerts-intro" id="vulnVendorNote" hidden></p>
-                <p class="text-muted alerts-intro" id="vulnHeadersNote" hidden></p>
-                <div id="vulnList" class="vuln-list"><p class="text-muted" data-i18n="security.vulns.none_yet">Inventaire pas encore effectué.</p></div>
-                <div id="vulnAcked" class="vuln-acked" hidden></div>
-                <div id="storeUpdates" class="store-updates"></div>
-            </div>
 
-            <div class="cards-grid">
-                <div class="card card-leaks">
+                <div data-acc="vulns" class="card card-vulns">
+                    <div class="card-title-row">
+                        <h4 data-i18n="security.vulns.title">Failles connues des programmes installés</h4>
+                        <div class="log-actions-right">
+                            <span class="text-muted" id="vulnsChecked"></span>
+                            <button class="btn btn-secondary btn-sm" id="btnVulnsRefresh" onclick="loadSecurityData('vulns', true)" data-i18n="system.refresh">Actualiser</button>
+                        </div>
+                    </div>
+                    <p class="text-muted alerts-intro" data-i18n="security.vulns.intro">Comparaison des versions installées avec la base OSV.dev (données du suivi CVE d'Ubuntu). « Sans correctif » : aucune version corrigée n'existe encore pour votre distribution. « Ubuntu Pro » : le correctif n'est fourni qu'aux abonnés Ubuntu Pro. « Correctif disponible » : installez les mises à jour.</p>
+                    <div class="vuln-summary" id="vulnSummary"></div>
+                    <div class="segmented" id="vulnFilter">
+                        <button class="seg-btn active" data-filter="unfixed" onclick="setVulnFilter('unfixed')" data-i18n="security.vulns.unfixed">Sans correctif</button>
+                        <button class="seg-btn" data-filter="pro_only" onclick="setVulnFilter('pro_only')" data-i18n="security.vulns.pro">Ubuntu Pro</button>
+                        <button class="seg-btn" data-filter="fix_available" onclick="setVulnFilter('fix_available')" data-i18n="security.vulns.fix_available">Correctif disponible</button>
+                        <button class="seg-btn" data-filter="kernel_pending" onclick="setVulnFilter('kernel_pending')" data-i18n="security.vulns.kernel_pending">Noyau (correctif attendu)</button>
+                        <button class="seg-btn" data-filter="not_applicable" onclick="setVulnFilter('not_applicable')" data-i18n="security.vulns.not_applicable">Non applicables (moteur intégré)</button>
+                    </div>
+                    <div class="vuln-prio-row">
+                        <label class="lang-plain"><select id="vulnPrio" onchange="setVulnPrio(this.value)" aria-label="Priority">
+                            <option value="high" data-i18n="security.vulns.prio.high">Critiques et hautes</option>
+                            <option value="medium" data-i18n="security.vulns.prio.medium">Moyennes et plus</option>
+                            <option value="all" data-i18n="security.vulns.prio.all">Toutes les priorités</option>
+                        </select></label>
+                        <span class="text-muted" id="vulnHidden"></span>
+                        <button class="btn btn-secondary btn-sm vuln-ack-all" id="vulnAckAll" onclick="ackAllVulns()" hidden>Tout ignorer</button>
+                    </div>
+                    <p class="text-muted alerts-intro" data-i18n="security.vulns.ack_intro">Une faille sans correctif que vous jugez sans importance pour vous peut être ignorée : elle ne compte plus dans la couleur du bouclier, le score ni la vue simple, et reste consultable dans « Failles ignorées ». Les nouvelles failles publiées ensuite sont toujours affichées.</p>
+                    <p class="text-muted alerts-intro hwe-note" id="vulnHweNote" hidden></p>
+                    <p class="text-muted alerts-intro" id="vulnKernelNote" hidden></p>
+                    <p class="text-muted alerts-intro" id="vulnNaNote" hidden></p>
+                    <p class="text-muted alerts-intro" id="vulnVendorNote" hidden></p>
+                    <p class="text-muted alerts-intro" id="vulnHeadersNote" hidden></p>
+                    <div id="vulnList" class="vuln-list"><p class="text-muted" data-i18n="security.vulns.none_yet">Inventaire pas encore effectué.</p></div>
+                    <div id="vulnAcked" class="vuln-acked" hidden></div>
+                    <div id="storeUpdates" class="store-updates"></div>
+                </div>
+
+                <div data-acc="integrity" class="card card-integrity">
+                    <div class="card-title-row">
+                        <h4 data-i18n="security.integrity.title">Intégrité et rootkits</h4>
+                        <button class="btn btn-secondary btn-sm" id="btnIntegrityRun" onclick="loadSecurityData('integrity', false, true)" data-i18n="security.integrity.run">Vérifier maintenant</button>
+                    </div>
+                    <p class="text-muted alerts-intro" data-i18n="security.integrity.intro">Lynis audite le durcissement du système (indice sur 100), unhide cherche les processus et ports cachés, chkrootkit les rootkits connus, debsums compare les fichiers des paquets à leurs empreintes d'origine, et l'application vérifie ses propres fichiers grâce au manifeste signé livré dans le paquet.</p>
+                    <div id="integrityList" class="integrity-list"><p class="text-muted" data-i18n="security.integrity.none_yet">Aucune vérification effectuée.</p></div>
+                    <div class="fw-actions"><button class="btn btn-secondary btn-sm" id="btnInstallTools" onclick="sendToBackend({action:'install_tools'})" hidden data-i18n="security.integrity.install_tools">Installer Lynis, unhide, chkrootkit et debsums</button></div>
+                </div>
+
+                <div data-acc="hardening" class="card card-hardening" id="cardHardening">
+                    <div class="card-title-row">
+                        <h4 data-i18n="security.hardening.title">Durcissement (Lynis)</h4>
+                        <div class="log-actions-right">
+                            <span class="text-muted" id="hardeningIndex"></span>
+                            <button class="btn btn-primary btn-sm" id="btnHardenAll" onclick="hardenApplyAll()" hidden data-i18n="security.hardening.apply_all">Appliquer les recommandations sans risque</button>
+                            <button class="btn btn-secondary btn-sm" onclick="loadSecurityData('integrity', false, true)" data-i18n="security.hardening.rescan">Relancer l'audit</button>
+                        </div>
+                    </div>
+                    <p class="text-muted alerts-intro" data-i18n="security.hardening.intro">Lynis relève des points à améliorer. Chaque recommandation sans risque s'applique d'un clic (ou toutes ensemble) et reste annulable ; les autres sont expliquées. Après application, l'audit est relancé pour mettre l'indice à jour.</p>
+                    <div id="hardeningList" class="checklist-list"><p class="text-muted" data-i18n="security.integrity.none_yet">Aucune vérification effectuée.</p></div>
+                </div>
+
+                <div data-acc="appupdate" class="card card-appupdate" id="cardAppUpdate" data-state="unknown">
+                    <div class="card-title-row">
+                        <h4 data-i18n="security.update.title">Mise à jour de l'application</h4>
+                        <span class="badge" id="appUpdateBadge">…</span>
+                    </div>
+                    <p class="text-muted" id="appUpdateSummary"></p>
+                    <p class="text-muted alerts-intro" data-i18n="security.update.intro">Les mises à jour proviennent du dépôt Dukiwi. Un manifeste signé (clé Ed25519 conservée hors ligne) indique la version, l'empreinte SHA-256 du paquet et celle de chaque fichier : une mise à jour non signée ou modifiée est refusée, même si le serveur était compromis.</p>
+                    <div class="fw-actions">
+                        <button class="btn btn-secondary btn-sm" onclick="loadSecurityData('app_update', true)" data-i18n="security.update.check">Vérifier</button>
+                        <button class="btn btn-primary btn-sm" id="btnInstallUpdate" onclick="sendToBackend({action:'install_update'})" hidden data-i18n="security.update.install">Installer la mise à jour</button>
+                    </div>
+                    <p class="text-muted" id="appUpdateRepo"></p>
+                </div>
+
+                <div data-acc="leaks" class="card card-leaks">
                     <div class="card-title-row">
                         <h4 data-i18n="security.leaks.title">Fuites de données (Have I Been Pwned)</h4>
                         <button class="btn btn-secondary btn-sm" onclick="sendToBackend({action:'show_report'})" data-i18n="security.report_btn">Bilan de la semaine</button>
@@ -906,7 +942,8 @@
                     </div>
                     <p class="text-muted" id="hibpPwResult"></p>
                 </div>
-                <div class="card card-apps">
+
+                <div data-acc="apps" class="card card-apps">
                     <div class="card-title-row">
                         <h4 data-i18n="security.apps.title">Applications hors dépôts (Flatpak, Snap, AppImage)</h4>
                         <button class="btn btn-secondary btn-sm" onclick="sendToBackend({action:'get_apps'})" data-i18n="system.refresh">Actualiser</button>
@@ -914,45 +951,12 @@
                     <p class="text-muted alerts-intro" data-i18n="security.apps.intro">Ces applications ne viennent pas des dépôts de la distribution. Les Flatpak avec accès à tout le disque ou aux périphériques, les Snap en confinement « classic » et les AppImage (sans bac à sable ni mise à jour automatique) sont signalés.</p>
                     <div id="appsList" class="persistence-list"><p class="text-muted" data-i18n="sidebar.loading">Chargement…</p></div>
                 </div>
-            </div>
 
-            <div class="cards-grid">
-                <div class="card card-integrity">
-                    <div class="card-title-row">
-                        <h4 data-i18n="security.integrity.title">Intégrité et rootkits</h4>
-                        <button class="btn btn-secondary btn-sm" id="btnIntegrityRun" onclick="loadSecurityData('integrity', false, true)" data-i18n="security.integrity.run">Vérifier maintenant</button>
-                    </div>
-                    <p class="text-muted alerts-intro" data-i18n="security.integrity.intro">Lynis audite le durcissement du système (indice sur 100), unhide cherche les processus et ports cachés, chkrootkit les rootkits connus, debsums compare les fichiers des paquets à leurs empreintes d'origine, et l'application vérifie ses propres fichiers grâce au manifeste signé livré dans le paquet.</p>
-                    <div id="integrityList" class="integrity-list"><p class="text-muted" data-i18n="security.integrity.none_yet">Aucune vérification effectuée.</p></div>
-                    <div class="fw-actions"><button class="btn btn-secondary btn-sm" id="btnInstallTools" onclick="sendToBackend({action:'install_tools'})" hidden data-i18n="security.integrity.install_tools">Installer Lynis, unhide, chkrootkit et debsums</button></div>
+                <div class="card card-trusted" data-acc="trusted">
+                    <h4 data-i18n="settings.trusted">Programmes de confiance</h4>
+                    <p class="text-muted" data-i18n="settings.trusted.intro">Programmes, entrées de démarrage et clés USB que vous avez approuvés depuis une alerte ou un popup : ils ne déclenchent plus de message et une clé de confiance n'est plus analysée à l'insertion. Retirez-en un pour être à nouveau averti.</p>
+                    <div id="trustedList" class="persistence-list"></div>
                 </div>
-
-                <div class="card card-appupdate" id="cardAppUpdate" data-state="unknown">
-                    <div class="card-title-row">
-                        <h4 data-i18n="security.update.title">Mise à jour de l'application</h4>
-                        <span class="badge" id="appUpdateBadge">…</span>
-                    </div>
-                    <p class="text-muted" id="appUpdateSummary"></p>
-                    <p class="text-muted alerts-intro" data-i18n="security.update.intro">Les mises à jour proviennent du dépôt Dukiwi. Un manifeste signé (clé Ed25519 conservée hors ligne) indique la version, l'empreinte SHA-256 du paquet et celle de chaque fichier : une mise à jour non signée ou modifiée est refusée, même si le serveur était compromis.</p>
-                    <div class="fw-actions">
-                        <button class="btn btn-secondary btn-sm" onclick="loadSecurityData('app_update', true)" data-i18n="security.update.check">Vérifier</button>
-                        <button class="btn btn-primary btn-sm" id="btnInstallUpdate" onclick="sendToBackend({action:'install_update'})" hidden data-i18n="security.update.install">Installer la mise à jour</button>
-                    </div>
-                    <p class="text-muted" id="appUpdateRepo"></p>
-                </div>
-            </div>
-
-            <div class="card card-hardening" id="cardHardening">
-                <div class="card-title-row">
-                    <h4 data-i18n="security.hardening.title">Durcissement (Lynis)</h4>
-                    <div class="log-actions-right">
-                        <span class="text-muted" id="hardeningIndex"></span>
-                        <button class="btn btn-primary btn-sm" id="btnHardenAll" onclick="hardenApplyAll()" hidden data-i18n="security.hardening.apply_all">Appliquer les recommandations sans risque</button>
-                        <button class="btn btn-secondary btn-sm" onclick="loadSecurityData('integrity', false, true)" data-i18n="security.hardening.rescan">Relancer l'audit</button>
-                    </div>
-                </div>
-                <p class="text-muted alerts-intro" data-i18n="security.hardening.intro">Lynis relève des points à améliorer. Chaque recommandation sans risque s'applique d'un clic (ou toutes ensemble) et reste annulable ; les autres sont expliquées. Après application, l'audit est relancé pour mettre l'indice à jour.</p>
-                <div id="hardeningList" class="checklist-list"><p class="text-muted" data-i18n="security.integrity.none_yet">Aucune vérification effectuée.</p></div>
             </div>
         </section>
 
@@ -1093,8 +1097,8 @@
                 <p class="subtitle" data-i18n="firewall.subtitle">Pare-feu (UFW ou firewalld) et service SSH, appliqués par le service système sans mot de passe</p>
             </div>
 
-            <div class="cards-grid">
-                <div class="card card-fw" id="cardFirewall" data-state="unknown">
+            <div class="accordion" data-accordion="firewall">
+                <div class="card card-fw" id="cardFirewall" data-state="unknown" data-acc="firewall">
                     <div class="card-title-row">
                         <h4 data-i18n="firewall.ufw.title">Pare-feu</h4>
                         <span class="badge" id="fwBadge">…</span>
@@ -1114,9 +1118,11 @@
                         </label>
                         <button class="btn btn-secondary btn-sm" onclick="firewallDefaults()" data-i18n="firewall.apply_defaults">Appliquer</button>
                     </div>
-                    <div class="fw-profile">
+                </div>
+
+                <div class="card card-fw fw-profile" id="cardFwProfile" data-acc="network">
                         <div class="card-title-row">
-                            <h5 class="sub-title" data-i18n="firewall.profile.title">Type de réseau</h5>
+                            <h4 data-i18n="firewall.profile.title">Type de réseau</h4>
                             <span class="text-muted" id="fwProfileCurrent"></span>
                         </div>
                         <p class="text-muted setting-note" data-i18n="firewall.profile.intro">Choisissez où se trouve l'ordinateur : les règles du pare-feu sont appliquées en conséquence (connexions entrantes bloquées, sauf les services utiles depuis le réseau local en Maison ou Entreprise).</p>
@@ -1129,10 +1135,25 @@
                         <p class="text-muted setting-note" id="fwProfileWarning" hidden></p>
                         <div id="fwNetworkKnown"></div>
                         <div class="log-actions-right"><span class="text-muted" id="travelStatus"></span><button class="btn btn-secondary btn-sm" id="travelBtnFw" onclick="toggleTravel()"><span data-i18n="travel.btn">✈ Mode voyage</span></button></div>
-                    </div>
                 </div>
 
-                <div class="card card-ssh" id="cardSsh" data-state="unknown">
+                <div class="card card-rules" data-acc="rules">
+                    <div class="card-title-row">
+                        <h4 data-i18n="firewall.rules.title">Règles du pare-feu</h4>
+                        <span class="badge badge-blue" id="fwRulesCount" hidden></span>
+                        <button class="btn btn-secondary btn-sm" onclick="sendToBackend({action:'get_security', refresh:true})" data-i18n="system.refresh">Actualiser</button>
+                    </div>
+                    <div class="rule-add">
+                        <input type="text" id="ruleAddPort" class="input-field" placeholder="80 ou 8000:8100" data-i18n-placeholder="firewall.rules.port_placeholder">
+                        <select id="ruleAddProto" class="lang-select"><option value="tcp">TCP</option><option value="udp">UDP</option><option value="any">TCP+UDP</option></select>
+                        <select id="ruleAddAction" class="lang-select"><option value="allow" data-i18n="firewall.policy.allow">Autoriser</option><option value="deny" data-i18n="firewall.policy.deny">Bloquer</option><option value="limit" data-i18n="firewall.policy.limit">Limiter</option></select>
+                        <input type="text" id="ruleAddComment" class="input-field" placeholder="Commentaire" data-i18n-placeholder="firewall.rules.comment_placeholder">
+                        <button class="btn btn-primary" onclick="firewallAddRuleFromForm()" data-i18n="firewall.rules.add">Ajouter</button>
+                    </div>
+                    <div id="ruleList" class="rule-list"><p class="text-muted" data-i18n="sidebar.loading">Chargement…</p></div>
+                </div>
+
+                <div class="card card-ssh" id="cardSsh" data-state="unknown" data-acc="ssh">
                     <div class="card-title-row">
                         <h4 data-i18n="firewall.ssh.title">Accès à distance (SSH)</h4>
                         <span class="badge" id="sshBadge">…</span>
@@ -1145,21 +1166,6 @@
                     </div>
                     <p class="text-muted" data-i18n="firewall.ssh.hint">Laissez SSH désactivé si vous n'avez pas besoin de vous connecter à cet ordinateur à distance.</p>
                 </div>
-
-                <div class="card card-rules">
-                    <div class="card-title-row">
-                        <h4 data-i18n="firewall.rules.title">Règles du pare-feu</h4>
-                        <button class="btn btn-secondary btn-sm" onclick="sendToBackend({action:'get_security', refresh:true})" data-i18n="system.refresh">Actualiser</button>
-                    </div>
-                    <div class="rule-add">
-                        <input type="text" id="ruleAddPort" class="input-field" placeholder="80 ou 8000:8100" data-i18n-placeholder="firewall.rules.port_placeholder">
-                        <select id="ruleAddProto" class="lang-select"><option value="tcp">TCP</option><option value="udp">UDP</option><option value="any">TCP+UDP</option></select>
-                        <select id="ruleAddAction" class="lang-select"><option value="allow" data-i18n="firewall.policy.allow">Autoriser</option><option value="deny" data-i18n="firewall.policy.deny">Bloquer</option><option value="limit" data-i18n="firewall.policy.limit">Limiter</option></select>
-                        <input type="text" id="ruleAddComment" class="input-field" placeholder="Commentaire" data-i18n-placeholder="firewall.rules.comment_placeholder">
-                        <button class="btn btn-primary" onclick="firewallAddRuleFromForm()" data-i18n="firewall.rules.add">Ajouter</button>
-                    </div>
-                    <div id="ruleList" class="rule-list"><p class="text-muted" data-i18n="sidebar.loading">Chargement…</p></div>
-                </div>
             </div>
         </section>
 
@@ -1171,8 +1177,8 @@
             </div>
 
             <p class="text-muted alerts-intro policy-banner" id="policyBanner" hidden></p>
-            <div class="settings-grid">
-                <div class="card settings-card">
+            <div class="accordion" data-accordion="settings">
+                <div class="card settings-card" data-acc="general">
                     <h4 data-i18n="settings.general">Général</h4>
                     <label class="setting-row"><span data-i18n="settings.language">Langue</span>
                         <select id="setLanguage" class="lang-select"><option value="fr">Français</option><option value="en">English</option><option value="de">Deutsch</option><option value="it">Italiano</option></select></label>
@@ -1180,7 +1186,7 @@
                         <select id="setViewMode" class="lang-select"><option value="simple" data-i18n="settings.view.simple">Simple</option><option value="advanced" data-i18n="settings.view.advanced">Avancée</option></select></label>
                 </div>
 
-                <div class="card settings-card">
+                <div class="card settings-card" data-acc="popups">
                     <h4 data-i18n="settings.popups">Notifications (popups)</h4>
                     <label class="setting-row toggle"><span data-i18n="settings.popup.info">Activité inhabituelle (info)</span><input type="checkbox" id="setPopupInfo"></label>
                     <label class="setting-row toggle"><span data-i18n="settings.popup.upload">Envoi Internet important</span><input type="checkbox" id="setPopupUpload"></label>
@@ -1193,7 +1199,7 @@
                     <p class="text-muted" data-i18n="settings.popup.note">Les dangers potentiels et les menaces détectées sont toujours affichés.</p>
                 </div>
 
-                <div class="card settings-card">
+                <div class="card settings-card" data-acc="upload">
                     <h4 data-i18n="settings.upload">Envoi vers Internet</h4>
                     <label class="setting-row toggle"><span data-i18n="settings.upload.enable">Surveiller le volume envoyé</span><input type="checkbox" id="setUploadMonitor"></label>
                     <label class="setting-row"><span data-i18n="settings.upload.threshold">Popup à partir de (Go)</span><input type="number" id="setUploadGb" class="input-field input-sm" min="0.1" step="0.5"></label>
@@ -1201,7 +1207,7 @@
                     <p class="text-muted" id="setUploadCurrent"></p>
                 </div>
 
-                <div class="card settings-card">
+                <div class="card settings-card" data-acc="burst">
                     <h4 data-i18n="settings.burst">Détection comportementale</h4>
                     <label class="setting-row toggle"><span data-i18n="settings.burst.enable">Surveiller les rafales d'écritures</span><input type="checkbox" id="setBurstMonitor"></label>
                     <label class="setting-row"><span data-i18n="settings.burst.info">Info à partir de (fichiers)</span><input type="number" id="setBurstInfo" class="input-field input-sm" min="5" step="5"></label>
@@ -1209,46 +1215,70 @@
                     <label class="setting-row"><span data-i18n="settings.burst.window">Fenêtre (secondes)</span><input type="number" id="setBurstWindow" class="input-field input-sm" min="5" max="600" step="5"></label>
                 </div>
 
-                <div class="card settings-card">
-                    <h4 data-i18n="settings.security">Sécurité et famille</h4>
+                <div class="card settings-card" data-acc="security">
+                    <h4 data-i18n="settings.security">Famille et réponse automatique</h4>
                     <label class="setting-row toggle"><span data-i18n="settings.family_mode">Mode famille : réglages et actions sensibles réservés à un administrateur</span><input type="checkbox" id="setFamilyMode"></label>
                     <label class="setting-row toggle"><span data-i18n="settings.auto_response">Suspendre automatiquement un programme jugé dangereux, puis demander</span><input type="checkbox" id="setAutoResponse"></label>
-                    <label class="setting-row toggle"><span data-i18n="settings.connection_monitor">Surveiller les connexions sortantes</span><input type="checkbox" id="setConnectionMonitor"></label>
+                </div>
+
+                <div class="card settings-card" data-acc="realtime">
+                    <h4 data-i18n="settings.section.realtime">Protections en temps réel</h4>
+                    <label class="setting-row toggle"><span data-i18n="settings.on_access_scan">Analyser à l'arrivée les fichiers téléchargés, déposés sur le bureau ou écrits sur un support amovible (quarantaine immédiate)</span><input type="checkbox" id="setOnAccess"></label>
+                    <label class="setting-row toggle"><span data-i18n="settings.usb_keyboard_guard">Couper tout nouveau clavier USB jusqu'à votre accord (protection BadUSB)</span><input type="checkbox" id="setHidGuard"></label>
+                    <label class="setting-row toggle"><span data-i18n="settings.honeypot">Pot de miel réseau : ports leurres à l'écoute, balayages de ports signalés</span><input type="checkbox" id="setHoneypot"></label>
+                    <p class="text-muted setting-note" data-i18n="settings.honeypot.note">Actif par défaut. Les ports leurres (deux ports hauts tirés au sort, 23 et 2323) sont ouverts dans le pare-feu et apparaissent comme « pot de miel » dans les ports en écoute ; aucun service ne tourne derrière. Un appareil qui les touche ou balaie d'autres ports fermés est signalé par un popup, avec un bouton pour le bloquer.</p>
+                </div>
+
+                <div class="card settings-card" data-acc="links">
+                    <h4 data-i18n="settings.section.links">Liens et courriels</h4>
                     <label class="setting-row toggle"><span data-i18n="settings.url_guard">Contrôle des liens (extensions Thunderbird et navigateurs) : listes de sites malveillants et heuristiques</span><input type="checkbox" id="setUrlGuard"></label>
                     <label class="setting-row toggle"><span data-i18n="settings.url_guard_resolve">Résoudre les adresses raccourcies (bit.ly, t.co…) pour contrôler la destination réelle</span><input type="checkbox" id="setUrlGuardResolve"></label>
                     <label class="setting-row toggle"><span data-i18n="settings.mail_scan">Analyser les pièces jointes des courriels avec ClamAV (Thunderbird)</span><input type="checkbox" id="setMailScan"></label>
-                    <label class="setting-row toggle"><span data-i18n="settings.on_access_scan">Analyser à l'arrivée les fichiers téléchargés, déposés sur le bureau ou écrits sur un support amovible (quarantaine immédiate)</span><input type="checkbox" id="setOnAccess"></label>
-                    <label class="setting-row toggle"><span data-i18n="settings.usb_keyboard_guard">Couper tout nouveau clavier USB jusqu'à votre accord (protection BadUSB)</span><input type="checkbox" id="setHidGuard"></label>
                     <p class="text-muted setting-note" data-i18n="settings.url_guard.note">Actif par défaut. Les listes (OpenPhish et Phishing.Database sur GitHub, URLhaus chez abuse.ch) sont téléchargées par le service plusieurs fois par jour ; aucune adresse visitée n'est envoyée ailleurs qu'au service de cet ordinateur (sauf le raccourcisseur lui-même, interrogé pour connaître la destination).</p>
-                    <label class="setting-row toggle"><span data-i18n="settings.honeypot">Pot de miel réseau : ports leurres à l'écoute, balayages de ports signalés</span><input type="checkbox" id="setHoneypot"></label>
-                    <p class="text-muted setting-note" data-i18n="settings.honeypot.note">Actif par défaut. Les ports leurres (deux ports hauts tirés au sort, 23 et 2323) sont ouverts dans le pare-feu et apparaissent comme « pot de miel » dans les ports en écoute ; aucun service ne tourne derrière. Un appareil qui les touche ou balaie d'autres ports fermés est signalé par un popup, avec un bouton pour le bloquer.</p>
+                </div>
+
+                <div class="card settings-card" data-acc="connections">
+                    <h4 data-i18n="settings.section.connections">Connexions sortantes</h4>
+                    <label class="setting-row toggle"><span data-i18n="settings.connection_monitor">Surveiller les connexions sortantes</span><input type="checkbox" id="setConnectionMonitor"></label>
                     <label class="setting-row toggle"><span data-i18n="settings.geoip">Géolocaliser les adresses distantes (ip-api.com)</span><input type="checkbox" id="setGeoip"></label>
                     <label class="setting-row"><span data-i18n="settings.geoip_key">Clé API ip-api.com Pro (optionnelle)</span><input type="text" id="setGeoipKey" class="input-field input-sm input-key" placeholder="—" autocomplete="off" spellcheck="false"></label>
                     <p class="text-muted setting-note" id="geoipStats"></p>
                     <p class="text-muted setting-note" data-i18n="settings.geoip.note">Sans clé : service gratuit ip-api.com (HTTP, 15 requêtes groupées par minute, 100 adresses par requête, usage non commercial). Avec une clé Pro : HTTPS et sans limite. Chaque adresse n'est demandée qu'une fois par 24 h et le cache survit au redémarrage.</p>
-                    <label class="setting-row toggle"><span data-i18n="settings.backup_check">Compter la sauvegarde de vos fichiers dans l'état global (décochez si vous sauvegardez autrement)</span><input type="checkbox" id="setBackupCheck"></label>
-                    <label class="setting-row toggle"><span data-i18n="settings.timeshift_check">Compter l'état de Timeshift dans l'état global (décochez sur un PC sans place pour les instantanés)</span><input type="checkbox" id="setTimeshiftCheck"></label>
-                    <label class="setting-row toggle"><span data-i18n="settings.telemetry">Télémétrie anonyme (opt-in) : aider Dukiwi à réduire les faux positifs</span><input type="checkbox" id="setTelemetry"></label>
-                    <p class="text-muted setting-note" data-i18n="settings.telemetry.note">Une fois par semaine, si activé : version, système, réglages, score de la checklist, types d'alertes, programmes et entrées de démarrage approuvés (chemins anonymisés), avertissements d'intégrité approuvés et classés, mesures du dernier scan (durée, fichiers, cache, moteur), réglages de durcissement appliqués, paquets avec failles hautes, compteurs de failles. Jamais de nom d'utilisateur, d'ordinateur, de contenu de fichier ni d'adresse IP en clair. Sert à la liste blanche centrale signée et aux règles intégrées de faux positifs.</p>
-                    <p class="text-muted setting-note" id="telemetryLast"></p>
-                    <div class="log-actions-right"><button class="btn btn-secondary btn-sm" onclick="sendToBackend({action:'telemetry_send'})" data-i18n="settings.telemetry.send">Envoyer la télémétrie maintenant</button></div>
+                </div>
+
+                <div class="card settings-card" data-acc="integrity">
+                    <h4 data-i18n="settings.section.integrity">Intégrité et durcissement</h4>
                     <label class="setting-row toggle"><span data-i18n="settings.auto_harden">Appliquer automatiquement les recommandations Lynis sans risque après chaque audit</span><input type="checkbox" id="setAutoHarden"></label>
                     <p class="text-muted setting-note" data-i18n="settings.auto_harden.note">Seules les recommandations marquées sans risque (paramètres du noyau, core dumps, bannières, protocoles inutiles, outils d'audit, anciens noyaux…) sont appliquées ; celles « à lire avant d'appliquer » (umask, SSH, TMPDIR) restent manuelles.</p>
                     <label class="setting-row toggle"><span data-i18n="settings.integrity_weekly">Vérification d'intégrité hebdomadaire</span><input type="checkbox" id="setIntegrityWeekly"></label>
                     <label class="setting-row"><span data-i18n="settings.schedule.weekly_day">Jour</span>
                         <select id="setIntegrityDay" class="lang-select"><option value="0" data-i18n="day.mon">Lundi</option><option value="1" data-i18n="day.tue">Mardi</option><option value="2" data-i18n="day.wed">Mercredi</option><option value="3" data-i18n="day.thu">Jeudi</option><option value="4" data-i18n="day.fri">Vendredi</option><option value="5" data-i18n="day.sat">Samedi</option><option value="6" data-i18n="day.sun">Dimanche</option></select></label>
                     <label class="setting-row"><span data-i18n="settings.schedule.weekly_hour">Heure</span><input type="number" id="setIntegrityHour" class="input-field input-sm" min="0" max="23"></label>
+                </div>
+
+                <div class="card settings-card" data-acc="appupdate">
+                    <h4 data-i18n="settings.section.appupdate">Mises à jour de l'application</h4>
                     <label class="setting-row toggle"><span data-i18n="settings.app_update_check">Rechercher les mises à jour de l'application</span><input type="checkbox" id="setAppUpdateCheck"></label>
                     <label class="setting-row toggle"><span data-i18n="settings.app_update_auto">Installer automatiquement les mises à jour signées</span><input type="checkbox" id="setAppUpdateAuto"></label>
                 </div>
 
-                <div class="card settings-card">
+                <div class="card settings-card" data-acc="privacy">
+                    <h4 data-i18n="settings.section.privacy">État global et télémétrie</h4>
+                    <label class="setting-row toggle"><span data-i18n="settings.backup_check">Compter la sauvegarde de vos fichiers dans l'état global (décochez si vous sauvegardez autrement)</span><input type="checkbox" id="setBackupCheck"></label>
+                    <label class="setting-row toggle"><span data-i18n="settings.timeshift_check">Compter l'état de Timeshift dans l'état global (décochez sur un PC sans place pour les instantanés)</span><input type="checkbox" id="setTimeshiftCheck"></label>
+                    <label class="setting-row toggle"><span data-i18n="settings.telemetry">Télémétrie anonyme (opt-in) : aider Dukiwi à réduire les faux positifs</span><input type="checkbox" id="setTelemetry"></label>
+                    <p class="text-muted setting-note" data-i18n="settings.telemetry.note">Une fois par semaine, si activé : version, système, réglages, score de la checklist, types d'alertes, programmes et entrées de démarrage approuvés (chemins anonymisés), avertissements d'intégrité approuvés et classés, mesures du dernier scan (durée, fichiers, cache, moteur), réglages de durcissement appliqués, paquets avec failles hautes, compteurs de failles. Jamais de nom d'utilisateur, d'ordinateur, de contenu de fichier ni d'adresse IP en clair. Sert à la liste blanche centrale signée et aux règles intégrées de faux positifs.</p>
+                    <p class="text-muted setting-note" id="telemetryLast"></p>
+                    <div class="log-actions-right"><button class="btn btn-secondary btn-sm" onclick="sendToBackend({action:'telemetry_send'})" data-i18n="settings.telemetry.send">Envoyer la télémétrie maintenant</button></div>
+                </div>
+
+                <div class="card settings-card" data-acc="usb">
                     <h4 data-i18n="settings.usb">Supports USB</h4>
                     <label class="setting-row toggle"><span data-i18n="settings.usb.auto">Analyser les clés USB avant leur ouverture</span><input type="checkbox" id="setUsbAuto"></label>
                     <label class="setting-row"><span data-i18n="settings.usb.max">Demander au-delà de (Gio)</span><input type="number" id="setUsbMax" class="input-field input-sm" min="1" step="16"></label>
                 </div>
 
-                <div class="card settings-card">
+                <div class="card settings-card" data-acc="schedule">
                     <h4 data-i18n="settings.schedule">Planification</h4>
                     <label class="setting-row"><span data-i18n="settings.schedule.update_time">Recherche de mises à jour chaque jour à</span><input type="time" id="setUpdateTime" class="input-field input-sm"></label>
                     <label class="setting-row toggle"><span data-i18n="settings.schedule.weekly">Scan complet hebdomadaire</span><input type="checkbox" id="setWeekly"></label>
@@ -1260,7 +1290,7 @@
                     <p class="text-muted" data-i18n="settings.schedule.note">Les mises à jour sont aussi recherchées 5 minutes après chaque démarrage.</p>
                 </div>
 
-                <div class="card settings-card settings-card-wide" id="cardMail">
+                <div class="card settings-card settings-card-wide" id="cardMail" data-acc="mail">
                     <h4 data-i18n="settings.mail">Notifications par courrier</h4>
                     <p class="text-muted" data-i18n="settings.mail.intro">Désactivé par défaut : rien n'est envoyé. Une fois activé, le service envoie les événements choisis à la fréquence choisie, par le petit serveur de courrier msmtp installé avec l'application (ou par le serveur de courrier du système s'il y en a un).</p>
                     <p class="setting-note mail-warning" data-i18n="settings.mail.warning">Attention : les réglages SMTP sont enregistrés dans /etc/msmtprc, lisible par l'administrateur seulement. Tous les programmes du système fonctionnant avec ses droits (services, tâches planifiées, rapport quotidien de chkrootkit…) pourront alors envoyer des courriers avec ce compte. Utilisez de préférence un compte ou un mot de passe d'application dédié.</p>
@@ -1293,11 +1323,6 @@
                     </div>
                 </div>
 
-                <div class="card settings-card settings-card-wide">
-                    <h4 data-i18n="settings.trusted">Programmes de confiance</h4>
-                    <p class="text-muted" data-i18n="settings.trusted.intro">Programmes, entrées de démarrage et clés USB que vous avez approuvés depuis une alerte ou un popup : ils ne déclenchent plus de message et une clé de confiance n'est plus analysée à l'insertion. Retirez-en un pour être à nouveau averti.</p>
-                    <div id="trustedList" class="persistence-list"></div>
-                </div>
             </div>
 
             <div class="settings-footer">

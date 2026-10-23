@@ -209,7 +209,7 @@ function switchTab(tabId) {
     });
     syncTopbar();
     if (tabId === 'backup') { loadBackup(); sendToBackend({ action: 'vault_status' }); }
-    if (tabId === 'security') sendToBackend({ action: 'get_apps' });
+    if (tabId === 'security') { sendToBackend({ action: 'get_apps' }); sendToBackend({ action: 'get_trusted' }); }
 
     if (tabId === 'dashboard') {
         sendToBackend({ action: 'check_status' });
@@ -839,7 +839,7 @@ function toggleAdmin() {
 // ─── Vue simple / avancée ───────────────────────────────────────────────────
 
 function scrollToIntegrity() {
-    setTimeout(() => { const el = $('integrityList'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 150);
+    setTimeout(() => revealEl($('integrityList')), 150);
 }
 
 function setViewMode(mode, persist = true) {
@@ -1108,6 +1108,7 @@ function renderSecurity(available = true) {
 
     const rules = (ufw && ufw.rules) || [];
     const list = $('ruleList');
+    if ($('fwRulesCount')) { $('fwRulesCount').hidden = !rules.length; $('fwRulesCount').textContent = String(rules.length); }
     if (!ufw || !ufw.installed) list.innerHTML = '';
     else if (ufw.error === 'root_required') list.innerHTML = `<p class="text-muted">${t('firewall.root_required')}</p>`;
     else if (!rules.length) list.innerHTML = `<p class="text-muted">${t('firewall.rules.none')}</p>`;
@@ -2861,7 +2862,99 @@ document.addEventListener('keydown', (e) => {
 
 
 // ─── Init ───────────────────────────────────────────────────────────────────
+
+// ─── Sections en accordéon (Pare-feu, Paramètres) ──────────────────────────
+// Chaque carte d'un conteneur .accordion devient une section repliable : le titre (premier élément) reste visible avec
+// ses badges d'état, le reste se replie. Ouverture mémorisée par section (stockage local, facultatif). Par défaut :
+// première section ouverte. Les boutons et champs placés dans le titre restent utilisables sans replier la section.
+const ACC_STORE = 'linuxshield.accordion';
+function accLoad() { try { return JSON.parse(localStorage.getItem(ACC_STORE) || '{}') || {}; } catch (e) { return {}; } }
+function accSave(state) { try { localStorage.setItem(ACC_STORE, JSON.stringify(state)); } catch (e) { /* stockage indisponible */ } }
+
+function setSectionOpen(section, open, persist = true) {
+    section.classList.toggle('open', open);
+    const head = section.querySelector(':scope > .acc-head');
+    if (head) head.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (persist) {
+        const st = accLoad();
+        st[`${section.dataset.accGroup}:${section.dataset.acc}`] = open;
+        accSave(st);
+    }
+}
+
+function initAccordions() {
+    const st = accLoad();
+    document.querySelectorAll('.accordion').forEach(acc => {
+        const group = acc.dataset.accordion || 'x';
+        [...acc.children].filter(c => c.classList.contains('card')).forEach((card, idx) => {
+            if (card.classList.contains('acc-section')) return;
+            const head = card.firstElementChild;
+            if (!head) return;
+            card.classList.add('acc-section');
+            card.dataset.accGroup = group;
+            if (!card.dataset.acc) card.dataset.acc = String(idx);
+            head.classList.add('acc-head');
+            if (head.dataset.i18n) {               // la traduction réécrit textContent : le texte passe dans un sous-élément
+                const label = document.createElement('span');
+                label.className = 'acc-label';
+                label.dataset.i18n = head.dataset.i18n;
+                label.textContent = head.textContent;
+                head.removeAttribute('data-i18n');
+                head.textContent = '';
+                head.appendChild(label);
+            }
+            head.setAttribute('role', 'button');
+            head.setAttribute('tabindex', '0');
+            const chev = document.createElement('span');
+            chev.className = 'acc-chevron';
+            chev.setAttribute('aria-hidden', 'true');
+            head.appendChild(chev);
+            const body = document.createElement('div');
+            body.className = 'acc-body';
+            while (head.nextSibling) body.appendChild(head.nextSibling);
+            card.appendChild(body);
+            const toggle = e => {
+                if (e.target.closest('button, input, select, a, label, textarea') && !e.target.closest('.acc-chevron')) return;
+                setSectionOpen(card, !card.classList.contains('open'));
+            };
+            head.addEventListener('click', toggle);
+            head.addEventListener('keydown', e => { if (e.target === head && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setSectionOpen(card, !card.classList.contains('open')); } });
+            const saved = st[`${group}:${card.dataset.acc}`];
+            setSectionOpen(card, saved !== undefined ? !!saved : idx === 0, false);
+        });
+        // « Tout ouvrir / Tout fermer »
+        if (!acc.previousElementSibling || !acc.previousElementSibling.classList.contains('acc-toolbar')) {
+            const bar = document.createElement('div');
+            bar.className = 'acc-toolbar';
+            bar.innerHTML = `<button class="btn btn-secondary btn-sm" data-i18n="acc.expand_all">${t('acc.expand_all')}</button><button class="btn btn-secondary btn-sm" data-i18n="acc.collapse_all">${t('acc.collapse_all')}</button>`;
+            const [openAll, closeAll] = bar.querySelectorAll('button');
+            openAll.addEventListener('click', () => acc.querySelectorAll(':scope > .acc-section').forEach(c => setSectionOpen(c, true)));
+            closeAll.addEventListener('click', () => acc.querySelectorAll(':scope > .acc-section').forEach(c => setSectionOpen(c, false)));
+            acc.parentNode.insertBefore(bar, acc);
+        }
+    });
+}
+
+/** Fait défiler jusqu'à un élément en ouvrant d'abord la section accordéon qui le contient. */
+function revealEl(el, block = 'start') {
+    if (!el) return;
+    const sec = el.closest('.acc-section');
+    if (sec && !sec.classList.contains('open')) setSectionOpen(sec, true);
+    if (el.tagName === 'DETAILS') el.open = true;
+    setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block }), 60);
+}
+
+/** Ouvre l'onglet puis la section demandée (et la fait défiler à l'écran). */
+function openSection(tab, key) {
+    switchTab(tab);
+    const card = document.querySelector(`#tab-${tab} .acc-section[data-acc="${key}"]`);
+    if (!card) return;
+    setSectionOpen(card, true);
+    setTimeout(() => card.scrollIntoView({ behavior: 'smooth', block: 'start' }), 120);
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+    initAccordions();
     const params = new URLSearchParams(location.search);
     const nav = (params.get('lang') || navigator.language || 'en').slice(0, 2).toLowerCase();
     setLanguage(window.I18N && window.I18N[nav] ? nav : 'en');
@@ -3191,19 +3284,20 @@ function runIntegrityOnly() {
 // ─── « Régler » : chaque contrôle mène au bon endroit ───────────────────────
 
 const CHECK_FIX = {
-    firewall: () => switchTab('firewall'),
-    ssh: () => switchTab('firewall'),
+    firewall: () => openSection('firewall', 'firewall'),
+    ssh: () => openSection('firewall', 'ssh'),
     security_updates: () => sendToBackend({ action: 'system_upgrade' }),
     reboot: null,
     auto_updates: () => sendToBackend({ action: 'auto_updates_enable' }),
     signatures: () => triggerUpdate(),
     recent_scan: () => startFullSystemScan(true),
-    realtime: () => switchTab('settings'),
-    weekly_scan: () => switchTab('settings'),
-    auto_response: () => switchTab('settings'),
+    realtime: () => openSection('settings', 'burst'),
+    weekly_scan: () => openSection('settings', 'schedule'),
+    auto_response: () => openSection('settings', 'security'),
+    hardening_auto: () => openSection('settings', 'integrity'),
     open_ports: () => openPortsPanel(),
     exposed_services: () => openPortsPanel(),
-    open_vulns: () => { setVulnPrio('high'); const el = $('vulnList'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); },
+    open_vulns: () => { setVulnPrio('high'); revealEl($('vulnList')); },
     persistence: () => { switchTab('system'); setTimeout(() => { const el = $('persistenceList'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 150); },
     ld_preload: () => loadSecurityData('integrity', false, true),
     kernel_hwe: null,
@@ -3213,7 +3307,7 @@ const CHECK_FIX = {
     thunderbolt: null,
     secrets: null,
     login_failures: () => { switchTab('system'); setTimeout(() => { const el = $('alertsList'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 150); },
-    hardening: () => { switchTab('security'); setTimeout(() => { const el = $('cardHardening'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 150); },
+    hardening: () => openSection('security', 'hardening'),
 };
 
 // Libellé du bouton quand l'application règle elle-même (sinon « Régler » / « Comment faire »)
@@ -3257,7 +3351,7 @@ function honeypotEnable() { sendToBackend({ action: 'feature_answer', feature: '
 function honeypotBlock(ip, remove = false) { if (ip) sendToBackend({ action: 'honeypot_block', ip, remove }); }
 function honeypotIgnore(ip, remove = false) { if (ip) sendToBackend({ action: 'honeypot_ignore', ip, remove }); }
 function honeypotForget(ip) { if (ip) sendToBackend({ action: 'honeypot_forget', ip }); }
-function scrollToHoneypot() { setTimeout(() => { const el = $('cardHoneypot'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 150); }
+function scrollToHoneypot() { setTimeout(() => revealEl($('cardHoneypot')), 150); }
 
 function onHoneypotUpdate(summary) {
     if (lastStatus && summary) { lastStatus.honeypot_summary = summary; renderSimpleView(); }
@@ -3360,7 +3454,7 @@ function openPortsPanel() {
     const d = $('portsDetails');
     if (!d) return;
     d.open = true;
-    setTimeout(() => d.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+    setTimeout(() => revealEl(d), 100);
 }
 
 function firewallQuickDeny(port, proto) {
