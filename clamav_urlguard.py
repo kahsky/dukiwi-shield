@@ -651,12 +651,16 @@ class UrlGuard:
 
     def report(self, url, verdict, action, source=""):
         host, _ = _host_of(url)
+        if not host and str(url).lower().startswith("mailto:"):      # expéditeur non authentifié (Thunderbird) : domaine de l'adresse
+            host = str(url).rsplit("@", 1)[-1].strip().lower()[:120]
         self.record({"t": _iso(), "source": source, "url": str(url)[:300], "host": host, "verdict": verdict, "action": action})
         with self.lock:
             if action == "blocked":
                 self.counters["blocked"] = self.counters.get("blocked", 0) + 1
             elif action == "opened":
                 self.counters["opened"] = self.counters.get("opened", 0) + 1
+            elif action in ("auth_fail", "auth_warn"):
+                self.counters["unauthenticated"] = self.counters.get("unauthenticated", 0) + 1
 
     def hello(self, app, version, uid):
         app = app if app in CLIENTS else "other"

@@ -1278,6 +1278,47 @@ class ClamAVAntivirusApp:
         if kind == "honeypot":
             self.show_honeypot_alert(alert)
             return
+        if kind == "account":
+            self.popup("warning", T("popup.account.title", name=alert.get("title") or "?"), T("popup.account.body", name=alert.get("title") or "?"),
+                       timeout=None, buttons=[(T("popup.btn.details"), None, lambda: self.show_tab("system"))], on_activate=lambda: self.show_tab("system"))
+            return
+        if kind == "usb_keyboard":
+            # BadUSB : nouveau clavier coupé (accord demandé), ou autorisé d'office (seul clavier / seul pointeur)
+            ident, name = alert.get("id") or "", alert.get("title") or "?"
+            if alert.get("blocked"):
+                def allow(_ident=ident):
+                    self.run_admin("hid_allow", {"id": _ident}, lambda resp: self.send_to_js("operationResult", {"status": "success" if resp.get("ok") else "error",
+                                   "message": T("msg.hid_allowed") if resp.get("ok") else self.daemon_error(resp)}) or False)
+                self.popup("danger", T("popup.hid.title"), T("popup.hid.body", name=name), timeout=None,
+                           buttons=[(T("popup.hid.allow"), "primary", allow), (T("popup.hid.keep"), None, lambda: None)],
+                           on_activate=lambda: self.show_tab("system"))
+            elif alert.get("reason") in ("only_keyboard", "only_pointer") and self.popups_enabled("info"):
+                self.popup("info", T("popup.hid.allowed_title"), T("popup.hid.allowed_body", name=name, why=T(f"popup.hid.why.{alert.get('reason')}")), timeout=20)
+            return
+        if kind == "network":
+            # Réseau piégé : passerelle changée (homme du milieu possible) ou Wi-Fi ouvert sans VPN
+            key, name = alert.get("key") or "", alert.get("title") or "?"
+            if alert.get("subtype") == "gateway_changed":
+                def accept(_key=key):
+                    self.run_admin("network_gateway_accept", {"key": _key}, lambda resp: self.send_to_js("operationResult", {"status": "success" if resp.get("ok") else "error",
+                                   "message": T("msg.gateway_accepted") if resp.get("ok") else self.daemon_error(resp)}) or False)
+                def go_public():
+                    self.run_admin("firewall_profile", {"profile": "public"}, lambda resp: False)
+                self.popup("danger", T("popup.network.gateway_title", name=name), T("popup.network.gateway_body", old=alert.get("old") or "?", new=alert.get("new") or "?"),
+                           timeout=None, buttons=[(T("popup.network.gateway_accept"), None, accept), (T("popup.network.public"), "primary", go_public),
+                                                  (T("popup.btn.details"), None, lambda: self.show_tab("system"))],
+                           on_activate=lambda: self.show_tab("firewall"))
+            else:
+                self.popup("warning", T("popup.network.open_title", name=name), T("popup.network.open_body", security=(alert.get("security") or "open").upper()),
+                           timeout=45, buttons=[(T("popup.network.open_ok"), "primary", lambda: None)], on_activate=lambda: self.show_tab("firewall"))
+            return
+        if kind == "download":
+            # Fichier infecté isolé à l'arrivée (téléchargement, bureau, support amovible) : toujours affiché
+            body = T("popup.download.body", name=alert.get("title") or "?", signature=alert.get("detail") or "?",
+                     folder=os.path.dirname(alert.get("path") or "") or "?")
+            self.popup("danger", T("popup.download.title"), body, buttons=[(T("popup.btn.details"), None, lambda: self.show_tab("quarantine"))],
+                       on_activate=lambda: self.show_tab("quarantine"))
+            return
         if kind == "mail":
             # Pièce jointe infectée dans un courriel (Thunderbird → hôte natif → clamd) : toujours affiché
             body = T("popup.mail.body", name=alert.get("title") or "?", signature=alert.get("detail") or "?")
@@ -1498,6 +1539,13 @@ class ClamAVAntivirusApp:
                            timeout=12, on_activate=lambda: self.show_tab("firewall"))
             self.act_get_security({"refresh": False})
             self.send_status()
+        elif et == "firmware_done":
+            T = self.T
+            if ev.get("ok"):
+                self.popup("success", T("popup.firmware.done_title"), T("popup.firmware.done_body"), timeout=20)
+            else:
+                self.popup("warning", T("popup.firmware.failed_title"), (ev.get("output") or "")[-200:], timeout=30)
+            self.act_get_security({"refresh": False})
         elif et == "hardening_done":
             T = self.T
             index = ev.get("index") if ev.get("index") is not None else "?"
@@ -1637,6 +1685,33 @@ class ClamAVAntivirusApp:
                 self.act_get_trusted({})
             return False
         self.run_admin("usb_skip", {"devnode": usb.get("devnode", ""), "trust": bool(trust)}, done)
+
+    def act_hid_allow(self, data):
+        def done(resp):
+            if resp.get("ok"):
+                self.send_to_js("operationResult", {"status": "success", "message": self.T("msg.hid_allowed")})
+                self.act_get_trusted({})
+            else:
+                self.send_to_js("operationResult", {"status": "error", "message": self.daemon_error(resp)})
+            return False
+        self.run_admin("hid_allow", {"id": str(data.get("id") or "")}, done)
+
+    def act_hid_forget(self, data):
+        def done(resp):
+            if resp.get("ok"):
+                self.send_to_js("operationResult", {"status": "success", "message": self.T("msg.hid_forgotten")})
+                self.act_get_trusted({})
+            else:
+                self.send_to_js("operationResult", {"status": "error", "message": self.daemon_error(resp)})
+            return False
+        self.run_admin("hid_forget", {"id": str(data.get("id") or "")}, done)
+
+    def act_network_gateway_accept(self, data):
+        def done(resp):
+            self.send_to_js("operationResult", {"status": "success" if resp.get("ok") else "error",
+                                                "message": self.T("msg.gateway_accepted") if resp.get("ok") else self.daemon_error(resp)})
+            return False
+        self.run_admin("network_gateway_accept", {"key": str(data.get("key") or "")}, done)
 
     def act_untrust_usb(self, data):
         def done(resp):
@@ -3072,6 +3147,16 @@ class ClamAVAntivirusApp:
     def act_lock(self, _data):
         DaemonClient.request("lock")
         self.act_check_status({})
+
+    def act_firmware_update(self, _data):
+        """« Régler » sur le contrôle Firmware : fwupdmgr update par le service (administrateur)."""
+        def done(resp):
+            if resp.get("ok"):
+                self.send_to_js("operationResult", {"status": "info", "message": self.T("msg.firmware_updating")})
+            else:
+                self.send_to_js("operationResult", {"status": "error", "message": self.daemon_error(resp)})
+            return False
+        self.run_admin("firmware_update", {}, done)
 
     def act_system_upgrade(self, _data):
         """« Mettre à jour » : apt update + apt upgrade par le service (les paquets décalés/retenus restent en attente)."""

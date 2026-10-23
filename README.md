@@ -52,15 +52,15 @@ versions itself (popup or Security tab) and can install them on its own when the
 
 ### Direct download
 
-- Mint / Ubuntu: [clamav-antivirus_1.25.2_all.deb](https://www.dukiwi.com/repo/clamav-antivirus/clamav-antivirus_1.25.2_all.deb)
-- Fedora: [clamav-antivirus-1.25.2-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/clamav-antivirus-1.25.2-1.noarch.rpm)
+- Mint / Ubuntu: [clamav-antivirus_1.28.0_all.deb](https://www.dukiwi.com/repo/clamav-antivirus/clamav-antivirus_1.28.0_all.deb)
+- Fedora: [clamav-antivirus-1.28.0-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/clamav-antivirus-1.28.0-1.noarch.rpm)
 - All versions: [www.dukiwi.com/repo](https://www.dukiwi.com/repo)
 
 ### Installing a downloaded package by hand
 
 ```bash
-sudo apt install ./clamav-antivirus_1.25.2_all.deb          # Mint / Ubuntu
-sudo dnf install ./clamav-antivirus-1.25.2-1.noarch.rpm      # Fedora
+sudo apt install ./clamav-antivirus_1.28.0_all.deb          # Mint / Ubuntu
+sudo dnf install ./clamav-antivirus-1.28.0-1.noarch.rpm      # Fedora
 ```
 
 The installation enables the system service and the scheduler, then starts the initial scan:
@@ -210,6 +210,41 @@ sudo dnf remove clamav-antivirus   # Fedora
 - **Telemetry after the first full scan and on demand** — the first full scan completed after consent triggers the
   anonymous report without waiting for the week (performance measurements); "Send telemetry now" button in
   Settings.
+- **Six new checklist items** — *Automatic login* (LightDM, GDM, SDDM configuration: a stolen laptop opens straight
+  onto the files), *Screen lock* (per user: Cinnamon/GNOME dconf lock-enabled and idle-delay, KDE kscreenlockerrc),
+  *Firmware* (fwupd / LVFS updates checked daily, "Update the firmware" runs `fwupdmgr update` through the service,
+  BIOS/UEFI capsules apply at the next reboot), *Thunderbolt / USB4* (security level "none" without IOMMU DMA
+  protection), *Secrets in the clear* (SSH private keys without passphrase, keys or ~/.ssh readable by other accounts,
+  .netrc, AWS, git and Docker credentials, listed per user), *Access attempts* (failed authentications of the last
+  24 h from the journal: login, sudo, SSH; warning from five). A new user account (uid ≥ 1000) raises an orange popup
+  and an event. Expensive checks are cached ten minutes; "How to" texts in four languages.
+- **BadUSB: new USB keyboards cut off until approved** — a booby-trapped stick presents itself as a keyboard and
+  types commands. Any new USB device that declares itself a keyboard (udev `ID_INPUT_KEYBOARD`) is cut off the moment
+  it appears (`authorized` = 0, the kernel removes it) and a red popup asks "Allow this keyboard / Keep it cut off";
+  an allowed keyboard is remembered (vendor:product:serial, Settings › Trusted programs, "Remove"). Guard rails so
+  the user is never locked out: the only keyboard of the computer, or a keyboard+mouse receiver when no other pointer
+  exists, is allowed at once with an information popup; keyboards present when the service starts are known. Setting
+  "Cut off any new USB keyboard until you approve it" (on by default). `HidGuard` thread, udev `input` monitor.
+- **Trapped networks** — the gateway's hardware address is remembered per network and checked every minute: a change
+  on a known network (ARP poisoning, man-in-the-middle, or simply a new router) raises a red popup "The router of …
+  has changed" with "This is my new router" (new reference), "Switch to Public" and "Details"; an unencrypted or WEP
+  Wi-Fi without an active VPN gets an orange popup "Unencrypted Wi-Fi" once a day per network. Alerts in the events
+  list with the same actions, e-mail if notifications are on.
+- **Sender authentication in Thunderbird** — the banner of every message now says whether the sender is
+  authenticated: SPF, DKIM and DMARC results read from the `Authentication-Results` headers set by the receiving
+  server (ARC and `Received-SPF` too), aligned with the sender's domain; "NOT authenticated" in red when SPF, DKIM
+  or DMARC failed (the address may be spoofed), "doubtful" in orange when the reply address belongs to another
+  domain (CEO fraud: corporate sender, free-mail reply-to) or the display name contains another e-mail address,
+  "could not be verified" when the server left no information. Counted in the badge and reported to the
+  Security › Links and e-mails card (`extensions/thunderbird/auth.js`, pure functions tested on thirteen header
+  scenarios).
+- **Scan on arrival** — every file closed after writing in a download folder, on the desktop (XDG user dirs of each
+  user, usual names otherwise) or on removable media (/media, /mnt, /run/media) is passed to clamd at once
+  (`OnAccessScanner`, fed by the fanotify events of the activity monitor, files up to 512 MiB); an infected file is
+  moved to quarantine before it can be opened (browsers write `.part` / `.crdownload` first, so the download fails
+  cleanly), with a red popup "Infected file isolated on arrival", an event, an e-mail if notifications are on and
+  the quarantine index entry. Setting "Scan files on arrival" (on by default); counters in the status and the
+  telemetry.
 - **Telemetry round 2026-10-23** — bursts of known maintenance tools (package managers, font/mime/icon caches,
   initramfs, DKMS, Timeshift, rsync/rclone backups) no longer raise information popups when the executable is a
   trusted system/snap/flatpak path (`QUIET_BURST_BASENAMES`: 24 "burst" alerts in a week for `fc-cache` of the
@@ -549,8 +584,8 @@ python3 clamav-antivirus.py
 ## Building the packages
 
 ```bash
-./build-deb.sh        # clamav-antivirus_1.25.2_all.deb   (Mint / Ubuntu)
-./build-rpm.sh        # clamav-antivirus-1.25.2-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
+./build-deb.sh        # clamav-antivirus_1.28.0_all.deb   (Mint / Ubuntu)
+./build-rpm.sh        # clamav-antivirus-1.28.0-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
 ./build-meta.sh       # linux-shield_1.0.0_all.deb + linux-shield-1.0.0-1.noarch.rpm (metapackage, published once)
 ```
 

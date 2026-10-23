@@ -13,7 +13,7 @@ import struct
 import subprocess
 from datetime import datetime
 
-VERSION = "1.25.2"
+VERSION = "1.28.0"
 
 # ─── Chemins système (daemon root) ───────────────────────────────────────────
 # Surchargeables par variables d'environnement pour les tests sans root.
@@ -94,6 +94,11 @@ DEFAULT_SETTINGS = {
     "auto_response": True,
     # Connexions sortantes : programmes inconnus, listes d'IP malveillantes, géolocalisation
     "connection_monitor": True,
+    # Analyse à l'arrivée : fichiers écrits dans les dossiers de téléchargement, sur le bureau ou sur un support amovible
+    # passés à clamd dès leur fermeture ; infectés → quarantaine avant d'être ouverts
+    "on_access_scan": True,
+    # BadUSB : un nouveau clavier USB est coupé dès son branchement jusqu'à l'accord de l'utilisateur (popup)
+    "usb_keyboard_guard": True,
     "geoip_lookup": True,
     # Clé ip-api.com Pro (optionnelle) : HTTPS et sans limite ; vide = service gratuit (15 requêtes groupées/min, HTTP)
     "geoip_api_key": "",

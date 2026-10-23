@@ -229,7 +229,7 @@
                     <option value="de">Deutsch</option>
                     <option value="it">Italiano</option>
                 </select></label>
-                <small class="version">v1.25.2 — <a href="#" class="credits-link" onclick="openCredits(); return false;" data-i18n="sidebar.credits">Crédits</a> · <a href="#" class="credits-link" onclick="openLegal(); return false;" data-i18n="legal.link">Avertissement</a></small>
+                <small class="version">v1.28.0 — <a href="#" class="credits-link" onclick="openCredits(); return false;" data-i18n="sidebar.credits">Crédits</a> · <a href="#" class="credits-link" onclick="openLegal(); return false;" data-i18n="legal.link">Avertissement</a></small>
             </div>
         </div>
     </aside>
@@ -1217,6 +1217,8 @@
                     <label class="setting-row toggle"><span data-i18n="settings.url_guard">Contrôle des liens (extensions Thunderbird et navigateurs) : listes de sites malveillants et heuristiques</span><input type="checkbox" id="setUrlGuard"></label>
                     <label class="setting-row toggle"><span data-i18n="settings.url_guard_resolve">Résoudre les adresses raccourcies (bit.ly, t.co…) pour contrôler la destination réelle</span><input type="checkbox" id="setUrlGuardResolve"></label>
                     <label class="setting-row toggle"><span data-i18n="settings.mail_scan">Analyser les pièces jointes des courriels avec ClamAV (Thunderbird)</span><input type="checkbox" id="setMailScan"></label>
+                    <label class="setting-row toggle"><span data-i18n="settings.on_access_scan">Analyser à l'arrivée les fichiers téléchargés, déposés sur le bureau ou écrits sur un support amovible (quarantaine immédiate)</span><input type="checkbox" id="setOnAccess"></label>
+                    <label class="setting-row toggle"><span data-i18n="settings.usb_keyboard_guard">Couper tout nouveau clavier USB jusqu'à votre accord (protection BadUSB)</span><input type="checkbox" id="setHidGuard"></label>
                     <p class="text-muted setting-note" data-i18n="settings.url_guard.note">Actif par défaut. Les listes (OpenPhish et Phishing.Database sur GitHub, URLhaus chez abuse.ch) sont téléchargées par le service plusieurs fois par jour ; aucune adresse visitée n'est envoyée ailleurs qu'au service de cet ordinateur (sauf le raccourcisseur lui-même, interrogé pour connaître la destination).</p>
                     <label class="setting-row toggle"><span data-i18n="settings.honeypot">Pot de miel réseau : ports leurres à l'écoute, balayages de ports signalés</span><input type="checkbox" id="setHoneypot"></label>
                     <p class="text-muted setting-note" data-i18n="settings.honeypot.note">Actif par défaut. Les ports leurres (deux ports hauts tirés au sort, 23 et 2323) sont ouverts dans le pare-feu et apparaissent comme « pot de miel » dans les ports en écoute ; aucun service ne tourne derrière. Un appareil qui les touche ou balaie d'autres ports fermés est signalé par un popup, avec un bouton pour le bloquer.</p>

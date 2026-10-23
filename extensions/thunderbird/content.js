@@ -9,7 +9,7 @@
     const t = (k, s) => { try { return api.i18n.getMessage(k, s) || k; } catch (e) { return k; } };
     const reasonText = r => { const x = t('reason_' + r); return x === 'reason_' + r ? r : x; };
     const verdicts = new Map();          // href → résultat
-    let banner, linksLine, attsLine, confirmBox;
+    let banner, authLine, linksLine, attsLine, confirmBox;
 
     function ensureBanner() {
         if (banner) return banner;
@@ -18,9 +18,10 @@
         banner.className = 'ug-banner ug-neutral';
         const logo = document.createElement('span'); logo.className = 'ug-logo'; logo.textContent = '🛡';
         const body = document.createElement('div'); body.className = 'ug-body';
+        authLine = document.createElement('div'); authLine.className = 'ug-line ug-auth';
         linksLine = document.createElement('div'); linksLine.className = 'ug-line';
         attsLine = document.createElement('div'); attsLine.className = 'ug-line ug-atts';
-        body.appendChild(linksLine); body.appendChild(attsLine);
+        body.appendChild(authLine); body.appendChild(linksLine); body.appendChild(attsLine);
         banner.appendChild(logo); banner.appendChild(body);
         (document.body || document.documentElement).insertBefore(banner, (document.body || document.documentElement).firstChild);
         return banner;
@@ -126,9 +127,23 @@
         }
     }
 
+    // Expéditeur : authentifié (SPF, DKIM ou DMARC aligné), non vérifiable, douteux, ou non authentifié (usurpation possible)
+    function showAuth(auth) {
+        ensureBanner();
+        if (!auth) { authLine.textContent = ''; return; }
+        const why = (auth.reasons || []).map(reasonText).join(', ');
+        const who = auth.from || '?';
+        if (auth.verdict === 'fail') { authLine.textContent = t('auth_fail', [who, why]); setLevel('danger'); }
+        else if (auth.verdict === 'warn') { authLine.textContent = t('auth_warn', [who, why]); setLevel('warn'); }
+        else if (auth.verdict === 'ok') { authLine.textContent = t('auth_ok', [who, auth.method || '']); setLevel('safe'); }
+        else authLine.textContent = t('auth_none', [who]);
+    }
+
     api.runtime.onMessage.addListener(m => {
         if (m && m.type === 'attachments') showAttachments(m.results);
+        if (m && m.type === 'auth') showAuth(m.auth);
     });
 
     checkLinks();
+    api.runtime.sendMessage({ type: 'getAuth' }).then(r => { if (r && r.auth) showAuth(r.auth); }).catch(() => {});
 })();

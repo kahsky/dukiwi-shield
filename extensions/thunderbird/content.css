@@ -17,3 +17,5 @@ a.ug-link-warn { outline: 2px dashed #f59e0b !important; outline-offset: 1px; bo
 #clamav-urlguard-banner .ug-btn { border: 1px solid #cbd5e1; background: #f8fafc; color: #111; border-radius: 6px; padding: 5px 10px; font: inherit; cursor: pointer; }
 #clamav-urlguard-banner .ug-btn-primary { background: #16a34a; border-color: #16a34a; color: #fff; font-weight: 600; }
 #clamav-urlguard-banner .ug-btn-subtle { color: #6b7280; }
+#clamav-urlguard-banner .ug-auth:empty { display: none; }
+#clamav-urlguard-banner.ug-danger .ug-auth, #clamav-urlguard-banner.ug-warn .ug-auth { font-weight: 600; }

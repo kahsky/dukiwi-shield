@@ -116,7 +116,7 @@ function locale() {
 // « Ignorer », « C'est normal », « Faire confiance », « Réafficher »… : le service recalcule bouclier, score et listes.
 // Trois secondes après, tout l'état affiché est relu pour montrer le nouveau statut sans changer d'onglet.
 const RELOAD_AFTER_ACTIONS = new Set(['acknowledge_vuln', 'acknowledge_port', 'acknowledge_integrity', 'acknowledge_persistence',
-    'ignore_check', 'timeshift_ignore', 'trust_program', 'untrust_program', 'untrust_usb', 'honeypot_block', 'honeypot_ignore', 'honeypot_forget', 'feature_answer', 'url_allow']);
+    'ignore_check', 'timeshift_ignore', 'trust_program', 'untrust_program', 'untrust_usb', 'hid_allow', 'hid_forget', 'network_gateway_accept', 'honeypot_block', 'honeypot_ignore', 'honeypot_forget', 'feature_answer', 'url_allow']);
 let statusReloadTimer = null;
 
 function scheduleStatusReload(delay = 3000) {
@@ -458,6 +458,7 @@ function renderChecklist() {
     items.forEach(i => { if (counts[i.status] !== undefined) counts[i.status]++; });
     $('checklistCounts').textContent = t('security.checklist.counts', { ok: counts.ok, warn: counts.warn, fail: counts.fail });
     const order = { fail: 0, warn: 1, unknown: 2, ok: 3, na: 4 };
+    items.forEach(i => { if (i.key === 'secrets' && i.params && (i.params.secrets || []).length) i.detail = i.params.secrets.map(s => `${s.user}: ${s.name} (${t('check.secrets.kind.' + s.kind)})`).join(', '); });
     $('checklistList').innerHTML = items.slice().sort((a, b) => order[a.status] - order[b.status] || b.weight - a.weight).map(i => `
         <div class="check-item check-${i.status}">
             <span class="check-icon">${i.status === 'ok' ? '✓' : i.status === 'fail' ? '✕' : i.status === 'warn' ? '!' : '?'}</span>
@@ -1169,19 +1170,29 @@ let trustedData = { programs: [], acknowledged: [], usb: [] };
 function trustProgram(exe, comm) { sendToBackend({ action: 'trust_program', exe, comm }); }
 function untrustProgram(exe) { sendToBackend({ action: 'untrust_program', exe }); }
 function untrustUsb(id) { sendToBackend({ action: 'untrust_usb', id }); }
+function hidAllow(id) { sendToBackend({ action: 'hid_allow', id }); }
+function hidForget(id) { sendToBackend({ action: 'hid_forget', id }); }
+function gatewayAccept(key) { sendToBackend({ action: 'network_gateway_accept', key }); }
 function acknowledgePersistence(key, remove = false) { sendToBackend({ action: 'acknowledge_persistence', key, remove }); }
 
 function onTrustedList(data) {
-    trustedData = { programs: (data && data.programs) || [], acknowledged: (data && data.acknowledged) || [], usb: (data && data.usb) || [] };
+    trustedData = { programs: (data && data.programs) || [], acknowledged: (data && data.acknowledged) || [], usb: (data && data.usb) || [], hid: (data && data.hid) || [] };
     renderTrusted();
 }
 
 function renderTrusted() {
     const el = $('trustedList');
     if (!el) return;
-    const progs = trustedData.programs, ack = trustedData.acknowledged, usb = trustedData.usb || [];
-    if (!progs.length && !ack.length && !usb.length) { el.innerHTML = `<p class="text-muted">${t('settings.trusted.none')}</p>`; return; }
+    const progs = trustedData.programs, ack = trustedData.acknowledged, usb = trustedData.usb || [], hid = trustedData.hid || [];
+    if (!progs.length && !ack.length && !usb.length && !hid.length) { el.innerHTML = `<p class="text-muted">${t('settings.trusted.none')}</p>`; return; }
     el.innerHTML = [
+        ...hid.map(h => `<div class="package-item">
+            <span class="scope-badge scope-user">${t('settings.trusted.hid')}</span>
+            <span class="package-name">${escapeHtml(h.name || h.id)}</span>
+            <span class="package-versions" title="${escapeHtml(h.id || '')}">${escapeHtml(h.id || '')}</span>
+            <span class="alert-meta">${h.at ? formatDateTime(h.at) : ''}</span>
+            <button class="btn btn-secondary btn-sm" onclick="hidForget('${escapeJs(h.id)}')">${t('settings.trusted.remove')}</button>
+        </div>`),
         ...usb.map(u => `<div class="package-item">
             <span class="scope-badge scope-user">${t('settings.trusted.usb')}</span>
             <span class="package-name">${escapeHtml(u.label || u.model || u.id)}</span>
@@ -1234,6 +1245,8 @@ function onSettingsData(data) {
     if ($('setHoneypot')) $('setHoneypot').checked = !!sys.honeypot;
     if ($('setUrlGuard')) $('setUrlGuard').checked = sys.url_guard !== false;
     if ($('setUrlGuardResolve')) $('setUrlGuardResolve').checked = sys.url_guard_resolve !== false;
+    if ($('setOnAccess')) $('setOnAccess').checked = sys.on_access_scan !== false;
+    if ($('setHidGuard')) $('setHidGuard').checked = sys.usb_keyboard_guard !== false;
     if ($('setMailScan')) $('setMailScan').checked = sys.mail_scan_attachments !== false;
     $('setGeoip').checked = sys.geoip_lookup !== false;
     if ($('setGeoipKey')) $('setGeoipKey').value = sys.geoip_api_key || '';
@@ -1249,7 +1262,7 @@ function onSettingsData(data) {
     if ($('setScanCacheDays')) $('setScanCacheDays').value = sys.scan_cache_days ?? 30;
     if ($('telemetryLast')) $('telemetryLast').textContent = data.telemetry_sent ? t('settings.telemetry.last', { rel: formatRelative(data.telemetry_sent) }) : '';
     const locked = new Set(data.locked || []);
-    const map = { setUploadMonitor: 'upload_monitor', setUploadGb: 'upload_alert_gb', setUploadHours: 'upload_window_hours', setBurstMonitor: 'burst_monitor', setBurstInfo: 'burst_info_threshold', setBurstDanger: 'burst_danger_threshold', setBurstWindow: 'burst_window_sec', setUsbAuto: 'usb_auto_scan', setUsbMax: 'usb_auto_scan_max_gib', setUpdateTime: 'update_hour', setFamilyMode: 'family_mode', setAutoResponse: 'auto_response', setConnectionMonitor: 'connection_monitor', setHoneypot: 'honeypot', setUrlGuard: 'url_guard', setUrlGuardResolve: 'url_guard_resolve', setMailScan: 'mail_scan_attachments', setGeoip: 'geoip_lookup', setGeoipKey: 'geoip_api_key', setIntegrityWeekly: 'integrity_weekly', setIntegrityDay: 'integrity_day', setIntegrityHour: 'integrity_hour', setAppUpdateCheck: 'app_update_check', setAppUpdateAuto: 'app_update_auto', setWeekly: 'weekly_scan', setWeeklyDay: 'weekly_scan_day', setWeeklyHour: 'weekly_scan_hour', setBackupCheck: 'backup_check', setTimeshiftCheck: 'timeshift_check', setTelemetry: 'telemetry', setAutoHarden: 'auto_harden', setScanCacheDays: 'scan_cache_days' };
+    const map = { setUploadMonitor: 'upload_monitor', setUploadGb: 'upload_alert_gb', setUploadHours: 'upload_window_hours', setBurstMonitor: 'burst_monitor', setBurstInfo: 'burst_info_threshold', setBurstDanger: 'burst_danger_threshold', setBurstWindow: 'burst_window_sec', setUsbAuto: 'usb_auto_scan', setUsbMax: 'usb_auto_scan_max_gib', setUpdateTime: 'update_hour', setFamilyMode: 'family_mode', setOnAccess: 'on_access_scan', setHidGuard: 'usb_keyboard_guard', setAutoResponse: 'auto_response', setConnectionMonitor: 'connection_monitor', setHoneypot: 'honeypot', setUrlGuard: 'url_guard', setUrlGuardResolve: 'url_guard_resolve', setMailScan: 'mail_scan_attachments', setGeoip: 'geoip_lookup', setGeoipKey: 'geoip_api_key', setIntegrityWeekly: 'integrity_weekly', setIntegrityDay: 'integrity_day', setIntegrityHour: 'integrity_hour', setAppUpdateCheck: 'app_update_check', setAppUpdateAuto: 'app_update_auto', setWeekly: 'weekly_scan', setWeeklyDay: 'weekly_scan_day', setWeeklyHour: 'weekly_scan_hour', setBackupCheck: 'backup_check', setTimeshiftCheck: 'timeshift_check', setTelemetry: 'telemetry', setAutoHarden: 'auto_harden', setScanCacheDays: 'scan_cache_days' };
     Object.entries(map).forEach(([id, key]) => { const el = $(id); if (!el) return; const row = el.closest('.setting-row'); if (locked.has(key)) { el.disabled = true; if (row) { row.classList.add('locked'); row.title = t('settings.locked_note'); } } else if (row) { row.classList.remove('locked'); row.title = ''; } });
     const banner = $('policyBanner');
     if (banner) { banner.hidden = !data.policy; if (data.policy) banner.textContent = t('settings.policy.banner', { name: data.policy.name || '—', signed: data.policy.signed ? t('settings.policy.signed') : '', n: (data.locked || []).length }) + (data.allowlist && data.allowlist.version ? ' · ' + t('settings.allowlist', { version: data.allowlist.version, n: data.allowlist.patterns || 0 }) : ''); }
@@ -1327,6 +1340,8 @@ function saveSettings() {
         url_guard: $('setUrlGuard') ? $('setUrlGuard').checked : true,
         url_guard_resolve: $('setUrlGuardResolve') ? $('setUrlGuardResolve').checked : true,
         mail_scan_attachments: $('setMailScan') ? $('setMailScan').checked : true,
+        on_access_scan: $('setOnAccess') ? $('setOnAccess').checked : true,
+        usb_keyboard_guard: $('setHidGuard') ? $('setHidGuard').checked : true,
         geoip_lookup: $('setGeoip').checked,
         geoip_api_key: $('setGeoipKey') ? $('setGeoipKey').value.trim() : '',
         integrity_weekly: $('setIntegrityWeekly').checked,
@@ -1716,6 +1731,54 @@ function renderAlerts(available = true) {
             <div class="alert-body">${t('popup.connection.body', { program: escapeHtml(a.comm || '?'), ip: escapeHtml(a.ip || ''), port: escapeHtml(String(a.port || '')), where: escapeHtml([a.country, a.org].filter(Boolean).join(' · ') || '?') })}</div>
             ${a.exe ? `<div class="alert-exe">${escapeHtml(a.exe)}${a.exe_replaced ? ` · ${t('system.exe_replaced')}` : ''}</div>` : ''}
             <div class="alert-actions">${a.flagged || !a.exe ? '' : `<button class="btn btn-secondary btn-sm" onclick="trustProgram('${escapeJs(a.exe)}','${escapeJs(a.comm || '')}')">${t('popup.btn.its_me')}</button> `}${a.suspended ? `<button class="btn btn-danger btn-sm" onclick="sendToBackend({action:'process_action', pid:${a.pid}, action:'kill'})">${t('popup.btn.kill')}</button> <button class="btn btn-secondary btn-sm" onclick="sendToBackend({action:'process_action', pid:${a.pid}, action:'continue'})">${t('popup.btn.resume')}</button>` : ''}</div>
+        </div>`;
+        }
+        if (a.kind === 'account') {
+            return `
+        <div class="alert-item alert-warn">
+            <div class="alert-head">
+                <span class="badge badge-amber">${t('system.alert.account')}</span>
+                <span class="alert-program">${escapeHtml(a.title || '?')}</span>
+                <span class="alert-meta">${formatDateTime(a.time)}</span>
+            </div>
+            <div class="alert-body">${escapeHtml(t('popup.account.body', { name: a.title || '?' }))}</div>
+        </div>`;
+        }
+        if (a.kind === 'usb_keyboard') {
+            const blocked = a.blocked && !a.resolved;
+            return `
+        <div class="alert-item ${blocked ? 'alert-danger' : 'alert-info'}">
+            <div class="alert-head">
+                <span class="badge ${blocked ? 'badge-red' : 'badge-blue'}">${t('system.alert.usb_keyboard')}</span>
+                <span class="alert-program">${escapeHtml(a.title || '?')}</span>
+                <span class="alert-meta">${formatDateTime(a.time)} · ${escapeHtml(a.id || '')}</span>
+            </div>
+            <div class="alert-body">${blocked ? escapeHtml(t('popup.hid.body', { name: a.title || '?' })) : a.resolved ? escapeHtml(t('popup.hid.resolved', { name: a.title || '?' })) : escapeHtml(t('popup.hid.allowed_body', { name: a.title || '?', why: t(`popup.hid.why.${a.reason}`) !== `popup.hid.why.${a.reason}` ? t(`popup.hid.why.${a.reason}`) : (a.reason || '') }))}</div>
+            ${blocked ? `<div class="alert-actions"><button class="btn btn-secondary btn-sm" onclick="hidAllow('${escapeJs(a.id || '')}')">${t('popup.hid.allow')}</button></div>` : ''}
+        </div>`;
+        }
+        if (a.kind === 'network') {
+            const gw = a.subtype === 'gateway_changed';
+            return `
+        <div class="alert-item ${a.resolved ? 'alert-info' : gw ? 'alert-danger' : 'alert-warn'}">
+            <div class="alert-head">
+                <span class="badge ${a.resolved ? 'badge-blue' : gw ? 'badge-red' : 'badge-amber'}">${t('system.alert.network')}</span>
+                <span class="alert-program">${escapeHtml(a.title || '?')}</span>
+                <span class="alert-meta">${formatDateTime(a.time)}</span>
+            </div>
+            <div class="alert-body">${gw ? escapeHtml(t('popup.network.gateway_body', { old: a.old || '?', new: a.new || '?' })) : escapeHtml(t('popup.network.open_body', { security: (a.security || 'open').toUpperCase() }))}</div>
+            ${gw && !a.resolved ? `<div class="alert-actions"><button class="btn btn-secondary btn-sm" onclick="gatewayAccept('${escapeJs(a.key || '')}')">${t('popup.network.gateway_accept')}</button></div>` : ''}
+        </div>`;
+        }
+        if (a.kind === 'download') {
+            return `
+        <div class="alert-item alert-danger">
+            <div class="alert-head">
+                <span class="badge badge-red">${t('system.alert.download')}</span>
+                <span class="alert-program">${escapeHtml(a.title || '?')}</span>
+                <span class="alert-meta">${formatDateTime(a.time)}${a.user ? ` · ${escapeHtml(a.user)}` : ''}</span>
+            </div>
+            <div class="alert-body">${t('popup.download.body', { name: escapeHtml(a.title || '?'), signature: escapeHtml(a.detail || '?'), folder: escapeHtml(a.top_dir || '') })}</div>
         </div>`;
         }
         if (a.kind === 'mail') {
@@ -3144,11 +3207,17 @@ const CHECK_FIX = {
     persistence: () => { switchTab('system'); setTimeout(() => { const el = $('persistenceList'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 150); },
     ld_preload: () => loadSecurityData('integrity', false, true),
     kernel_hwe: null,
+    autologin: null,
+    screen_lock: null,
+    firmware: () => sendToBackend({ action: 'firmware_update' }),
+    thunderbolt: null,
+    secrets: null,
+    login_failures: () => { switchTab('system'); setTimeout(() => { const el = $('alertsList'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 150); },
     hardening: () => { switchTab('security'); setTimeout(() => { const el = $('cardHardening'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 150); },
 };
 
 // Libellé du bouton quand l'application règle elle-même (sinon « Régler » / « Comment faire »)
-const CHECK_FIX_LABEL = { auto_updates: 'check.auto_updates.action' };
+const CHECK_FIX_LABEL = { auto_updates: 'check.auto_updates.action', firmware: 'check.firmware.action' };
 
 /** Contrôles que l'utilisateur peut ignorer en connaissance de cause (« Ignorer ») : ports ouverts voulus (développement web…). */
 const CHECK_ACK = { open_ports: () => ackAllPorts(), open_vulns: () => ackAllVulns() };

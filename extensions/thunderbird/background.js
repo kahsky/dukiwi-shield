@@ -19,9 +19,9 @@ function remember(tabId, key, value, messageId) {
 
 function updateBadge(tabId) {
     const cur = perTab.get(tabId) || {};
-    const links = cur.links || [], atts = cur.attachments || [];
-    const danger = links.filter(l => l.verdict === 'danger').length + atts.filter(a => a.infected).length;
-    const warn = links.filter(l => l.verdict === 'warn').length;
+    const links = cur.links || [], atts = cur.attachments || [], auth = cur.auth || {};
+    const danger = links.filter(l => l.verdict === 'danger').length + atts.filter(a => a.infected).length + (auth.verdict === 'fail' ? 1 : 0);
+    const warn = links.filter(l => l.verdict === 'warn').length + (auth.verdict === 'warn' ? 1 : 0);
     const text = danger ? String(danger) : warn ? String(warn) : (links.length || atts.length ? '✓' : '');
     try {
         messenger.messageDisplayAction.setBadgeText({ tabId, text });
@@ -70,9 +70,33 @@ function notifyInfected(message, results) {
     } catch (e) { /* notifications indisponibles */ }
 }
 
+// Authentification de l'expéditeur : en-têtes complets du message (SPF, DKIM, DMARC posés par le serveur de réception)
+async function analyzeAuth(message) {
+    try {
+        const full = await messenger.messages.getFull(message.id);
+        return MailAuth.analyze((full && full.headers) || {}, message.author || '');
+    } catch (e) {
+        return { verdict: 'none', reasons: [], error: String(e && e.message || e) };
+    }
+}
+
+async function authForTab(tabId, message) {
+    const auth = await analyzeAuth(message);
+    remember(tabId, 'auth', auth, message.id);
+    updateBadge(tabId);
+    messenger.tabs.sendMessage(tabId, { type: 'auth', auth }).catch(() => {});
+    if ((auth.verdict === 'fail' || auth.verdict === 'warn') && !scanned.has('auth:' + message.id)) {
+        scanned.set('auth:' + message.id, true);                     // signalé une fois au service (carte Liens et courriels)
+        call({ cmd: 'report', url: 'mailto:' + (auth.from || ''), verdict: auth.verdict === 'fail' ? 'danger' : 'warn',
+               action: auth.verdict === 'fail' ? 'auth_fail' : 'auth_warn', app: 'thunderbird' }).catch(() => {});
+    }
+    return auth;
+}
+
 messenger.messageDisplay.onMessageDisplayed.addListener(async (tab, message) => {
     perTab.set(tab.id, { messageId: message.id, links: [], attachments: null });
     updateBadge(tab.id);
+    if (state.enabled !== false) authForTab(tab.id, message).catch(() => {});
     if (!state.mailScan) return;
     const results = await scanMessageAttachments(message);
     remember(tab.id, 'attachments', results, message.id);
@@ -108,6 +132,14 @@ messenger.runtime.onMessage.addListener((m, sender) => {
     }
     if (m.type === 'allowHost') {
         return call({ cmd: 'allow', host: m.host, app: 'thunderbird' }).then(() => ({ ok: true }), e => ({ ok: false, error: String(e) }));
+    }
+    if (m.type === 'getAuth') {
+        const cur = perTab.get(tabId) || {};
+        if (cur.auth) return Promise.resolve({ auth: cur.auth });
+        if (tabId === undefined || state.enabled === false) return Promise.resolve({ auth: null });
+        return messenger.messageDisplay.getDisplayedMessage(tabId)
+            .then(message => message ? authForTab(tabId, message) : null)
+            .then(auth => ({ auth }), () => ({ auth: null }));
     }
     if (m.type === 'getState') {
         return Promise.resolve({ tab: perTab.get(m.tabId !== undefined ? m.tabId : tabId) || {}, state });

@@ -43,6 +43,8 @@ import glob
 import json
 import os
 import pwd
+import queue as _queue
+import stat as _stat
 import re
 import shutil
 import signal
@@ -773,6 +775,9 @@ class ActivityMonitor(threading.Thread):
                             path = None
                         if path:
                             self.record(pid, path)
+                            onaccess = getattr(self.daemon_ref, "onaccess", None)
+                            if onaccess:
+                                onaccess.consider(pid, path)      # analyse à l'arrivée (téléchargements, bureau, supports)
                 finally:
                     try:
                         os.close(fd)
@@ -976,6 +981,123 @@ def outbound_processes(limit=8):
             entry = procs.setdefault((name, pid), {"name": name, "pid": pid, "connections": 0})
             entry["connections"] += 1
     return sorted(procs.values(), key=lambda p: -p["connections"])[:limit]
+
+
+ONACCESS_MAX_BYTES = 512 * 1024 * 1024
+REMOVABLE_PREFIXES = ("/media/", "/mnt/", "/run/media/")
+USER_DIR_DEFAULTS = ("Downloads", "Téléchargements", "Desktop", "Bureau", "Scaricati", "Scrivania", "Herunterladen", "Schreibtisch")
+
+
+class OnAccessScanner(threading.Thread):
+    """Analyse à l'arrivée : un fichier fermé après écriture dans un dossier de téléchargement, sur le bureau ou sur un support
+    amovible (événement fanotify du moniteur d'activité) passe par clamd ; infecté → mis en quarantaine avant d'être ouvert,
+    popup rouge, alerte, courrier. Les navigateurs écrivent d'abord un fichier .part / .crdownload : c'est lui qui est analysé,
+    le téléchargement échoue donc proprement si le fichier est infecté."""
+
+    def __init__(self, daemon):
+        super().__init__(daemon=True, name="onaccess-scanner")
+        self.daemon_ref = daemon
+        self.queue = _queue.Queue()
+        self.recent = {}
+        self.dirs, self.dirs_at = (), 0.0
+        self.lock = threading.Lock()
+        self.stats = {"scanned": 0, "infected": 0, "last": ""}
+
+    def watched_dirs(self):
+        """Dossiers de téléchargement et bureaux de chaque utilisateur (XDG user-dirs.dirs, sinon noms usuels), rafraîchis toutes les 5 min."""
+        now = time.time()
+        if now - self.dirs_at < 300:
+            return self.dirs
+        dirs = set()
+        for pw in pwd.getpwall():
+            if not ((pw.pw_uid >= 1000 or pw.pw_uid == 0) and pw.pw_dir.startswith(("/home/", "/root")) and os.path.isdir(pw.pw_dir)):
+                continue
+            home = pw.pw_dir.rstrip("/")
+            names = []
+            try:
+                with open(os.path.join(home, ".config", "user-dirs.dirs"), encoding="utf-8", errors="replace") as f:
+                    for ln in f:
+                        m = re.match(r'^XDG_(DOWNLOAD|DESKTOP)_DIR="?\$HOME/([^"\n]+?)/?"?$', ln.strip())
+                        if m:
+                            names.append(m.group(2))
+            except OSError:
+                pass
+            for n in names + list(USER_DIR_DEFAULTS):
+                d = os.path.join(home, n)
+                if os.path.isdir(d):
+                    dirs.add(d + "/")
+        self.dirs, self.dirs_at = tuple(sorted(dirs)), now
+        return self.dirs
+
+    def consider(self, pid, path):
+        if self.daemon_ref.settings.get("on_access_scan") is False:
+            return
+        if path.startswith(SYSTEM_STATE_DIR) or not (path.startswith(REMOVABLE_PREFIXES) or path.startswith(self.watched_dirs())):
+            return
+        now = time.time()
+        with self.lock:
+            if now - self.recent.get(path, 0) < 10:
+                return
+            self.recent[path] = now
+            if len(self.recent) > 2000:
+                self.recent = {p: t for p, t in self.recent.items() if now - t < 60}
+        self.queue.put(path)
+
+    def run(self):
+        while not self.daemon_ref.shutdown.is_set():
+            try:
+                path = self.queue.get(timeout=1)
+            except _queue.Empty:
+                continue
+            try:
+                self.scan(path)
+            except Exception as e:  # noqa: BLE001
+                log(f"Analyse à l'arrivée {path} : {e}")
+
+    def scan(self, path):
+        try:
+            st = os.lstat(path)
+        except OSError:
+            return
+        if not _stat.S_ISREG(st.st_mode) or st.st_size == 0 or st.st_size > ONACCESS_MAX_BYTES or not shutil.which("clamdscan"):
+            return
+        r = run_quiet(["clamdscan"] + distro.clamdscan_args() + ["--fdpass", "--no-summary", "--infected", path], timeout=180)
+        self.stats["scanned"] += 1
+        self.stats["last"] = now_iso()
+        sig = ""
+        for line in (r.stdout or "").splitlines():
+            if line.endswith(" FOUND") and ": " in line:
+                sig = line.rsplit(": ", 1)[1][:-len(" FOUND")].strip()
+        if not sig:
+            return
+        dest = self.quarantine(path)
+        self.stats["infected"] += 1
+        try:
+            owner = pwd.getpwuid(st.st_uid).pw_name
+        except KeyError:
+            owner = str(st.st_uid)
+        if dest:
+            quarantine_index_add(SYSTEM_QUARANTINE_DIR, dest, path, sig)
+        self.daemon_ref.write_log(f"⚠ on-access: {path} → {sig} ({'quarantined' if dest else 'NOT quarantined'})")
+        log(f"Analyse à l'arrivée : {path} infecté ({sig}), {'mis en quarantaine' if dest else 'quarantaine impossible'}")
+        self.daemon_ref.publish_alert({"kind": "download", "severity": "danger", "time": now_iso(), "title": os.path.basename(path), "detail": sig,
+                                       "path": path, "quarantined": bool(dest), "user": owner, "pid": 0, "comm": "", "exe": "", "count": 0,
+                                       "top_dir": os.path.dirname(path), "reasons": ["infected_download"], "sample": [path]})
+
+    @staticmethod
+    def quarantine(path):
+        try:
+            os.makedirs(SYSTEM_QUARANTINE_DIR, mode=0o700, exist_ok=True)
+            base = os.path.basename(path)
+            dest, n = os.path.join(SYSTEM_QUARANTINE_DIR, base), 1
+            while os.path.exists(dest):
+                dest, n = os.path.join(SYSTEM_QUARANTINE_DIR, f"{base}.{n:03d}"), n + 1
+            shutil.move(path, dest)
+            os.chmod(dest, 0o600)
+            return dest
+        except OSError as e:
+            log(f"Quarantaine impossible pour {path} : {e}")
+            return ""
 
 
 class NetworkMonitor(threading.Thread):
@@ -1333,6 +1455,7 @@ def network_identity():
         return None
     routes.sort(key=lambda x: x.get("metric", 0))
     dev, gw = routes[0]["dev"], routes[0].get("gateway", "")
+    mac = gateway_mac(gw) if gw else ""
     if shutil.which("nmcli"):
         r = run_quiet(["nmcli", "-t", "-f", "UUID,NAME,TYPE,DEVICE", "connection", "show", "--active"], timeout=10)
         for ln in (r.stdout or "").splitlines():
@@ -1340,15 +1463,47 @@ def network_identity():
             if len(parts) < 4 or parts[3] != dev or parts[2] in NETWORK_SKIP_TYPES:
                 continue
             kind = "wifi" if "wireless" in parts[2] else "ethernet" if "ethernet" in parts[2] else "other"
-            return {"key": f"nm:{parts[0]}", "name": parts[1] or dev, "type": kind, "device": dev}
-    mac = ""
-    if gw:
-        r = run_quiet(["ip", "-j", "neigh", "show", gw], timeout=10)
-        try:
-            mac = next((x.get("lladdr", "") for x in json.loads(r.stdout or "[]") if x.get("lladdr")), "")
-        except ValueError:
-            pass
-    return {"key": f"gw:{mac or gw or dev}", "name": gw or dev, "type": "ethernet", "device": dev}
+            return {"key": f"nm:{parts[0]}", "name": parts[1] or dev, "type": kind, "device": dev, "gw": gw, "gw_mac": mac}
+    return {"key": f"gw:{mac or gw or dev}", "name": gw or dev, "type": "ethernet", "device": dev, "gw": gw, "gw_mac": mac}
+
+
+def gateway_mac(gw):
+    """Adresse matérielle de la passerelle (table des voisins). Un changement sur un réseau connu = routeur remplacé,
+    ou appareil qui se fait passer pour lui (empoisonnement ARP, homme du milieu)."""
+    r = run_quiet(["ip", "-j", "neigh", "show", gw], timeout=10)
+    try:
+        return next((x.get("lladdr", "").lower() for x in json.loads(r.stdout or "[]") if x.get("lladdr")), "")
+    except ValueError:
+        return ""
+
+
+def wifi_security(device=""):
+    """Chiffrement du Wi-Fi actif : « open » (aucun), « wep » (cassé), « secured », ou « » si inconnu."""
+    if not shutil.which("nmcli"):
+        return ""
+    r = run_quiet(["nmcli", "-t", "-f", "ACTIVE,SECURITY,SSID", "dev", "wifi"] + (["ifname", device] if device else []), timeout=15)
+    for ln in (r.stdout or "").splitlines():
+        parts = [x.replace("\\:", ":") for x in re.split(r"(?<!\\):", ln.strip())]
+        if len(parts) >= 2 and parts[0] == "yes":
+            sec = parts[1].strip()
+            if sec in ("", "--"):
+                return "open"
+            return "wep" if "WEP" in sec.upper() else "secured"
+    return ""
+
+
+def vpn_active():
+    """Un VPN est-il actif (connexion NetworkManager vpn/wireguard, ou interface tun/wg/tap/ppp montée) ?"""
+    if shutil.which("nmcli"):
+        r = run_quiet(["nmcli", "-t", "-f", "NAME,TYPE", "connection", "show", "--active"], timeout=10)
+        for ln in (r.stdout or "").splitlines():
+            if ln.rsplit(":", 1)[-1].strip() in ("vpn", "wireguard", "tun", "ip-tunnel"):
+                return True
+    r = run_quiet(["ip", "-j", "link", "show", "up"], timeout=10)
+    try:
+        return any(re.match(r"^(tun|wg|tap|ppp|proton|nordlynx)\d*", x.get("ifname", "")) for x in json.loads(r.stdout or "[]"))
+    except ValueError:
+        return False
 
 
 UFW_RULE_COMMANDS = ("allow", "deny", "reject", "limit", "insert", "prepend")
@@ -1535,6 +1690,162 @@ def usb_identity(info):
     fichiers (l'un ou l'autre peut manquer selon le support)."""
     serial, uuid = (info or {}).get("serial") or "", (info or {}).get("uuid") or ""
     return f"{serial}|{uuid}" if (serial or uuid) else ""
+
+
+HID_POINTER_PROPS = ("ID_INPUT_MOUSE", "ID_INPUT_TOUCHPAD", "ID_INPUT_POINTINGSTICK", "ID_INPUT_TOUCHSCREEN", "ID_INPUT_TABLET")
+
+
+class HidGuard(threading.Thread):
+    """BadUSB : une clé piégée se présente comme un clavier et tape des commandes à la place de l'utilisateur. Tout nouveau
+    périphérique USB qui se déclare clavier (udev : ID_INPUT_KEYBOARD) est coupé dès son apparition (« authorized » = 0,
+    le noyau le retire) et un popup demande s'il faut l'autoriser ; accord mémorisé (identifiant vendeur:produit:série).
+    Garde-fous pour ne jamais enfermer l'utilisateur : seul clavier de l'ordinateur, ou récepteur clavier+souris sans autre
+    pointeur → autorisé d'office (popup d'information). Les claviers présents au démarrage du service sont connus."""
+
+    def __init__(self, daemon):
+        super().__init__(daemon=True, name="hid-guard")
+        self.daemon_ref = daemon
+        self.active = False
+        self.pending = {}            # ident -> info (claviers coupés, en attente de décision)
+        self.session_seen = set()    # claviers présents au démarrage du service
+        self.lock = threading.Lock()
+        self.ctx = None
+
+    # ── identification ───────────────────────────────────────────────────────
+    @staticmethod
+    def _attr(dev, name):
+        try:
+            return (dev.attributes.asstring(name) or "").strip()
+        except Exception:  # noqa: BLE001
+            return ""
+
+    @staticmethod
+    def usb_parent(device):
+        try:
+            return device.find_parent("usb", "usb_device")
+        except Exception:  # noqa: BLE001
+            return None
+
+    def describe(self, usb):
+        vendor = (usb.get("ID_VENDOR_ID") or self._attr(usb, "idVendor")).lower()
+        product = (usb.get("ID_MODEL_ID") or self._attr(usb, "idProduct")).lower()
+        serial = usb.get("ID_SERIAL_SHORT") or self._attr(usb, "serial")
+        name = " ".join(x for x in ((usb.get("ID_VENDOR") or self._attr(usb, "manufacturer")).replace("_", " ").strip(),
+                                    (usb.get("ID_MODEL") or self._attr(usb, "product")).replace("_", " ").strip()) if x)
+        return {"id": f"{vendor}:{product}:{serial}", "name": name or f"USB {vendor}:{product}", "vendor": vendor, "product": product,
+                "serial": serial, "sys_path": usb.sys_path}
+
+    def input_devices(self):
+        if self.ctx is None:
+            return []
+        try:
+            return [d for d in self.ctx.list_devices(subsystem="input") if d.sys_name.startswith("input")]
+        except Exception:  # noqa: BLE001
+            return []
+
+    def other_keyboards(self, usb_sys_path):
+        return sum(1 for d in self.input_devices() if d.get("ID_INPUT_KEYBOARD") == "1" and not d.sys_path.startswith(usb_sys_path))
+
+    def other_pointers(self, usb_sys_path):
+        return sum(1 for d in self.input_devices() if any(d.get(p) == "1" for p in HID_POINTER_PROPS) and not d.sys_path.startswith(usb_sys_path))
+
+    def device_has_pointer(self, usb_sys_path):
+        return any(any(d.get(p) == "1" for p in HID_POINTER_PROPS) for d in self.input_devices() if d.sys_path.startswith(usb_sys_path))
+
+    @staticmethod
+    def set_authorized(sys_path, value):
+        with open(os.path.join(sys_path, "authorized"), "w") as f:
+            f.write("1" if value else "0")
+
+    # ── boucle udev ──────────────────────────────────────────────────────────
+    def run(self):
+        try:
+            import pyudev
+        except ImportError:
+            log("pyudev absent — garde des claviers USB désactivée")
+            return
+        try:
+            self.ctx = pyudev.Context()
+            for d in self.input_devices():
+                usb = self.usb_parent(d) if d.get("ID_INPUT_KEYBOARD") == "1" else None
+                if usb is not None:
+                    self.session_seen.add(self.describe(usb)["id"])
+            monitor = pyudev.Monitor.from_netlink(self.ctx)
+            monitor.filter_by("input")
+            monitor.start()
+        except Exception as e:  # noqa: BLE001
+            log(f"Garde des claviers USB indisponible ({e})")
+            return
+        self.active = True
+        log(f"Garde des claviers USB (udev) active, {len(self.session_seen)} clavier(s) USB connu(s)")
+        while not self.daemon_ref.shutdown.is_set():
+            device = monitor.poll(timeout=1)
+            if device is None:
+                continue
+            try:
+                self.handle(device)
+            except Exception as e:  # noqa: BLE001
+                log(f"Clavier USB : {e}")
+        self.active = False
+
+    def handle(self, device):
+        if device.action != "add" or not device.sys_name.startswith("input") or device.get("ID_INPUT_KEYBOARD") != "1":
+            return
+        usb = self.usb_parent(device)
+        if usb is None:
+            return
+        self.decide(self.describe(usb))
+
+    def decide(self, info):
+        """Clavier USB qui vient d'apparaître : connu → rien ; seul clavier ou seul pointeur → autorisé (information) ; sinon coupé."""
+        if self.daemon_ref.settings.get("usb_keyboard_guard") is False:
+            return "off"
+        ident = info["id"]
+        trusted = self.daemon_ref.state.get("trusted_hid") or {}
+        if ident in trusted or ident in self.session_seen:
+            log(f"Clavier USB connu : {info['name']} [{ident}]")
+            return "known"
+        reason = ""
+        if self.other_keyboards(info["sys_path"]) == 0:
+            reason = "only_keyboard"
+        elif self.device_has_pointer(info["sys_path"]) and self.other_pointers(info["sys_path"]) == 0:
+            reason = "only_pointer"
+        base = {"kind": "usb_keyboard", "time": now_iso(), "title": info["name"], "detail": ident, "id": ident, "sys_path": info["sys_path"],
+                "pid": 0, "comm": "", "exe": "", "count": 0, "top_dir": "", "sample": []}
+        if reason:
+            self.session_seen.add(ident)
+            self.daemon_ref.write_log(f"USB keyboard allowed ({reason}): {info['name']} [{ident}]")
+            self.daemon_ref.publish_alert(dict(base, severity="info", blocked=False, reason=reason, reasons=[reason]))
+            return reason
+        try:
+            self.set_authorized(info["sys_path"], False)
+        except OSError as e:
+            log(f"Clavier USB {info['name']} : impossible de le couper ({e})")
+            self.daemon_ref.publish_alert(dict(base, severity="danger", blocked=False, reason="block_failed", reasons=["block_failed"]))
+            return "block_failed"
+        with self.lock:
+            self.pending[ident] = dict(info, time=now_iso())
+        self.daemon_ref.write_log(f"⚠ USB keyboard BLOCKED pending approval: {info['name']} [{ident}]")
+        log(f"Nouveau clavier USB coupé en attente d'accord : {info['name']} [{ident}]")
+        self.daemon_ref.publish_alert(dict(base, severity="danger", blocked=True, reason="new_keyboard", reasons=["new_keyboard"]))
+        return "blocked"
+
+    def allow(self, ident, remember=True):
+        """« Autoriser ce clavier » : réactivé (le noyau le ré-énumère) et mémorisé."""
+        with self.lock:
+            info = self.pending.pop(ident, None)
+        if info is None:
+            return None
+        try:
+            self.set_authorized(info["sys_path"], True)
+        except OSError as e:
+            log(f"Clavier USB {info['name']} : réactivation impossible ({e})")
+        self.session_seen.add(ident)
+        if remember:
+            trusted = dict(self.daemon_ref.state.get("trusted_hid") or {})
+            trusted[ident] = {"name": info["name"], "vendor": info["vendor"], "product": info["product"], "serial": info["serial"], "at": now_iso()}
+            self.daemon_ref.state.update(trusted_hid=trusted)
+        return info
 
 
 class UsbWatcher(threading.Thread):
@@ -2446,6 +2757,166 @@ def listening_ports():
     return ports
 
 
+def human_users():
+    """Comptes humains avec un dossier personnel (uid ≥ 1000 sous /home, et root)."""
+    out = []
+    for pw in pwd.getpwall():
+        if (pw.pw_uid >= 1000 or pw.pw_uid == 0) and pw.pw_dir.startswith(("/home/", "/root")) and os.path.isdir(pw.pw_dir):
+            out.append(pw)
+    return out
+
+
+def autologin_users(root="/"):
+    """Connexion automatique sans mot de passe : LightDM (autologin-user), GDM (AutomaticLoginEnable), SDDM ([Autologin] User).
+    Un portable volé s'ouvre alors tout seul sur le bureau."""
+    users = []
+    j = lambda p: os.path.join(root, p.lstrip("/"))
+    for path in [j("etc/lightdm/lightdm.conf")] + sorted(glob.glob(j("etc/lightdm/lightdm.conf.d/*.conf"))) + sorted(glob.glob(j("usr/share/lightdm/lightdm.conf.d/*.conf"))):
+        for ln in _read_text(path).splitlines():
+            m = re.match(r"^\s*autologin-user\s*=\s*(\S+)", ln)
+            if m:
+                users.append(m.group(1))
+    for path in (j("etc/gdm3/custom.conf"), j("etc/gdm/custom.conf"), j("etc/gdm3/daemon.conf")):
+        txt = _read_text(path)
+        if re.search(r"^\s*AutomaticLoginEnable\s*=\s*true", txt, re.I | re.M):
+            m = re.search(r"^\s*AutomaticLogin\s*=\s*(\S+)", txt, re.M)
+            users.append(m.group(1) if m else "gdm")
+    for path in [j("etc/sddm.conf")] + sorted(glob.glob(j("etc/sddm.conf.d/*.conf"))):
+        m = re.search(r"^\s*\[Autologin\]\s*$(.*?)(?=^\s*\[|\Z)", _read_text(path), re.M | re.S)
+        if m:
+            u = re.search(r"^\s*User\s*=\s*(\S+)", m.group(1), re.M)
+            if u:
+                users.append(u.group(1))
+    return sorted(set(users))
+
+
+def dconf_read(pw, key):
+    """Valeur dconf d'un utilisateur (lecture directe de sa base, sans bus de session) ; « » = valeur par défaut."""
+    if not shutil.which("dconf"):
+        return ""
+    if os.geteuid() == 0 and pw.pw_uid != 0:
+        cmd = ["runuser", "-u", pw.pw_name, "--", "env", f"HOME={pw.pw_dir}", f"XDG_CONFIG_HOME={pw.pw_dir}/.config", "dconf", "read", key]
+    elif pw.pw_uid == os.geteuid():
+        cmd = ["dconf", "read", key]
+    else:
+        return ""
+    r = run_quiet(cmd, timeout=10)
+    return (r.stdout or "").strip() if r.returncode == 0 else ""
+
+
+def screen_lock_off_users(users):
+    """Utilisateurs dont l'écran ne se verrouille pas tout seul : Cinnamon / GNOME (dconf : lock-enabled false ou idle-delay 0),
+    KDE (kscreenlockerrc Autolock=false). Valeur par défaut (clé absente) = verrouillage actif."""
+    off = []
+    for pw in users:
+        if not os.path.isdir(os.path.join(pw.pw_dir, ".config")):
+            continue
+        bad = False
+        for key in ("/org/cinnamon/desktop/screensaver/lock-enabled", "/org/gnome/desktop/screensaver/lock-enabled"):
+            if dconf_read(pw, key) == "false":
+                bad = True
+        for key in ("/org/cinnamon/desktop/session/idle-delay", "/org/gnome/desktop/session/idle-delay"):
+            v = dconf_read(pw, key)
+            if v and v.split()[-1] == "0":
+                bad = True
+        kde = os.path.join(pw.pw_dir, ".config", "kscreenlockerrc")
+        if os.path.isfile(kde) and re.search(r"^\s*Autolock\s*=\s*false", _read_text(kde), re.I | re.M):
+            bad = True
+        if bad:
+            off.append(pw.pw_name)
+    return off
+
+
+def thunderbolt_security(root="/"):
+    """Niveau de sécurité Thunderbolt / USB4 (domain*/security) : « none » = tout périphérique branché a accès direct à la
+    mémoire (attaque DMA), sauf si l'IOMMU protège (iommu_dma_protection). None sans contrôleur."""
+    levels = []
+    for p in sorted(glob.glob(os.path.join(root, "sys/bus/thunderbolt/devices/domain*/security"))):
+        level = _read_text(p)
+        if level == "none" and _read_text(os.path.join(os.path.dirname(p), "iommu_dma_protection")) == "1":
+            level = "iommu"
+        levels.append(level)
+    if not levels:
+        return None
+    return "none" if "none" in levels else sorted(set(levels))[0]
+
+
+SECRET_FILES = ((".netrc", "netrc"), (".aws/credentials", "aws"), (".git-credentials", "git"), (".docker/config.json", "docker"))
+
+
+def secrets_exposure(users):
+    """Secrets en clair dans les dossiers personnels : clés SSH privées sans phrase de passe, clés ou ~/.ssh lisibles par
+    les autres comptes, .netrc, identifiants AWS / git / Docker en clair. {utilisateur: [{name, kind}]}."""
+    found = {}
+    for pw in users:
+        items = []
+        sshd = os.path.join(pw.pw_dir, ".ssh")
+        try:
+            if os.path.isdir(sshd):
+                if os.stat(sshd).st_mode & 0o077:
+                    items.append({"name": ".ssh", "kind": "dir_open"})
+                for f in sorted(os.listdir(sshd)):
+                    p = os.path.join(sshd, f)
+                    if not os.path.isfile(p) or f.endswith(".pub") or f in ("known_hosts", "known_hosts.old", "config", "authorized_keys", "environment", "rc"):
+                        continue
+                    with open(p, "rb") as fh:
+                        head = fh.read(80)
+                    if b"PRIVATE KEY" not in head:
+                        continue
+                    if os.stat(p).st_mode & 0o077:
+                        items.append({"name": f, "kind": "readable"})
+                    if shutil.which("ssh-keygen"):
+                        r = run_quiet(["ssh-keygen", "-y", "-P", "", "-f", p], timeout=10)
+                        if r.returncode == 0:
+                            items.append({"name": f, "kind": "nopass"})
+        except OSError:
+            pass
+        for rel, kind in SECRET_FILES:
+            p = os.path.join(pw.pw_dir, rel)
+            try:
+                if os.path.isfile(p) and os.path.getsize(p) > 0 and (kind != "docker" or '"auth"' in _read_text(p)):
+                    items.append({"name": rel, "kind": kind})
+            except OSError:
+                pass
+        if items:
+            found[pw.pw_name] = items
+    return found
+
+
+def login_failures(hours=24):
+    """Échecs d'authentification des dernières heures d'après le journal : PAM (« authentication failure » : connexion,
+    sudo, écran de verrouillage), SSH (« Failed password », « Invalid user »)."""
+    counts = {"sudo": 0, "ssh": 0, "login": 0}
+    if not shutil.which("journalctl"):
+        return counts
+    r = run_quiet(["journalctl", "-q", "--no-pager", "--since", f"-{int(hours)}h", "-o", "cat"], timeout=90)
+    for ln in (r.stdout or "").splitlines():
+        if "Failed password" in ln or "Invalid user" in ln:
+            counts["ssh"] += 1
+        elif "authentication failure" in ln:
+            counts["sudo" if "sudo" in ln else "login"] += 1
+    return counts
+
+
+def firmware_updates():
+    """Mises à jour de firmware disponibles (fwupd, dépôt LVFS) : [{name, version, new}] ; None si fwupd est absent ou injoignable."""
+    if not shutil.which("fwupdmgr"):
+        return None
+    r = run_quiet(["fwupdmgr", "get-updates", "--json", "--no-unreported-check", "--no-metadata-check"], timeout=120)
+    try:
+        data = json.loads(r.stdout or "{}")
+    except ValueError:
+        data = {}
+    devs = data.get("Devices")
+    if devs is None and r.returncode not in (0, 2):
+        return None
+    out = []
+    for d in devs or []:
+        rel = (d.get("Releases") or [{}])[0]
+        out.append({"name": d.get("Name") or d.get("DeviceId") or "?", "version": d.get("Version") or "", "new": rel.get("Version") or ""})
+    return out
+
+
 def collect_checklist(daemon):
     """Liste de contrôles pondérés → score 0-100."""
     items = []
@@ -2598,6 +3069,41 @@ def collect_checklist(daemon):
         f"{hwe_fixed}" if hwe_fixed else "",
         params={"kernel": rk.get("release") or os.uname().release, "release": ubuntu_rel,
                 "hwe": ", ".join(rk.get("hwe_sources") or []) or "HWE", "pkg": rk.get("hwe_package") or f"linux-generic-hwe-{ubuntu_rel}"})
+    # Connexion automatique sans mot de passe (LightDM, GDM, SDDM) : un portable volé s'ouvre tout seul
+    auto_users = autologin_users()
+    add("autologin", "warn" if auto_users else "ok", 6, ", ".join(auto_users))
+    users = human_users()
+    # Verrouillage de l'écran après inactivité (par utilisateur)
+    unlocked = daemon.cached("screen_lock", 600, lambda: screen_lock_off_users(users))
+    add("screen_lock", "warn" if unlocked else "ok", 4, ", ".join(unlocked))
+    # Firmware (fwupd / LVFS) : relevé quotidien, « Régler » lance fwupdmgr update
+    fw = daemon.state.get("firmware") or {}
+    add("firmware", "na" if not fw or fw.get("available") is None or fw.get("available") is False else ("warn" if fw.get("updates") else "ok"), 3,
+        ", ".join(u.get("name", "?") for u in (fw.get("updates") or [])[:4]))
+    # Thunderbolt / USB4 : accès direct à la mémoire par un périphérique branché
+    tb = thunderbolt_security()
+    add("thunderbolt", "na" if tb is None else ("warn" if tb == "none" else "ok"), 2, tb or "")
+    # Secrets en clair dans les dossiers personnels
+    secrets = daemon.cached("secrets", 600, lambda: secrets_exposure(users))
+    add("secrets", "warn" if secrets else "ok", 4, str(sum(len(v) for v in secrets.values())) if secrets else "",
+        params={"secrets": [dict(s, user=u) for u, lst in secrets.items() for s in lst][:12]})
+    # Échecs d'authentification des 24 dernières heures (connexion, sudo, SSH)
+    fails = daemon.cached("login_failures", 600, login_failures)
+    total = sum(fails.values())
+    add("login_failures", "warn" if total >= 5 else "ok", 3, str(total) if total else "",
+        params={"n": total, "sudo": fails.get("sudo", 0), "ssh": fails.get("ssh", 0), "login": fails.get("login", 0)})
+    # Nouveau compte utilisateur : signalé (alerte), liste mémorisée
+    names = sorted(pw.pw_name for pw in users if pw.pw_uid >= 1000)
+    known = daemon.state.get("known_users")
+    if known is None:
+        daemon.state.update(known_users=names)
+    elif names != list(known):
+        for n in names:
+            if n not in known:
+                daemon.write_log(f"⚠ new user account: {n}")
+                daemon.publish_alert({"kind": "account", "severity": "warn", "time": now_iso(), "title": n, "detail": "",
+                                      "pid": 0, "comm": "", "exe": "", "count": 0, "top_dir": "", "reasons": ["new_account"], "sample": []})
+        daemon.state.update(known_users=names)
     # Réponse automatique
     add("auto_response", "ok" if settings.get("auto_response") else "warn", 2)
 
@@ -4092,7 +4598,10 @@ class Daemon:
         self.server = None
         self.last_first_scan_attempt = 0
         self.settings = Settings()
+        self._check_cache = {}
         self.monitor = ActivityMonitor(self)
+        self.onaccess = OnAccessScanner(self)
+        self.hid_guard = HidGuard(self)
         self.network = NetworkMonitor(self)
         self.connections = ConnectionMonitor(self)
         self.updater = UpdateChecker(self)
@@ -4209,7 +4718,7 @@ class Daemon:
             log(f"Alerte envoi Internet : {alert.get('gb')} Go en {alert.get('window_hours')} h")
         elif alert.get("kind") == "connection":
             self.write_log(f"⚠ connection {alert['severity']}: {alert.get('comm')} (pid {alert.get('pid')}) → {alert.get('ip')}:{alert.get('port')} {alert.get('country', '')}")
-        elif alert.get("kind") in ("persistence", "integrity", "update", "timeshift"):
+        elif alert.get("kind") in ("persistence", "integrity", "update", "timeshift", "download", "usb_keyboard", "network", "account"):
             self.write_log(f"⚠ {alert.get('kind')}: {alert.get('title', '')} {alert.get('detail', '')}")
         elif alert.get("kind") in ("mail", "url"):
             self.write_log(f"⚠ {alert.get('kind')} {alert.get('severity')}: {alert.get('title', '')} — {alert.get('detail', '')} ({alert.get('source', '')})")
@@ -5201,6 +5710,12 @@ class Daemon:
             except Exception as e:  # noqa: BLE001
                 log(f"Veille noyau/processus : {e}")
             try:
+                if time.time() - getattr(self, "last_gateway_check", 0) >= 60:
+                    self.last_gateway_check = time.time()
+                    self.check_gateway()                # passerelle : adresse matérielle inchangée (homme du milieu)
+            except Exception as e:  # noqa: BLE001
+                log(f"Passerelle : {e}")
+            try:
                 if time.time() - self.last_mail_tick >= 60:
                     self.last_mail_tick = time.time()
                     self.mail_tick()
@@ -5287,6 +5802,20 @@ class Daemon:
             if migrate:
                 self.state.update(network_profiles_init=True)
             entry.update({"name": net["name"], "type": net["type"], "last_seen": now_iso()})
+            traps = []
+            gw_mac = net.get("gw_mac") or ""
+            if gw_mac:
+                if not entry.get("gw_mac"):
+                    entry["gw_mac"] = gw_mac                                 # première fois : mémorisée sans bruit
+                elif entry["gw_mac"] != gw_mac and not new:
+                    traps.append(("gateway_changed", {"old": entry["gw_mac"], "new": gw_mac}))
+            if net.get("type") == "wifi":
+                sec = wifi_security(net.get("device") or "")
+                if sec:
+                    entry["wifi_security"] = sec
+                if sec in ("open", "wep") and time.time() - float(entry.get("open_warned") or 0) > 86400 and not vpn_active():
+                    entry["open_warned"] = time.time()
+                    traps.append(("open_wifi", {"security": sec}))
             known[net["key"]] = entry
             self.state.update(network_profiles=known)
             changed = profile != current_profile
@@ -5302,6 +5831,39 @@ class Daemon:
             self.refresh_security(force=True)
             self.refresh_overall()
         self.broadcast({"event": "network_changed", "network": net, "profile": profile, "new": new, "changed": changed})
+        for subtype, extra in traps:
+            self.network_trap(subtype, net, extra)
+
+    def network_trap(self, subtype, net, extra):
+        """Réseau piégé : passerelle dont l'adresse matérielle a changé (homme du milieu possible) ou Wi-Fi sans chiffrement
+        sans VPN. Alerte (popup, événement, courrier), une seule fois par réseau et par heure."""
+        key = net.get("key") or ""
+        for a in (self.state.get("alerts") or [])[:20]:
+            if a.get("kind") == "network" and a.get("subtype") == subtype and a.get("key") == key and not a.get("resolved"):
+                try:
+                    if time.time() - datetime.fromisoformat(a.get("time", "")).timestamp() < 3600:
+                        return
+                except ValueError:
+                    pass
+        self.write_log(f"⚠ network trap {subtype} on {net.get('name')} ({key}): {extra}")
+        self.publish_alert({"kind": "network", "severity": "danger" if subtype == "gateway_changed" else "warn", "time": now_iso(),
+                            "subtype": subtype, "key": key, "title": net.get("name") or "?", "detail": ", ".join(f"{k} {v}" for k, v in extra.items()),
+                            "old": extra.get("old", ""), "new": extra.get("new", ""), "security": extra.get("security", ""),
+                            "pid": 0, "comm": "", "exe": "", "count": 0, "top_dir": "", "reasons": [subtype], "sample": []})
+
+    def check_gateway(self):
+        """Toutes les 60 s : l'adresse matérielle de la passerelle du réseau courant n'a pas changé en cours de session
+        (empoisonnement ARP). Comparée à celle vue à la connexion, puis mise à jour pour n'alerter qu'une fois par changement."""
+        with self.network_lock:
+            net = dict(self.current_network or {})
+        if not net.get("gw") or not net.get("gw_mac"):
+            return
+        mac = gateway_mac(net["gw"])
+        if mac and mac != net["gw_mac"]:
+            with self.network_lock:
+                if self.current_network and self.current_network.get("key") == net.get("key"):
+                    self.current_network["gw_mac"] = mac
+            self.network_trap("gateway_changed", net, {"old": net["gw_mac"], "new": mac})
 
     def firewalld_apply_profile(self, profile):
         """Fedora : zone par défaut home / public / work, interface du réseau courant (et sa connexion NetworkManager)
@@ -5487,6 +6049,14 @@ class Daemon:
             self.state.update(vulns=vulns)
             self.broadcast({"event": "vulns", "vulns": self.public_vulns(vulns)})
             log(f"Failles : {vulns['counts']} ({vulns['sources']} paquets sources)")
+            # Firmware (fwupd / LVFS)
+            try:
+                fw = firmware_updates()
+                self.state.update(firmware={"checked_at": now_iso(), "available": fw is not None, "updates": fw or []})
+                if fw:
+                    log(f"Firmware : {len(fw)} mise(s) à jour disponible(s) : " + ", ".join(u["name"] for u in fw[:4]))
+            except Exception as e:  # noqa: BLE001
+                log(f"Firmware : {e}")
             # Persistance & extensions
             prev = self.state.get("persistence") or {}
             prev_keys = {it["key"] for it in prev.get("items", [])} | {e["key"] for e in prev.get("extensions", [])}
@@ -5883,6 +6453,16 @@ class Daemon:
         if due:
             self.mail_flush()
 
+    def cached(self, name, ttl, fn):
+        """Résultat d'un contrôle coûteux (dconf par utilisateur, clés SSH, journal) gardé `ttl` secondes."""
+        now = time.time()
+        hit = self._check_cache.get(name)
+        if hit and now - hit[0] < ttl:
+            return hit[1]
+        value = fn()
+        self._check_cache[name] = (now, value)
+        return value
+
     def trusted_map(self):
         """{exe: nom} des programmes de confiance (« Faire confiance »), pour la veille des processus."""
         return {p["exe"]: p.get("comm") or os.path.basename(p["exe"]) for p in (self.state.get("trusted_programs") or []) if p.get("exe")}
@@ -6132,6 +6712,7 @@ class Daemon:
             "vulns_acknowledged": (vulns.get("counts") or {}).get("acknowledged_cves") or 0,
             "scan": {k: last.get(k) for k in ("duration", "files", "cached", "skipped", "engine", "infected", "status", "auto")} if last else None,
             "usb_scans_30d": usb30,
+            "onaccess": {"scanned": self.onaccess.stats.get("scanned", 0), "infected": self.onaccess.stats.get("infected", 0)},
             "known_networks": len(self.state.get("network_profiles") or {}),
         }
 
@@ -6337,12 +6918,12 @@ class Daemon:
             feature = str(req.get("feature") or "")
             return bool(self.settings.get("family_mode")) and not req.get("enabled") and bool(self.settings.get(feature))
         if cmd in ("firewall_defaults", "firewall_rule_add", "firewall_rule_delete", "install_update", "install_tools",
-                   "install_phased", "install_package"):
+                   "install_phased", "install_package", "firmware_update"):
             return True
         # « Ignorer » une faille sans correctif ou un port ouvert voulu, monter une clé USB sans analyse ou lui faire
         # confiance : jamais de mot de passe, même en mode famille (acknowledge_vuln, acknowledge_port, ignore_check,
         # usb_skip, untrust_usb ne figurent pas ici). Le choix est journalisé ; on fait confiance à l'utilisateur.
-        if cmd in ("set_settings", "trust_program", "untrust_program", "acknowledge_persistence", "acknowledge_integrity",
+        if cmd in ("set_settings", "trust_program", "untrust_program", "acknowledge_persistence", "acknowledge_integrity", "hid_allow", "hid_forget", "network_gateway_accept",
                    "system_upgrade", "harden_apply", "forget_network"):
             return bool(self.settings.get("family_mode"))
         return False
@@ -6418,6 +6999,7 @@ class Daemon:
         return {
             "ok": True, "version": VERSION, "job": job, "queue": queue,
             "distro": {"family": distro.FAMILY, "id": distro.DISTRO["id"], "pretty": distro.DISTRO["pretty"]},
+            "onaccess": dict(self.onaccess.stats, enabled=self.settings.get("on_access_scan") is not False),
             "state": {k: v for k, v in state.items() if k not in ("system_status", "alerts", "vulns", "checklist", "integrity", "persistence", "app_update", "trusted_programs", "acknowledged_persistence")},
             "resumable": resumable,
             "first_scan_pending": os.path.exists(FIRST_SCAN_FLAG),
@@ -6804,6 +7386,29 @@ class Daemon:
             self.write_log("system upgrade requested" + (" (test mode)" if TEST_MODE else ""))
             return {"ok": True, "detail": "test_mode" if TEST_MODE else ""}
 
+        if cmd == "firmware_update":
+            # « Régler » sur le contrôle Firmware : fwupdmgr update dans une unité transitoire (téléchargement LVFS, pose au
+            # prochain redémarrage pour les capsules UEFI), puis nouveau relevé et événement firmware_done
+            if not shutil.which("fwupdmgr"):
+                return {"ok": False, "error": "fwupd_missing"}
+            if TEST_MODE:
+                return {"ok": True, "detail": "test_mode"}
+            def fw_worker():
+                r = run_quiet(["systemd-run", "--unit", f"clamav-antivirus-fwupd-{int(time.time())}", "--collect", "--quiet", "--wait", "--pipe",
+                               "fwupdmgr", "update", "-y", "--no-reboot-check"], timeout=1800)
+                ok = r.returncode in (0, 2)
+                self.write_log(f"firmware update: rc={r.returncode}")
+                try:
+                    fw = firmware_updates()
+                    self.state.update(firmware={"checked_at": now_iso(), "available": fw is not None, "updates": fw or []})
+                except Exception as e:  # noqa: BLE001
+                    log(f"Firmware : {e}")
+                self.broadcast({"event": "firmware_done", "ok": ok, "output": ((r.stdout or "") + (r.stderr or "")).strip()[-400:]})
+                self.refresh_security(force=True)
+            threading.Thread(target=fw_worker, daemon=True).start()
+            self.write_log(f"firmware update requested by uid {uid}")
+            return {"ok": True}
+
         if cmd == "install_phased":
             sysst = self.state.get("system_status") or {}
             names = sorted({p["name"] for p in sysst.get("packages", []) if p.get("category") == "phased"})
@@ -7059,7 +7664,57 @@ class Daemon:
         if cmd == "trusted_programs":
             return {"ok": True, "programs": self.state.get("trusted_programs") or [],
                     "acknowledged": self.state.get("acknowledged_persistence") or [],
-                    "usb": [dict(v, id=k) for k, v in (self.state.get("trusted_usb") or {}).items()]}
+                    "usb": [dict(v, id=k) for k, v in (self.state.get("trusted_usb") or {}).items()],
+                    "hid": [dict(v, id=k) for k, v in (self.state.get("trusted_hid") or {}).items()]}
+
+        if cmd == "hid_allow":
+            # « Autoriser ce clavier » (BadUSB) : réactivé et mémorisé ; l'alerte est marquée résolue
+            ident = str(req.get("id") or "")[:200]
+            info = self.hid_guard.allow(ident, remember=req.get("remember", True) is not False)
+            if info is None and ident not in (self.state.get("trusted_hid") or {}):
+                return {"ok": False, "error": "not_found"}
+            alerts = list(self.state.get("alerts") or [])
+            for a in alerts:
+                if a.get("kind") == "usb_keyboard" and a.get("id") == ident:
+                    a["resolved"] = True
+                    a["blocked"] = False
+            self.state.update(alerts=alerts)
+            self.write_log(f"✔ USB keyboard allowed by uid {uid}: {ident}")
+            self.refresh_overall()
+            return {"ok": True, "hid": [dict(v, id=k) for k, v in (self.state.get("trusted_hid") or {}).items()]}
+
+        if cmd == "hid_forget":
+            ident = str(req.get("id") or "")[:200]
+            trusted = dict(self.state.get("trusted_hid") or {})
+            if trusted.pop(ident, None) is None:
+                return {"ok": False, "error": "not_found"}
+            self.state.update(trusted_hid=trusted)
+            self.write_log(f"✘ USB keyboard forgotten: {ident}")
+            return {"ok": True, "hid": [dict(v, id=k) for k, v in trusted.items()]}
+
+        if cmd == "network_gateway_accept":
+            # « C'est mon nouveau routeur » : l'adresse matérielle actuelle de la passerelle devient la référence du réseau
+            key = str(req.get("key") or "")[:200]
+            with self.network_lock:
+                net = dict(self.current_network or {})
+            known = dict(self.state.get("network_profiles") or {})
+            if key not in known:
+                return {"ok": False, "error": "not_found"}
+            mac = net.get("gw_mac") if net.get("key") == key else ""
+            if not mac:
+                mac = str(req.get("mac") or "")[:40]
+            if mac:
+                known[key]["gw_mac"] = mac
+                self.state.update(network_profiles=known)
+            alerts = list(self.state.get("alerts") or [])
+            for a in alerts:
+                if a.get("kind") == "network" and a.get("subtype") == "gateway_changed" and a.get("key") == key:
+                    a["resolved"] = True
+                    a["severity"] = "info"
+            self.state.update(alerts=alerts)
+            self.write_log(f"network {known[key].get('name')}: new gateway accepted ({mac}) by uid {uid}")
+            self.refresh_overall()
+            return {"ok": True}
 
         if cmd == "trust_program":
             # « C'est moi » : le programme ne déclenche plus d'alerte (rafale, connexion), même s'il est inconnu de dpkg
@@ -7439,6 +8094,8 @@ class Daemon:
             log(f"Contrôles intégrés : {e}")
         threading.Thread(target=self.network_loop, daemon=True, name="network").start()
         self.monitor.start()
+        self.onaccess.start()
+        self.hid_guard.start()
         self.network.start()
         self.connections.start()
         self.usb.start()
