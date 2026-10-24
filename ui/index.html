@@ -229,7 +229,7 @@
                     <option value="de">Deutsch</option>
                     <option value="it">Italiano</option>
                 </select></label>
-                <small class="version">v2.0.1 — <a href="#" class="credits-link" onclick="openCredits(); return false;" data-i18n="sidebar.credits">Crédits</a> · <a href="#" class="credits-link" onclick="openLegal(); return false;" data-i18n="legal.link">Avertissement</a></small>
+                <small class="version">v2.2.0 — <a href="#" class="credits-link" onclick="openCredits(); return false;" data-i18n="sidebar.credits">Crédits</a> · <a href="#" class="credits-link" onclick="openLegal(); return false;" data-i18n="legal.link">Avertissement</a></small>
             </div>
         </div>
     </aside>
@@ -799,6 +799,8 @@
                             </div>
                         </div>
                     </div>
+                    <div class="score-history" id="scoreHistory"></div>
+                    <div class="report-actions"><button class="btn btn-secondary btn-sm" onclick="exportReport('pdf')" data-i18n="report.pdf">Rapport PDF</button><button class="btn btn-secondary btn-sm" onclick="exportReport('html')" data-i18n="report.html">Rapport HTML</button></div>
                     <div id="checklistList" class="checklist-list"><p class="text-muted" data-i18n="sidebar.loading">Chargement…</p></div>
                     <details class="ports-details" id="portsDetails"><summary data-i18n="security.ports.title">Ports en écoute</summary><div id="portsList" class="ports-list"></div></details>
                 </div>
@@ -950,6 +952,12 @@
                     </div>
                     <p class="text-muted alerts-intro" data-i18n="security.apps.intro">Ces applications ne viennent pas des dépôts de la distribution. Les Flatpak avec accès à tout le disque ou aux périphériques, les Snap en confinement « classic » et les AppImage (sans bac à sable ni mise à jour automatique) sont signalés.</p>
                     <div id="appsList" class="persistence-list"><p class="text-muted" data-i18n="sidebar.loading">Chargement…</p></div>
+                </div>
+
+                <div class="card card-journal" data-acc="journal" data-nav-i18n="nav.security.journal">
+                    <div class="card-title-row"><h4 data-i18n="journal.title">Journal de sécurité</h4><button class="btn btn-secondary btn-sm" onclick="loadJournal()" data-i18n="system.refresh">Actualiser</button></div>
+                    <p class="text-muted" data-i18n="journal.intro"></p>
+                    <div id="journalBox"><p class="text-muted" data-i18n="sidebar.loading">Chargement…</p></div>
                 </div>
 
                 <div class="card card-trusted" data-acc="trusted" data-nav-i18n="nav.security.trusted">
@@ -1225,6 +1233,10 @@
                     <h4 data-i18n="settings.section.realtime">Protections en temps réel</h4>
                     <label class="setting-row toggle"><span data-i18n="settings.on_access_scan">Analyser à l'arrivée les fichiers téléchargés, déposés sur le bureau ou écrits sur un support amovible (quarantaine immédiate)</span><input type="checkbox" id="setOnAccess"></label>
                     <label class="setting-row toggle"><span data-i18n="settings.usb_keyboard_guard">Couper tout nouveau clavier USB jusqu'à votre accord (protection BadUSB)</span><input type="checkbox" id="setHidGuard"></label>
+                    <label class="setting-row toggle"><span data-i18n="settings.ransomware_decoys">Leurres anti-rançongiciel : fichiers cachés surveillés dans Documents, Images et Bureau</span><input type="checkbox" id="setDecoys"></label>
+                    <p class="text-muted setting-note" data-i18n="settings.ransomware_decoys.note">Un fichier caché « .dukiwi-guard-… » est placé dans chaque dossier. Aucun programme n'a de raison d'y toucher : celui qui le modifie est suspendu et signalé. Ne le supprimez pas ; il est recréé automatiquement.</p>
+                    <label class="setting-row toggle"><span data-i18n="settings.privacy_watch">Signaler les programmes qui utilisent la caméra ou le micro</span><input type="checkbox" id="setPrivacyWatch"></label>
+                    <label class="setting-row toggle"><span data-i18n="settings.miner_watch">Détecter les mineurs de cryptomonnaie (pools, options de minage, processeur saturé)</span><input type="checkbox" id="setMinerWatch"></label>
                     <label class="setting-row toggle"><span data-i18n="settings.honeypot">Pot de miel réseau : ports leurres à l'écoute, balayages de ports signalés</span><input type="checkbox" id="setHoneypot"></label>
                     <p class="text-muted setting-note" data-i18n="settings.honeypot.note">Actif par défaut. Les ports leurres (deux ports hauts tirés au sort, 23 et 2323) sont ouverts dans le pare-feu et apparaissent comme « pot de miel » dans les ports en écoute ; aucun service ne tourne derrière. Un appareil qui les touche ou balaie d'autres ports fermés est signalé par un popup, avec un bouton pour le bloquer.</p>
                 </div>
@@ -1599,5 +1611,6 @@
     <script src="i18n.js"></script>
     <script src="awareness.js"></script>
     <script src="app.js"></script>
+    <script src="center.js"></script>
 </body>
 </html>

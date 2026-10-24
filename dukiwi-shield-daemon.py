@@ -69,6 +69,7 @@ import dukiwi_shield_harden as harden  # noqa: E402
 import dukiwi_shield_distro as distro  # noqa: E402
 import dukiwi_shield_honeypot  # noqa: E402
 import dukiwi_shield_urlguard  # noqa: E402
+import dukiwi_shield_guard  # noqa: E402
 from dukiwi_shield_common import (  # noqa: E402
     VERSION, SYSTEM_STATE_DIR, SYSTEM_LOG_DIR, DAEMON_SOCKET,
     SYSTEM_STATE_FILE, SYSTEM_QUARANTINE_DIR, SYSTEM_PROGRESS_FILE, SYSTEM_SCAN_CACHE_DB, SYSTEM_SECRET_FILE,
@@ -781,6 +782,9 @@ class ActivityMonitor(threading.Thread):
                             onaccess = getattr(self.daemon_ref, "onaccess", None)
                             if onaccess:
                                 onaccess.consider(pid, path)      # analyse à l'arrivée (téléchargements, bureau, supports)
+                            guard = getattr(self.daemon_ref, "guard", None)
+                            if guard:
+                                guard.consider(pid, path)         # leurres anti-rançongiciel
                 finally:
                     try:
                         os.close(fd)
@@ -2920,6 +2924,64 @@ def firmware_updates():
     return out
 
 
+# Catégories du journal de sécurité (lignes du journal du service, par mots-clés)
+JOURNAL_RULES = [
+    ("privacy", ("privacy:",)), ("network", ("⚠ certificate", "⚠ redirect")),
+    ("behaviour", ("⚠ info:", "⚠ danger:", "burst")), ("network", ("⚠ connection", "connection ")),
+    ("firewall", ("firewall", "ufw", "firewalld", "port ", "profile ", "--force ")), ("approvals", ("admin unlock", "admin lock")),
+    ("scan", ("■ interrupted", "■ clean", "■ infected", "▶ scan")), ("network", ("network", "gateway", "wi-fi", "wifi")),
+    ("honeypot", ("honeypot",)), ("usb", ("usb", "keyboard")), ("scan", ("scan", "quarantin", "infected", "on-access", "clamd")),
+    ("integrity", ("integrity", "lynis", "chkrootkit", "debsums", "watch", "rootkit", "persistence")), ("hardening", ("harden",)),
+    ("updates", ("update", "upgrade", "freshclam", "firmware", "signature")), ("approvals", ("acknowledg", "trusted", "trust ", "ignored", "allowed", "sudoers")),
+    ("settings", ("settings", "policy")), ("mail", ("mail",)), ("backup", ("timeshift", "backup")),
+]
+JOURNAL_NOISE = ("tray relaunched", "duplicate tray", "honeypot: listening", "honeypot: stopped", "legacy tray stopped")
+ALERT_CATEGORY = {"burst": "behaviour", "connection": "network", "download": "scan", "integrity": "integrity", "persistence": "integrity",
+                  "usb_keyboard": "usb", "network": "network", "account": "accounts", "honeypot": "honeypot", "mail": "mail",
+                  "update": "updates", "upload": "network", "timeshift": "backup", "ransomware": "behaviour",
+                  "miner": "behaviour", "privacy": "privacy", "certificate": "network", "redirect": "network"}
+
+
+def journal_category(text):
+    low = text.lower()
+    for cat, words in JOURNAL_RULES:
+        if any(w in low for w in words):
+            return cat
+    return "system"
+
+
+def security_journal(daemon, days=30):
+    """Alertes (structurées) et actions du journal du service (pare-feu, approbations, durcissement, analyses, mises à
+    jour…) des `days` derniers jours, du plus récent au plus ancien."""
+    cutoff = datetime.fromtimestamp(time.time() - days * 86400).isoformat(timespec="seconds")
+    events = []
+    for a in daemon.state.get("alerts") or []:
+        t = str(a.get("time") or "")
+        if t < cutoff:
+            continue
+        text = " — ".join(x for x in (str(a.get("comm") or a.get("title") or "").strip(), str(a.get("detail") or "").strip()) if x)
+        events.append({"t": t, "src": "alert", "kind": a.get("kind") or "", "cat": ALERT_CATEGORY.get(a.get("kind"), "system"),
+                       "sev": a.get("severity") if a.get("severity") in ("danger", "warn", "info") else "info", "text": text[:400]})
+    lines = []
+    for path in (SYSTEM_LOG_FILE + ".1", SYSTEM_LOG_FILE):
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                lines += f.readlines()[-20000:]
+        except OSError:
+            pass
+    for ln in lines:
+        m = re.match(r"^\[(\d{4}-\d\d-\d\dT[\d:]+)\] (.*)$", ln.rstrip("\n"))
+        if not m or m.group(1) < cutoff:
+            continue
+        text = m.group(2).strip()
+        if not text or text.startswith("WARNING:") or any(n in text for n in JOURNAL_NOISE):
+            continue                                       # avertissements techniques du moteur d'analyse : pas des événements
+        sev = "info" if text.startswith("⚠ info:") else ("danger" if text.startswith("⚠ danger") else ("warn" if text.startswith("⚠") else "info"))
+        events.append({"t": m.group(1), "src": "log", "kind": "", "cat": journal_category(text), "sev": sev, "text": text.lstrip("⚠✔✘⏸ ").strip()[:400]})
+    events.sort(key=lambda e: e["t"], reverse=True)
+    return events[:5000]
+
+
 def collect_checklist(daemon):
     """Liste de contrôles pondérés → score 0-100."""
     items = []
@@ -3119,6 +3181,13 @@ def collect_checklist(daemon):
                 daemon.publish_alert({"kind": "account", "severity": "warn", "time": now_iso(), "title": n, "detail": "",
                                       "pid": 0, "comm": "", "exe": "", "count": 0, "top_dir": "", "reasons": ["new_account"], "sample": []})
         daemon.state.update(known_users=names)
+    # Certificats racine ajoutés (interception HTTPS possible) et détournement réseau (hosts, proxy, DNS)
+    certs = [c for c in daemon.guard.root_cas() if not c["acknowledged"]]
+    add("root_ca", "warn" if certs else "ok", 4, ", ".join(c["name"] for c in certs[:6]),
+        params={"certs": [{k: c.get(k) for k in ("fp", "name", "stores", "until")} for c in certs[:12]]})
+    redirects = [r for r in daemon.guard.redirects() if not r["acknowledged"]]
+    add("network_redirect", "warn" if redirects else "ok", 4, ", ".join(r["value"] for r in redirects[:6]),
+        params={"redirects": [{k: r.get(k) for k in ("key", "type", "value", "where")} for r in redirects[:12]]})
     # Réponse automatique
     add("auto_response", "ok" if settings.get("auto_response") else "warn", 2)
 
@@ -4617,6 +4686,8 @@ class Daemon:
         self.monitor = ActivityMonitor(self)
         self.onaccess = OnAccessScanner(self)
         self.hid_guard = HidGuard(self)
+        self.guard = dukiwi_shield_guard.SecurityGuard(self, {"log": log, "write_log": self.write_log, "exe_trusted": self.monitor.exe_trusted,
+                                                               "dconf_read": dconf_read, "human_users": human_users})
         self.network = NetworkMonitor(self)
         self.connections = ConnectionMonitor(self)
         self.updater = UpdateChecker(self)
@@ -4715,7 +4786,7 @@ class Daemon:
     def publish_alert(self, alert):
         pid = alert.get("pid") or 0
         if alert.get("severity") == "danger" and pid > 1 and pid != os.getpid() \
-                and self.settings.get("auto_response") and alert.get("kind") in ("burst", "connection"):
+                and self.settings.get("auto_response") and alert.get("kind") in ("burst", "connection", "ransomware", "miner"):
             try:
                 os.kill(pid, signal.SIGSTOP)
                 alert["suspended"] = True
@@ -4737,6 +4808,8 @@ class Daemon:
             self.write_log(f"⚠ {alert.get('kind')}: {alert.get('title', '')} {alert.get('detail', '')}")
         elif alert.get("kind") in ("mail", "url"):
             self.write_log(f"⚠ {alert.get('kind')} {alert.get('severity')}: {alert.get('title', '')} — {alert.get('detail', '')} ({alert.get('source', '')})")
+        elif alert.get("kind") in ("ransomware", "privacy", "miner", "certificate", "redirect"):
+            pass                                        # journalisé par le centre de sécurité (dukiwi_shield_guard)
         elif alert.get("kind") == "honeypot":
             self.write_log(f"⚠ honeypot {alert.get('severity')}: {alert.get('ip')} ({alert.get('host') or '?'}) "
                            f"{alert.get('detail', '')} — {', '.join(alert.get('reasons') or [])}")
@@ -6218,6 +6291,13 @@ class Daemon:
 
     def refresh_checklist(self):
         checklist = collect_checklist(self)
+        # Historique du score : une valeur par jour (la dernière du jour), 400 jours au plus
+        hist = [h for h in (self.state.get("score_history") or []) if isinstance(h, dict)]
+        today = now_iso()[:10]
+        hist = [h for h in hist if h.get("d") != today] + [{"d": today, "s": checklist.get("score"), "g": checklist.get("grade")}]
+        hist = hist[-400:]
+        self.state.update(score_history=hist)
+        checklist["history"] = hist
         self.state.update(checklist=checklist)
         self.broadcast({"event": "checklist", "checklist": checklist})
         self.refresh_overall()
@@ -7036,6 +7116,7 @@ class Daemon:
         return {
             "ok": True, "version": VERSION, "job": job, "queue": queue,
             "distro": {"family": distro.FAMILY, "id": distro.DISTRO["id"], "pretty": distro.DISTRO["pretty"]},
+            "hostname": socket.gethostname(), "kernel": os.uname().release,
             "onaccess": dict(self.onaccess.stats, enabled=self.settings.get("on_access_scan") is not False),
             "state": {k: v for k, v in state.items() if k not in ("system_status", "alerts", "vulns", "checklist", "integrity", "persistence", "app_update", "trusted_programs", "acknowledged_persistence")},
             "resumable": resumable,
@@ -7703,7 +7784,51 @@ class Daemon:
                     "acknowledged": self.state.get("acknowledged_persistence") or [],
                     "usb": [dict(v, id=k) for k, v in (self.state.get("trusted_usb") or {}).items()],
                     "hid": [dict(v, id=k) for k, v in (self.state.get("trusted_hid") or {}).items()],
-                    "sudoers": [dict(v, path=k) for k, v in (self.state.get("acknowledged_sudoers") or {}).items()]}
+                    "sudoers": [dict(v, path=k) for k, v in (self.state.get("acknowledged_sudoers") or {}).items()],
+                    "privacy": [dict(v, exe=k) for k, v in (self.state.get("privacy_allowed") or {}).items()],
+                    "certs": [dict(v, fp=k) for k, v in (self.state.get("acknowledged_certs") or {}).items()],
+                    "redirects": [dict(v, key=k) for k, v in (self.state.get("acknowledged_redirects") or {}).items()]}
+
+        if cmd == "privacy_allow":
+            # « Toujours autoriser » un programme sur la caméra / le micro (ou le retirer) : choix personnel, sans mot de passe
+            exe = str(req.get("exe") or "")[:400]
+            if not exe:
+                return {"ok": False, "error": "invalid_exe"}
+            allowed = dict(self.state.get("privacy_allowed") or {})
+            if req.get("remove"):
+                allowed.pop(exe, None)
+            else:
+                allowed[exe] = {"comm": str(req.get("comm") or os.path.basename(exe))[:80], "device": str(req.get("device") or "")[:20], "at": now_iso()}
+            self.state.update(privacy_allowed=allowed)
+            self.write_log(f"privacy {'allowance removed' if req.get('remove') else 'allowed'} by uid {uid}: {exe}")
+            return {"ok": True}
+
+        if cmd == "guard_ack":
+            # « Ignorer » un certificat racine (empreinte) ou un détournement réseau voulu (proxy d'entreprise, hosts…)
+            group = req.get("group")
+            if group not in ("certs", "redirects"):
+                return {"ok": False, "error": "invalid_group"}
+            state_key = "acknowledged_certs" if group == "certs" else "acknowledged_redirects"
+            acks = dict(self.state.get(state_key) or {})
+            if req.get("remove"):
+                keys = [str(k) for k in (req.get("keys") or [])][:50]
+                for k in keys:
+                    acks.pop(k, None)
+            else:
+                current = self.guard.root_cas() if group == "certs" else self.guard.redirects()
+                wanted = set(str(k) for k in (req.get("keys") or []))
+                field = "fp" if group == "certs" else "key"
+                items = [c for c in current if not c["acknowledged"] and (not wanted or c[field] in wanted)]
+                if not items:
+                    return {"ok": False, "error": "nothing_to_ignore"}
+                for c in items:
+                    acks[c[field]] = {"name": c.get("name") or c.get("value") or "", "at": now_iso()}
+                keys = [c[field] for c in items]
+            self.state.update(**{state_key: acks})
+            self.guard.invalidate()
+            self.write_log(f"{group} {'re-enabled' if req.get('remove') else 'acknowledged'} by uid {uid}: {', '.join(k[:40] for k in keys)}")
+            checklist = self.refresh_checklist()
+            return {"ok": True, "n": len(keys), "checklist": checklist}
 
         if cmd == "hid_allow":
             # « Autoriser ce clavier » (BadUSB) : réactivé et mémorisé ; l'alerte est marquée résolue
@@ -8022,6 +8147,14 @@ class Daemon:
             self.write_log(f"quarantine: emptied ({count})")
             return {"ok": True, "msg_key": "msg.quarantine.emptied_system", "msg_params": {"count": count}}
 
+        if cmd == "security_journal":
+            # Journal de sécurité unifié : alertes structurées + actions du journal du service, classées par catégorie
+            try:
+                days = max(1, min(400, int(req.get("days") or 30)))
+            except (TypeError, ValueError):
+                days = 30
+            return {"ok": True, "journal": {"days": days, "events": security_journal(self, days)}}
+
         if cmd == "get_log":
             n = int(req.get("lines", 200))
             try:
@@ -8159,6 +8292,7 @@ class Daemon:
         self.monitor.start()
         self.onaccess.start()
         self.hid_guard.start()
+        self.guard.start()
         self.network.start()
         self.connections.start()
         self.usb.start()

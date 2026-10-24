@@ -8,7 +8,7 @@
 set -e
 
 APP_NAME="dukiwi-shield"
-VERSION="2.0.1"
+VERSION="2.2.0"
 ARCH="all"
 PKG_DIR="${APP_NAME}_${VERSION}_${ARCH}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -47,6 +47,7 @@ cp "${SCRIPT_DIR}/dukiwi_shield_harden.py"                "${PKG_DIR}/opt/${APP_
 cp "${SCRIPT_DIR}/dukiwi_shield_distro.py"                "${PKG_DIR}/opt/${APP_NAME}/"
 cp "${SCRIPT_DIR}/dukiwi_shield_honeypot.py"              "${PKG_DIR}/opt/${APP_NAME}/"
 cp "${SCRIPT_DIR}/dukiwi_shield_urlguard.py"              "${PKG_DIR}/opt/${APP_NAME}/"
+cp "${SCRIPT_DIR}/dukiwi_shield_guard.py"                 "${PKG_DIR}/opt/${APP_NAME}/"
 cp "${SCRIPT_DIR}/dukiwi-shield-native-host"    "${PKG_DIR}/opt/${APP_NAME}/"
 cp "${SCRIPT_DIR}/dukiwi-shield-browser-setup"  "${PKG_DIR}/opt/${APP_NAME}/"
 # Extensions Thunderbird / navigateurs (XPI, CRX, dossiers décompressés, update.xml, identifiants)
@@ -61,6 +62,7 @@ cp "${SCRIPT_DIR}/ui/index.html"                    "${PKG_DIR}/opt/${APP_NAME}/
 cp "${SCRIPT_DIR}/ui/style.css"                     "${PKG_DIR}/opt/${APP_NAME}/ui/"
 cp "${SCRIPT_DIR}/ui/app.js"                        "${PKG_DIR}/opt/${APP_NAME}/ui/"
 cp "${SCRIPT_DIR}/ui/i18n.js"                       "${PKG_DIR}/opt/${APP_NAME}/ui/"
+cp "${SCRIPT_DIR}/ui/center.js"                     "${PKG_DIR}/opt/${APP_NAME}/ui/"
 cp "${SCRIPT_DIR}/ui/awareness.js"                  "${PKG_DIR}/opt/${APP_NAME}/ui/"
 cp "${SCRIPT_DIR}/udev/"*.rules                     "${PKG_DIR}/lib/udev/rules.d/"
 cp "${SCRIPT_DIR}/dukiwi-shield-unlock"          "${PKG_DIR}/opt/${APP_NAME}/"
@@ -272,6 +274,8 @@ if [ "$1" = "remove" ]; then
     systemctl disable dukiwi-shield-update.timer 2>/dev/null || true
     systemctl stop dukiwi-shield-daemon.service 2>/dev/null || true
     systemctl disable dukiwi-shield-daemon.service 2>/dev/null || true
+    # Leurres anti-rançongiciel (fichiers cachés .dukiwi-guard-*) retirés des dossiers personnels
+    find /home -maxdepth 4 -xdev -type f -name '.dukiwi-guard-*' -delete 2>/dev/null || true
 fi
 exit 0
 EOF

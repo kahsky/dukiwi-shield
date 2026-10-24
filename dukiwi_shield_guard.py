@@ -1,0 +1,844 @@
+#!/usr/bin/env python3
+"""
+Dukiwi Shield — détections du centre de sécurité (service système).
+
+1. Leurres anti-rançongiciel : un fichier caché par dossier (Documents, Images, Bureau, dossier personnel). Personne n'a
+   de raison de l'écrire : un programme qui le modifie est suspendu (réponse automatique) et signalé ; un leurre
+   supprimé ou renommé est signalé, avec le programme qui écrivait dans ce dossier à ce moment-là s'il y en a un.
+2. Caméra et micro : programme qui ouvre /dev/video* (lecture de /proc/*/fd) ou qui enregistre le micro (pactl, par
+   session) → popup d'information, « Toujours autoriser » mémorisé.
+3. Mineurs de cryptomonnaie : nom connu, adresse de pool (stratum+tcp://…) ou options de mineur dans la ligne de
+   commande → danger (suspension) ; connexion vers un port de pool avec un processeur saturé, ou programme hors paquets
+   qui sature le processeur pendant 15 minutes → avertissement.
+4. Certificats racine ajoutés : magasin du système et bases NSS (Firefox, Chrome, Thunderbird). Un certificat racine
+   ajouté permet d'intercepter le HTTPS ; chaque nouveau est signalé, la checklist les liste (« Ignorer » par empreinte).
+5. Détournement réseau : /etc/hosts vers une adresse publique, proxy (bureau, Firefox, /etc/environment, apt, dnf),
+   nouveau serveur DNS public inconnu sur un réseau déjà connu.
+(c) 2026 Dukiwi SA - Estavayer-le-Lac
+"""
+
+import glob
+import hashlib
+import ipaddress
+import os
+import pwd
+import re
+import shutil
+import subprocess
+import tempfile
+import threading
+import time
+import zipfile
+from datetime import datetime
+
+DECOY_PREFIX = ".dukiwi-guard-"
+DECOY_DIRS = (("DOCUMENTS", "Documents", "docx"), ("PICTURES", "Pictures", "jpg"), ("DESKTOP", "Desktop", "pdf"), ("", "", "xlsx"))
+DECOY_CHECK_SEC = 5
+DECOY_MISSING_COOLDOWN = 3600            # s entre deux alertes « leurre supprimé » sans programme identifié (même chemin)
+SUSPECT_WINDOW = 30                      # s : programme qui écrivait dans le dossier du leurre juste avant sa disparition
+
+PRIVACY_CHECK_SEC = 5
+PRIVACY_COOLDOWN = 900                   # s avant de signaler à nouveau le même programme sur le même appareil
+PRIVACY_IGNORED = {"pipewire", "wireplumber", "pipewire-media-session", "pulseaudio", "pipewire-pulse", "v4l2-relayd",
+                   "pavucontrol", "gnome-control-center", "cinnamon-settings", "plasmashell", "kmix", "xdg-desktop-portal"}
+
+MINER_CHECK_SEC = 15
+MINER_NAMES = {"xmrig", "xmr-stak", "xmr-stak-cpu", "minerd", "cpuminer", "cpuminer-multi", "ethminer", "nbminer", "t-rex",
+               "lolminer", "phoenixminer", "nanominer", "srbminer", "srbminer-multi", "cgminer", "bfgminer", "gminer",
+               "teamredminer", "kdevtmpfsi", "kinsing", "xmrigdaemon", "xmrigminer", "ccminer", "bminer", "wildrig"}
+MINER_CMD_RE = re.compile(r"stratum\d?\+(tcp|ssl|tls)://|--donate-level|--coin[= ](monero|xmr|eth|etc|rvn|kas)|--algo[= ](rx/|cn/|randomx|kawpow|ethash)|"
+                          r"(minexmr|nanopool\.org|supportxmr|2miners\.com|f2pool|hashvault\.pro|moneroocean|c3pool|herominers|unmineable|"
+                          r"nicehash\.com|xmrpool|minergate|ethermine|miningpoolhub)", re.I)
+MINER_PORTS = {3333, 4444, 5555, 7777, 14444, 14433, 45700}
+CPU_BUSY = 0.8                           # fraction d'un cœur
+CPU_SUSTAINED_SEC = 900
+CPU_IGNORE_PARTS = ("/steamapps/", "/Steam/", "/lutris/", "/Heroic/", "/.wine/", "/Games/")
+
+SLOW_CHECK_SEC = 600                     # certificats, détournement réseau
+CERT_ANCHOR_DIRS = ("/usr/local/share/ca-certificates", "/etc/pki/ca-trust/source/anchors", "/etc/ca-certificates/trust-source/anchors")
+TRUSTED_RESOLVERS = {"1.1.1.1", "1.0.0.1", "1.1.1.2", "1.0.0.2", "1.1.1.3", "1.0.0.3", "8.8.8.8", "8.8.4.4", "9.9.9.9", "149.112.112.112",
+                     "9.9.9.10", "149.112.112.10", "9.9.9.11", "149.112.112.11", "208.67.222.222", "208.67.220.220", "208.67.222.123",
+                     "208.67.220.123", "94.140.14.14", "94.140.15.15", "76.76.2.0", "76.76.10.0", "185.228.168.9", "185.228.169.9",
+                     "2606:4700:4700::1111", "2606:4700:4700::1001", "2606:4700:4700::1112", "2606:4700:4700::1002", "2620:fe::fe",
+                     "2620:fe::9", "2001:4860:4860::8888", "2001:4860:4860::8844", "2620:119:35::35", "2620:119:53::53"}
+VPN_LINK_RE = re.compile(r"^(tun|tap|wg|ppp|tailscale|proton|nordlynx|mullvad|zt|cscotun|vpn)", re.I)
+
+
+def now_iso():
+    return datetime.now().isoformat(timespec="seconds")
+
+
+def run_quiet(cmd, timeout=30, env=None):
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=env)
+    except (OSError, subprocess.SubprocessError):
+        return subprocess.CompletedProcess(cmd, 1, "", "")
+
+
+def is_public(ip):
+    try:
+        a = ipaddress.ip_address(ip.split("%")[0])
+    except ValueError:
+        return False
+    if a.version == 6 and a not in ipaddress.ip_network("2000::/3"):
+        return False                                     # fe00::, ff02::1… (fichier hosts par défaut)
+    return a.is_global and not a.is_multicast
+
+
+def local_v6_prefixes():
+    """Préfixes /64 globaux des interfaces : le routeur (serveur DNS) y a son adresse, qui change avec le préfixe du fournisseur."""
+    out = set()
+    try:
+        with open("/proc/net/if_inet6") as f:
+            for ln in f:
+                h = ln.split()[0]
+                if h[:1] in "23":
+                    out.add(h[:16])
+    except OSError:
+        pass
+    return out
+
+
+def same_local_v6(ip, prefixes):
+    try:
+        a = ipaddress.ip_address(ip.split("%")[0])
+    except ValueError:
+        return False
+    return a.version == 6 and a.exploded.replace(":", "")[:16] in prefixes
+
+
+def proc_info(pid):
+    info = {"pid": pid, "comm": "?", "exe": "", "cmdline": "", "uid": None, "user": ""}
+    try:
+        with open(f"/proc/{pid}/comm") as f:
+            info["comm"] = f.read().strip()
+        info["exe"] = os.readlink(f"/proc/{pid}/exe")
+    except OSError:
+        pass
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            info["cmdline"] = f.read().replace(b"\0", b" ").decode(errors="replace").strip()[:300]
+        st = os.stat(f"/proc/{pid}")
+        info["uid"] = st.st_uid
+        info["user"] = pwd.getpwuid(st.st_uid).pw_name
+    except (OSError, KeyError):
+        pass
+    return info
+
+
+def machine_tag():
+    """Suffixe propre à cette machine : deux ordinateurs qui synchronisent le même dossier n'écrivent pas le même leurre."""
+    try:
+        with open("/etc/machine-id") as f:
+            return hashlib.sha256(f.read().strip().encode()).hexdigest()[:6]
+    except OSError:
+        return hashlib.sha256(os.uname().nodename.encode()).hexdigest()[:6]
+
+
+def xdg_dir(pw, key, default):
+    """Dossier XDG localisé (Images, Bureau…) d'après ~/.config/user-dirs.dirs."""
+    if not key:
+        return pw.pw_dir
+    try:
+        with open(os.path.join(pw.pw_dir, ".config", "user-dirs.dirs")) as f:
+            for ln in f:
+                m = re.match(rf'^\s*XDG_{key}_DIR="(.*)"', ln)
+                if m:
+                    path = m.group(1).replace("$HOME", pw.pw_dir)
+                    return path if path.rstrip("/") != pw.pw_dir.rstrip("/") else ""
+    except OSError:
+        pass
+    return os.path.join(pw.pw_dir, default)
+
+
+def decoy_bytes(ext, seed):
+    """Contenu vraisemblable (vrai document zip pour docx/xlsx, en-têtes JPEG/PDF) : un rançongiciel qui trie par type le prend."""
+    filler = hashlib.sha256(seed.encode()).hexdigest() * 64
+    if ext in ("docx", "xlsx"):
+        import io
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+            z.writestr("[Content_Types].xml", '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>')
+            z.writestr("word/document.xml" if ext == "docx" else "xl/workbook.xml", f"<doc>{filler}</doc>")
+        return buf.getvalue()
+    if ext == "jpg":
+        return b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00" + filler.encode() + b"\xff\xd9"
+    return b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n" + filler.encode() + b"\n%%EOF\n"
+
+
+class SecurityGuard(threading.Thread):
+    def __init__(self, daemon, helpers):
+        super().__init__(daemon=True, name="security-guard")
+        self.d = daemon
+        self.log = helpers["log"]
+        self.write_log = helpers["write_log"]
+        self.exe_trusted = helpers["exe_trusted"]        # paquet du système, /opt, snap, flatpak, ou approuvé
+        self.dconf_read = helpers["dconf_read"]
+        self.human_users = helpers["human_users"]
+        self.lock = threading.Lock()
+        self.tag = machine_tag()
+        self.decoys = {}                 # chemin → {sha, ino, size, mtime, uid}
+        self.decoy_alerted = {}          # chemin → horodatage (alerte sans programme identifié)
+        self.decoy_pid_alerted = {}      # pid → horodatage
+        self.privacy_active = {}         # (exe, appareil) → {pid, comm, since}
+        self.privacy_alerted = {}        # (exe, appareil) → horodatage
+        self.cpu_prev = {}               # pid → (ticks, horodatage)
+        self.cpu_busy_since = {}         # pid → horodatage du début de la saturation
+        self.miner_alerted = {}          # exe → horodatage
+        self.clk = os.sysconf("SC_CLK_TCK") if hasattr(os, "sysconf") else 100
+        self._certs = (0.0, None)
+        self._redirects = (0.0, None)
+        self.active = False
+
+    # ── boucle ───────────────────────────────────────────────────────────
+    def run(self):
+        self.active = True
+        last = {"decoy": 0.0, "privacy": 0.0, "miner": 0.0, "slow": time.time() - SLOW_CHECK_SEC + 90}
+        try:
+            self.sync_decoys()
+        except Exception as e:  # noqa: BLE001
+            self.log(f"Leurres : {e}")
+        self.log(f"Centre de sécurité : leurres ({len(self.decoys)}), caméra/micro, mineurs, certificats, détournement réseau")
+        while not self.d.shutdown.wait(1):
+            now = time.time()
+            for name, period, fn in (("decoy", DECOY_CHECK_SEC, self.check_decoys), ("privacy", PRIVACY_CHECK_SEC, self.check_privacy),
+                                     ("miner", MINER_CHECK_SEC, self.check_miners), ("slow", SLOW_CHECK_SEC, self.check_slow)):
+                if now - last[name] >= period:
+                    last[name] = now
+                    try:
+                        fn()
+                    except Exception as e:  # noqa: BLE001
+                        self.log(f"Centre de sécurité ({name}) : {e}")
+        self.active = False
+
+    def setting(self, key):
+        return self.d.settings.get(key) is not False
+
+    def alert(self, kind, severity, **fields):
+        base = {"kind": kind, "severity": severity, "time": now_iso(), "pid": 0, "comm": "", "exe": "", "count": 0,
+                "top_dir": "", "reasons": [], "sample": [], "title": "", "detail": ""}
+        base.update(fields)
+        self.d.publish_alert(base)
+
+    # ═══ 1. Leurres anti-rançongiciel ═════════════════════════════════════
+    def decoy_paths(self):
+        out = []
+        for pw in self.human_users():
+            if pw.pw_uid < 1000:
+                continue
+            for key, default, ext in DECOY_DIRS:
+                folder = xdg_dir(pw, key, default)
+                if folder and os.path.isdir(folder):
+                    out.append((os.path.join(folder, f"{DECOY_PREFIX}{self.tag}.{ext}"), pw, ext))
+        seen, uniq = set(), []
+        for item in out:
+            if item[0] not in seen:
+                seen.add(item[0])
+                uniq.append(item)
+        return uniq
+
+    def write_decoy(self, path, pw, ext):
+        data = decoy_bytes(ext, path + self.tag)
+        tmp = path + ".tmp"
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o644)
+        try:
+            os.write(fd, data)
+            os.fchown(fd, pw.pw_uid, pw.pw_gid)
+        finally:
+            os.close(fd)
+        os.replace(tmp, path)
+        old = int(time.time()) - 86400 * 40          # date ancienne : ressemble à un document existant
+        os.utime(path, (old, old), follow_symlinks=False)
+        st = os.lstat(path)
+        self.decoys[path] = {"sha": hashlib.sha256(data).hexdigest(), "ino": st.st_ino, "size": st.st_size,
+                             "mtime": st.st_mtime, "uid": pw.pw_uid, "ext": ext, "user": pw.pw_name}
+
+    def sync_decoys(self):
+        """Crée les leurres manquants (ou les retire si la protection est désactivée). Au démarrage, un leurre modifié
+        pendant l'arrêt du service est signalé puis réécrit."""
+        stored = self.d.state.get("decoys") or {}
+        if not self.setting("ransomware_decoys"):
+            self.remove_decoys()
+            return
+        with self.lock:
+            for path, pw, ext in self.decoy_paths():
+                try:
+                    st = os.lstat(path)
+                except FileNotFoundError:
+                    st = None
+                prev = stored.get(path)
+                if st is not None and prev:
+                    if self.file_sha(path) == prev.get("sha"):
+                        self.decoys[path] = dict(prev, ino=st.st_ino, size=st.st_size, mtime=st.st_mtime)
+                        continue
+                    self.write_log(f"⚠ ransomware decoy modified while the service was stopped: {path}")
+                    self.alert("ransomware", "warn", title=os.path.basename(path), detail=path, path=path, top_dir=os.path.dirname(path),
+                               reasons=["decoy_changed_offline"], user=pw.pw_name)
+                try:
+                    self.write_decoy(path, pw, ext)
+                except OSError as e:
+                    self.log(f"Leurre {path} : {e}")
+            self.save_decoys()
+
+    def remove_decoys(self):
+        with self.lock:
+            stored = dict(self.d.state.get("decoys") or {})
+            stored.update(self.decoys)
+            for path in stored:
+                if os.path.basename(path).startswith(DECOY_PREFIX):
+                    try:
+                        os.unlink(path)
+                    except OSError:
+                        pass
+            self.decoys = {}
+            self.save_decoys()
+
+    def save_decoys(self):
+        self.d.state.update(decoys={p: {k: v for k, v in i.items() if k in ("sha", "uid", "ext", "user")} for p, i in self.decoys.items()})
+
+    @staticmethod
+    def file_sha(path):
+        h = hashlib.sha256()
+        try:
+            with open(path, "rb", opener=lambda p, fl: os.open(p, fl | os.O_NOFOLLOW)) as f:
+                for chunk in iter(lambda: f.read(65536), b""):
+                    h.update(chunk)
+        except OSError:
+            return ""
+        return h.hexdigest()
+
+    def consider(self, pid, path):
+        """Appelé par le moniteur d'activité (fanotify) pour chaque fichier écrit puis fermé."""
+        if path in self.decoys and self.setting("ransomware_decoys"):
+            threading.Thread(target=self.decoy_written, args=(pid, path), daemon=True).start()
+
+    def decoy_written(self, pid, path):
+        info = proc_info(pid)
+        now = time.time()
+        with self.lock:
+            meta = self.decoys.get(path) or {}
+            if self.file_sha(path) == meta.get("sha"):
+                return                                   # réécrit à l'identique (synchronisation, sauvegarde restaurée)
+            if now - self.decoy_pid_alerted.get(pid, 0) < 60:
+                self.recreate(path)
+                return
+            self.decoy_pid_alerted[pid] = now
+        self.report_decoy(info, path, "decoy_modified")
+        with self.lock:
+            self.recreate(path)
+
+    def report_decoy(self, info, path, reason):
+        exe = (info.get("exe") or "").replace(" (deleted)", "")
+        if exe and exe in self.d.user_trusted():
+            self.write_log(f"ransomware decoy {reason} by trusted program {exe}: {path}")
+            return
+        self.write_log(f"⚠ danger: ransomware decoy {reason} by {info.get('comm')} (pid {info.get('pid')}, {exe}): {path}")
+        self.alert("ransomware", "danger", pid=info.get("pid") or 0, comm=info.get("comm") or "", exe=info.get("exe") or "",
+                   cmdline=info.get("cmdline") or "", user=info.get("user") or "", title=os.path.basename(path), detail=path,
+                   path=path, top_dir=os.path.dirname(path), reasons=[reason])
+
+    def recreate(self, path):
+        meta = self.decoys.get(path) or {}
+        try:
+            pw = pwd.getpwuid(meta.get("uid"))
+            self.write_decoy(path, pw, meta.get("ext") or path.rsplit(".", 1)[-1])
+        except (KeyError, OSError, TypeError) as e:
+            self.log(f"Leurre {path} : recréation impossible ({e})")
+
+    def suspect_writer(self, folder):
+        """Programme qui écrivait dans `folder` dans les dernières secondes (suivi du moniteur d'activité)."""
+        monitor = getattr(self.d, "monitor", None)
+        best, best_n = None, 0
+        cutoff = time.time() - SUSPECT_WINDOW
+        for pid, track in list(getattr(monitor, "tracks", {}).items()):
+            if track.get("first", 0) < cutoff - 60 or pid == os.getpid():
+                continue
+            n = sum(1 for p in list(track.get("paths") or ()) if os.path.dirname(p) == folder)
+            if n > best_n and os.path.exists(f"/proc/{pid}"):
+                best, best_n = pid, n
+        return best
+
+    def check_decoys(self):
+        if not self.setting("ransomware_decoys"):
+            if self.decoys:
+                self.remove_decoys()
+            return
+        if not self.decoys:
+            self.sync_decoys()
+            return
+        for path in list(self.decoys):
+            meta = self.decoys.get(path)
+            if not meta:
+                continue
+            try:
+                st = os.lstat(path)
+            except FileNotFoundError:
+                st = None
+            if st is not None and st.st_ino == meta["ino"] and st.st_size == meta["size"] and st.st_mtime == meta["mtime"]:
+                continue
+            if st is not None and self.file_sha(path) == meta["sha"]:
+                meta.update(ino=st.st_ino, size=st.st_size, mtime=st.st_mtime)
+                continue
+            if st is not None and time.time() - st.st_mtime < 10 and getattr(getattr(self.d, "monitor", None), "active", False):
+                continue                                  # écriture toute récente : le moniteur d'activité donne le programme
+            # Disparu, renommé ou remplacé sans fermeture d'écriture vue : programme qui écrivait là, sinon avertissement
+            pid = self.suspect_writer(os.path.dirname(path))
+            reason = "decoy_removed" if st is None else "decoy_replaced"
+            if pid:
+                self.report_decoy(proc_info(pid), path, reason)
+            elif time.time() - self.decoy_alerted.get(path, 0) > DECOY_MISSING_COOLDOWN:
+                self.decoy_alerted[path] = time.time()
+                self.write_log(f"⚠ ransomware decoy {reason}: {path}")
+                self.alert("ransomware", "warn", title=os.path.basename(path), detail=path, path=path, top_dir=os.path.dirname(path),
+                           reasons=[reason], user=meta.get("user") or "")
+            with self.lock:
+                self.recreate(path)
+
+    def decoy_list(self):
+        return sorted(self.decoys)
+
+    # ═══ 2. Caméra et micro ═══════════════════════════════════════════════
+    def camera_users(self):
+        """{(exe, "camera"): {pid, comm, exe, user, device}} des programmes qui ont /dev/video* ouvert."""
+        if not glob.glob("/dev/video*"):
+            return {}
+        out = {}
+        for pid in os.listdir("/proc"):
+            if not pid.isdigit() or int(pid) == os.getpid():
+                continue
+            fd_dir = f"/proc/{pid}/fd"
+            try:
+                fds = os.listdir(fd_dir)
+            except OSError:
+                continue
+            for fd in fds:
+                try:
+                    target = os.readlink(f"{fd_dir}/{fd}")
+                except OSError:
+                    continue
+                if target.startswith("/dev/video"):
+                    info = proc_info(int(pid))
+                    if info["comm"] not in PRIVACY_IGNORED:
+                        out[(info["exe"] or info["comm"], "camera")] = dict(info, device=target)
+                    break
+        return out
+
+    def mic_users(self):
+        """Enregistrements du micro en cours (pactl list source-outputs) pour chaque session qui a un serveur son."""
+        if not shutil.which("pactl"):
+            return {}
+        out = {}
+        for path in glob.glob("/run/user/*"):
+            uid = os.path.basename(path)
+            if not uid.isdigit() or int(uid) < 1000 or not (os.path.exists(f"{path}/pulse/native") or os.path.exists(f"{path}/pipewire-0")):
+                continue
+            try:
+                pw = pwd.getpwuid(int(uid))
+            except KeyError:
+                continue
+            env = {"PATH": "/usr/bin:/bin", "LC_ALL": "C", "XDG_RUNTIME_DIR": path, "HOME": pw.pw_dir}
+            base = ["runuser", "-u", pw.pw_name, "--", "env", f"XDG_RUNTIME_DIR={path}", f"HOME={pw.pw_dir}", "LC_ALL=C"] if os.geteuid() == 0 else []
+            sources = run_quiet(base + ["pactl", "list", "short", "sources"], timeout=5, env=env)
+            monitors = {ln.split("\t")[0] for ln in (sources.stdout or "").splitlines() if ".monitor" in ln}
+            r = run_quiet(base + ["pactl", "list", "source-outputs"], timeout=5, env=env)
+            for block in re.split(r"\n(?=Source Output #)", r.stdout or ""):
+                m_src = re.search(r"^\s*Source:\s*(\S+)", block, re.M)
+                if m_src and m_src.group(1) in monitors:
+                    continue                                 # capture du son des haut-parleurs (vumètre, partage d'écran)
+                props = dict(re.findall(r'^\s*([\w.]+) = "(.*)"$', block, re.M))
+                pid = props.get("application.process.id")
+                if not pid or not pid.isdigit():
+                    continue
+                info = proc_info(int(pid))
+                name = props.get("application.process.binary") or info["comm"]
+                if name in PRIVACY_IGNORED or info["comm"] in PRIVACY_IGNORED:
+                    continue
+                out[(info["exe"] or name, "microphone")] = dict(info, comm=info["comm"] if info["comm"] != "?" else name,
+                                                                 device=props.get("application.name") or name)
+        return out
+
+    def check_privacy(self):
+        if not self.setting("privacy_watch"):
+            self.privacy_active = {}
+            return
+        current = self.camera_users()
+        current.update(self.mic_users())
+        allowed = self.d.state.get("privacy_allowed") or {}
+        now = time.time()
+        for key, info in current.items():
+            if key in self.privacy_active:
+                continue
+            self.privacy_active[key] = {"pid": info["pid"], "comm": info["comm"], "since": now}
+            exe, device = key
+            if exe in allowed or now - self.privacy_alerted.get(key, 0) < PRIVACY_COOLDOWN:
+                continue
+            self.privacy_alerted[key] = now
+            trusted = bool(info["exe"]) and self.exe_trusted(info["exe"])
+            self.write_log(f"privacy: {device} used by {info['comm']} (pid {info['pid']}, {info['exe']})")
+            self.alert("privacy", "info" if trusted else "warn", pid=info["pid"], comm=info["comm"], exe=info["exe"], user=info["user"],
+                       device=device, title=info["comm"], detail=info.get("device") or "", reasons=[f"privacy_{device}"],
+                       trusted=trusted)
+        for key in list(self.privacy_active):
+            if key not in current:
+                self.privacy_active.pop(key, None)
+                self.privacy_alerted[key] = now          # le délai court depuis la fin de l'utilisation
+
+    def privacy_state(self):
+        return [{"exe": k[0], "device": k[1], "comm": v["comm"], "pid": v["pid"]} for k, v in self.privacy_active.items()]
+
+    # ═══ 3. Mineurs de cryptomonnaie ══════════════════════════════════════
+    def pool_connections(self):
+        """{pid: port distant} des connexions établies vers un port de pool de minage."""
+        out = {}
+        r = run_quiet(["ss", "-Htnp", "state", "established"], timeout=10)
+        for ln in (r.stdout or "").splitlines():
+            parts = ln.split()
+            if len(parts) < 4:
+                continue
+            peer = parts[3]
+            port = peer.rsplit(":", 1)[-1]
+            if not port.isdigit() or int(port) not in MINER_PORTS or not is_public(peer.rsplit(":", 1)[0].strip("[]")):
+                continue
+            for pid in re.findall(r"pid=(\d+)", ln):
+                out[int(pid)] = int(port)
+        return out
+
+    def cpu_fraction(self, pid, now):
+        try:
+            with open(f"/proc/{pid}/stat") as f:
+                fields = f.read().rsplit(")", 1)[1].split()
+            ticks = int(fields[11]) + int(fields[12])
+        except (OSError, IndexError, ValueError):
+            return None
+        prev = self.cpu_prev.get(pid)
+        self.cpu_prev[pid] = (ticks, now)
+        if not prev or now <= prev[1]:
+            return None
+        return (ticks - prev[0]) / self.clk / (now - prev[1])
+
+    def check_miners(self):
+        if not self.setting("miner_watch"):
+            return
+        now = time.time()
+        pools = self.pool_connections()
+        trusted_set = self.d.user_trusted()
+        alive = set()
+        for entry in os.listdir("/proc"):
+            if not entry.isdigit():
+                continue
+            pid = int(entry)
+            if pid == os.getpid():
+                continue
+            alive.add(pid)
+            cpu = self.cpu_fraction(pid, now)
+            try:
+                with open(f"/proc/{pid}/comm") as f:
+                    comm = f.read().strip()
+                with open(f"/proc/{pid}/cmdline", "rb") as f:
+                    cmd = f.read().replace(b"\0", b" ").decode(errors="replace")[:600]
+            except OSError:
+                continue
+            if not cmd:
+                continue                                  # fil du noyau
+            base = os.path.basename(cmd.split(" ", 1)[0]).lower()
+            named = comm.lower() in MINER_NAMES or base in MINER_NAMES
+            cmd_hit = MINER_CMD_RE.search(cmd)
+            busy = cpu is not None and cpu >= CPU_BUSY
+            if busy:
+                self.cpu_busy_since.setdefault(pid, now)
+            else:
+                self.cpu_busy_since.pop(pid, None)
+            if not (named or cmd_hit or pid in pools or busy):
+                continue
+            info = proc_info(pid)
+            exe = info["exe"].replace(" (deleted)", "")
+            if exe in trusted_set or now - self.miner_alerted.get(exe or comm, 0) < 86400:
+                continue
+            reasons, severity = [], ""
+            if named:
+                reasons.append("miner_name")
+            if cmd_hit:
+                reasons.append("miner_pool" if "stratum" in cmd_hit.group(0).lower() or "." in cmd_hit.group(0) else "miner_options")
+            if reasons:
+                severity = "danger"
+            elif pid in pools and busy:
+                severity, reasons = "danger", ["miner_port_cpu"]
+            elif busy and now - self.cpu_busy_since.get(pid, now) >= CPU_SUSTAINED_SEC and exe \
+                    and not any(p in exe for p in CPU_IGNORE_PARTS) and not self.exe_trusted(exe):
+                severity, reasons = "warn", ["miner_cpu"]
+            if not severity:
+                continue
+            self.miner_alerted[exe or comm] = now
+            detail = f"{pools[pid]}" if pid in pools else ""
+            self.alert("miner", severity, pid=pid, comm=info["comm"], exe=info["exe"], cmdline=info["cmdline"], user=info["user"],
+                       title=info["comm"], detail=detail, reasons=reasons, cpu=round((cpu or 0) * 100), port=pools.get(pid) or 0)
+        for pid in list(self.cpu_prev):
+            if pid not in alive:
+                self.cpu_prev.pop(pid, None)
+                self.cpu_busy_since.pop(pid, None)
+
+    # ═══ 4. Certificats racine ajoutés ════════════════════════════════════
+    @staticmethod
+    def pem_blocks(text):
+        return re.findall(r"-----BEGIN CERTIFICATE-----.+?-----END CERTIFICATE-----", text, re.S)
+
+    @staticmethod
+    def cert_details(pem):
+        """(empreinte SHA-256, sujet, fin de validité) d'un certificat PEM."""
+        import ssl
+        try:
+            der = ssl.PEM_cert_to_DER_cert(pem)
+        except ValueError:
+            return None
+        fp = hashlib.sha256(der).hexdigest().upper()
+        subject, end = "", ""
+        if shutil.which("openssl"):
+            r = subprocess.run(["openssl", "x509", "-noout", "-subject", "-enddate", "-nameopt", "utf8,sep_comma_plus"],
+                               input=pem, capture_output=True, text=True, timeout=10)
+            for ln in (r.stdout or "").splitlines():
+                if ln.startswith("subject="):
+                    subject = ln.split("=", 1)[1].strip()
+                elif ln.startswith("notAfter="):
+                    end = ln.split("=", 1)[1].strip()
+        cn = re.search(r"CN\s*=\s*([^,]+)", subject)
+        o = re.search(r"O\s*=\s*([^,]+)", subject)
+        return fp, (cn.group(1) if cn else (o.group(1) if o else subject)).strip()[:120], end
+
+    def system_anchor_certs(self):
+        out = []
+        for d in CERT_ANCHOR_DIRS:
+            for path in sorted(glob.glob(os.path.join(d, "**", "*"), recursive=True)):
+                if not os.path.isfile(path):
+                    continue
+                try:
+                    with open(path, "rb") as f:
+                        raw = f.read(1 << 20)
+                except OSError:
+                    continue
+                text = raw.decode(errors="replace")
+                blocks = self.pem_blocks(text)
+                if not blocks and shutil.which("openssl"):
+                    r = subprocess.run(["openssl", "x509", "-inform", "DER", "-outform", "PEM"], input=raw, capture_output=True, timeout=10)
+                    blocks = self.pem_blocks(r.stdout.decode(errors="replace"))
+                for pem in blocks[:5]:
+                    det = self.cert_details(pem)
+                    if det:
+                        out.append({"fp": det[0], "name": det[1], "until": det[2], "store": "system", "where": path})
+        return out
+
+    def nss_dbs(self):
+        dbs = []
+        for pw in self.human_users():
+            h = pw.pw_dir
+            for pattern in (".pki/nssdb", ".mozilla/firefox/*", "snap/firefox/common/.mozilla/firefox/*",
+                            ".var/app/org.mozilla.firefox/.mozilla/firefox/*", ".thunderbird/*", "snap/thunderbird/common/.thunderbird/*",
+                            ".var/app/org.mozilla.Thunderbird/.thunderbird/*", "snap/chromium/current/.pki/nssdb"):
+                for d in glob.glob(os.path.join(h, pattern)):
+                    if os.path.isfile(os.path.join(d, "cert9.db")):
+                        app = "chrome" if "nssdb" in d else ("thunderbird" if "thunderbird" in d else "firefox")
+                        dbs.append((pw.pw_name, app, d))
+        return dbs
+
+    def nss_certs(self):
+        """Autorités ajoutées par l'utilisateur dans les bases NSS (les racines intégrées n'y figurent pas) : drapeau « C »
+        dans le premier champ de confiance (SSL). Lecture sur une copie : la base de l'utilisateur n'est jamais touchée."""
+        if not shutil.which("certutil"):
+            return []
+        out = []
+        for user, app, d in self.nss_dbs():
+            with tempfile.TemporaryDirectory(prefix="dukiwi-nss-") as tmp:
+                for name in ("cert9.db", "key4.db", "pkcs11.txt"):
+                    src = os.path.join(d, name)
+                    if os.path.isfile(src):
+                        shutil.copyfile(src, os.path.join(tmp, name))
+                r = run_quiet(["certutil", "-L", "-d", f"sql:{tmp}"], timeout=20)
+                for ln in (r.stdout or "").splitlines():
+                    m = re.match(r"^(.*?)\s+([a-zA-Z]*),([a-zA-Z]*),([a-zA-Z]*)\s*$", ln)
+                    if not m or "C" not in m.group(2):
+                        continue
+                    nick = m.group(1).strip()
+                    pem = run_quiet(["certutil", "-L", "-d", f"sql:{tmp}", "-n", nick, "-a"], timeout=20).stdout or ""
+                    for block in self.pem_blocks(pem)[:1]:
+                        det = self.cert_details(block)
+                        if det:
+                            out.append({"fp": det[0], "name": det[1] or nick, "until": det[2], "store": app, "where": d, "user": user})
+        return out
+
+    def root_cas(self, max_age=SLOW_CHECK_SEC):
+        """Certificats racine ajoutés (système + NSS), regroupés par empreinte, avec l'état « ignoré »."""
+        with self.lock:
+            at, value = self._certs
+        if value is not None and time.time() - at < max_age:
+            return value
+        merged = {}
+        for c in self.system_anchor_certs() + self.nss_certs():
+            cur = merged.setdefault(c["fp"], dict(c, stores=[]))
+            label = c["store"] + (f" ({c['user']})" if c.get("user") else "")
+            if label not in cur["stores"]:
+                cur["stores"].append(label)
+        acks = self.d.state.get("acknowledged_certs") or {}
+        value = sorted((dict(c, acknowledged=c["fp"] in acks) for c in merged.values()), key=lambda c: c["name"].lower())
+        with self.lock:
+            self._certs = (time.time(), value)
+        return value
+
+    # ═══ 5. Détournement réseau ═══════════════════════════════════════════
+    @staticmethod
+    def hosts_findings(path="/etc/hosts"):
+        out = []
+        try:
+            with open(path) as f:
+                lines = f.read().splitlines()
+        except OSError:
+            return out
+        for ln in lines:
+            parts = ln.split("#", 1)[0].split()
+            if len(parts) >= 2 and is_public(parts[0]):
+                for name in parts[1:4]:
+                    out.append({"key": f"hosts:{parts[0]} {name}", "type": "hosts", "value": f"{name} → {parts[0]}", "where": path})
+        return out
+
+    def proxy_findings(self):
+        out = []
+        for pw in self.human_users():
+            if pw.pw_uid < 1000:
+                continue
+            mode = self.dconf_read(pw, "/system/proxy/mode").strip("'")
+            if mode in ("manual", "auto"):
+                if mode == "auto":
+                    value = self.dconf_read(pw, "/system/proxy/autoconfig-url").strip("'") or "PAC"
+                else:
+                    host = self.dconf_read(pw, "/system/proxy/http/host").strip("'") or self.dconf_read(pw, "/system/proxy/socks/host").strip("'")
+                    port = self.dconf_read(pw, "/system/proxy/http/port").split()[-1:] or [""]
+                    value = f"{host}:{port[0]}".rstrip(":")
+                out.append({"key": f"proxy:desktop:{pw.pw_name}:{value}", "type": "proxy_desktop", "value": value, "where": pw.pw_name})
+            kde = os.path.join(pw.pw_dir, ".config", "kioslaverc")
+            try:
+                with open(kde) as f:
+                    txt = f.read()
+                m = re.search(r"^\s*ProxyType\s*=\s*([1-4])", txt, re.M)
+                if m:
+                    hp = re.search(r"^\s*(httpProxy|Proxy Config Script)\s*=\s*(\S+)", txt, re.M)
+                    value = hp.group(2) if hp else f"type {m.group(1)}"
+                    out.append({"key": f"proxy:kde:{pw.pw_name}:{value}", "type": "proxy_desktop", "value": value, "where": kde})
+            except OSError:
+                pass
+            for prefs in glob.glob(os.path.join(pw.pw_dir, ".mozilla/firefox/*/prefs.js")) + \
+                    glob.glob(os.path.join(pw.pw_dir, "snap/firefox/common/.mozilla/firefox/*/prefs.js")):
+                try:
+                    with open(prefs, errors="replace") as f:
+                        txt = f.read()
+                except OSError:
+                    continue
+                m = re.search(r'user_pref\("network\.proxy\.type",\s*([12])\)', txt)
+                if not m:
+                    continue
+                if m.group(1) == "2":
+                    u = re.search(r'user_pref\("network\.proxy\.autoconfig_url",\s*"([^"]*)"\)', txt)
+                    value = u.group(1) if u else "PAC"
+                else:
+                    h = re.search(r'user_pref\("network\.proxy\.(?:http|socks)",\s*"([^"]*)"\)', txt)
+                    p = re.search(r'user_pref\("network\.proxy\.(?:http|socks)_port",\s*(\d+)\)', txt)
+                    value = f"{h.group(1) if h else '?'}:{p.group(1) if p else ''}".rstrip(":")
+                out.append({"key": f"proxy:firefox:{pw.pw_name}:{value}", "type": "proxy_firefox", "value": value, "where": prefs})
+        env_re = re.compile(r"^\s*(?:export\s+)?(https?_proxy|all_proxy|ftp_proxy)\s*=\s*[\"']?([^\"'\s]+)", re.I | re.M)
+        for path in ("/etc/environment", "/etc/profile.d/proxy.sh"):
+            try:
+                with open(path) as f:
+                    for var, value in env_re.findall(f.read()):
+                        out.append({"key": f"proxy:env:{var.lower()}={value}", "type": "proxy_env", "value": f"{var}={value}", "where": path})
+            except OSError:
+                pass
+        apt_re = re.compile(r'^\s*Acquire::(?:https?|ftp)::Proxy\s+"([^"]+)"', re.I | re.M)
+        for path in ["/etc/apt/apt.conf"] + sorted(glob.glob("/etc/apt/apt.conf.d/*")):
+            try:
+                with open(path) as f:
+                    for value in apt_re.findall(f.read()):
+                        if value.upper() != "DIRECT" and value.lower() != "false":
+                            out.append({"key": f"proxy:apt:{value}", "type": "proxy_pkg", "value": value, "where": path})
+            except OSError:
+                pass
+        try:
+            with open("/etc/dnf/dnf.conf") as f:
+                for value in re.findall(r"^\s*proxy\s*=\s*(\S+)", f.read(), re.M):
+                    out.append({"key": f"proxy:dnf:{value}", "type": "proxy_pkg", "value": value, "where": "/etc/dnf/dnf.conf"})
+        except OSError:
+            pass
+        return out
+
+    @staticmethod
+    def dns_servers():
+        """Serveurs DNS des interfaces physiques (resolvectl), sinon /etc/resolv.conf ; liens VPN exclus."""
+        servers = []
+        if shutil.which("resolvectl"):
+            r = run_quiet(["resolvectl", "dns"], timeout=10)
+            for ln in (r.stdout or "").splitlines():
+                m = re.match(r"^(?:Link \d+ \(([^)]+)\)|Global):\s*(.*)$", ln.strip())
+                if m and not (m.group(1) and VPN_LINK_RE.match(m.group(1))):
+                    servers += [s.split("#")[0] for s in m.group(2).split()]
+        if not servers:
+            try:
+                with open("/etc/resolv.conf") as f:
+                    servers = re.findall(r"^\s*nameserver\s+(\S+)", f.read(), re.M)
+            except OSError:
+                pass
+        return sorted({s for s in servers if s and not s.startswith("127.")})
+
+    def dns_findings(self):
+        """Nouveau serveur DNS public inconnu sur un réseau déjà connu (premier passage = référence mémorisée)."""
+        net = getattr(self.d, "current_network", None) or {}
+        key = net.get("key")
+        if not key:
+            return []
+        local6 = local_v6_prefixes()
+        current = [s for s in self.dns_servers() if is_public(s) and s not in TRUSTED_RESOLVERS and not same_local_v6(s, local6)]
+        known = dict(self.d.state.get("network_dns") or {})
+        if key not in known:
+            known[key] = current
+            self.d.state.update(network_dns=known)
+            return []
+        return [{"key": f"dns:{key}:{s}", "type": "dns", "value": s, "where": net.get("name") or key}
+                for s in current if s not in known[key]]
+
+    def redirects(self, max_age=SLOW_CHECK_SEC):
+        with self.lock:
+            at, value = self._redirects
+        if value is not None and time.time() - at < max_age:
+            return value
+        found = self.hosts_findings() + self.proxy_findings() + self.dns_findings()
+        acks = self.d.state.get("acknowledged_redirects") or {}
+        value = [dict(f, acknowledged=f["key"] in acks) for f in found]
+        with self.lock:
+            self._redirects = (time.time(), value)
+        return value
+
+    def invalidate(self):
+        with self.lock:
+            self._certs = (0.0, None)
+            self._redirects = (0.0, None)
+
+    def check_slow(self):
+        """Toutes les 10 minutes : nouveau certificat racine ou nouveau détournement → alerte (premier relevé silencieux) ;
+        leurres posés dans les dossiers apparus depuis (nouvel utilisateur, dossier Documents créé)."""
+        if self.setting("ransomware_decoys"):
+            self.sync_decoys()
+        certs = self.root_cas(max_age=0)
+        known = self.d.state.get("known_certs")
+        fps = sorted(c["fp"] for c in certs)
+        if known is not None:
+            for c in certs:
+                if c["fp"] not in known and not c["acknowledged"]:
+                    self.write_log(f"⚠ certificate: new root certificate {c['name']} ({', '.join(c['stores'])}) {c['fp'][:16]}")
+                    self.alert("certificate", "warn", title=c["name"], detail=", ".join(c["stores"]), fp=c["fp"], reasons=["new_root_ca"])
+        if known is None or fps != sorted(known):
+            self.d.state.update(known_certs=fps)
+        found = self.redirects(max_age=0)
+        known_r = self.d.state.get("known_redirects")
+        keys = sorted(f["key"] for f in found)
+        if known_r is not None:
+            for f in found:
+                if f["key"] not in known_r and not f["acknowledged"]:
+                    self.write_log(f"⚠ redirect: {f['type']} {f['value']} ({f['where']})")
+                    self.alert("redirect", "warn", title=f["value"], detail=f["where"], key=f["key"], subtype=f["type"], reasons=[f"redirect_{f['type']}"])
+        if known_r is None or keys != sorted(known_r):
+            self.d.state.update(known_redirects=keys)

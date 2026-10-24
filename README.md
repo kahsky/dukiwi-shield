@@ -48,15 +48,15 @@ versions itself (popup or Security tab) and can install them on its own when the
 
 ### Direct download
 
-- Mint / Ubuntu: [dukiwi-shield_2.0.1_all.deb](https://www.dukiwi.com/repo/dukiwi-shield/dukiwi-shield_2.0.1_all.deb)
-- Fedora: [dukiwi-shield-2.0.1-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/dukiwi-shield-2.0.1-1.noarch.rpm)
+- Mint / Ubuntu: [dukiwi-shield_2.2.0_all.deb](https://www.dukiwi.com/repo/dukiwi-shield/dukiwi-shield_2.2.0_all.deb)
+- Fedora: [dukiwi-shield-2.2.0-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/dukiwi-shield-2.2.0-1.noarch.rpm)
 - All versions: [www.dukiwi.com/repo](https://www.dukiwi.com/repo)
 
 ### Installing a downloaded package by hand
 
 ```bash
-sudo apt install ./dukiwi-shield_2.0.1_all.deb          # Mint / Ubuntu
-sudo dnf install ./dukiwi-shield-2.0.1-1.noarch.rpm      # Fedora
+sudo apt install ./dukiwi-shield_2.2.0_all.deb          # Mint / Ubuntu
+sudo dnf install ./dukiwi-shield-2.2.0-1.noarch.rpm      # Fedora
 ```
 
 The installation enables the system service and the scheduler, then starts the initial scan:
@@ -78,6 +78,35 @@ sudo dnf remove dukiwi-shield   # Fedora
 
 ## Features
 
+- **Ransomware decoys, camera and microphone, miners, root certificates, network redirection (2.2)** —
+  1. *Ransomware decoys*: a hidden file `.dukiwi-guard-<id>` (a real .docx, .jpg, .pdf or .xlsx) sits in Documents,
+     Pictures, Desktop and the home folder of each user (localised XDG folders, a per-machine suffix so two computers
+     syncing the same folder never share a decoy). No program has a reason to write it: the program that does is seen by
+     fanotify, suspended (automatic response) and reported in a red popup with Terminate, Quarantine, Resume and "It's
+     me". A decoy deleted, renamed or replaced is reported with the program that was writing in that folder at that
+     moment, or as a warning when none is found, and recreated. Decoys are removed when the option is turned off or the
+     package is uninstalled.
+  2. *Camera and microphone*: a program that opens `/dev/video*` (read from `/proc/*/fd`) or records the microphone
+     (`pactl list source-outputs` in each sound session; speaker monitors, PipeWire and volume meters left out) raises a
+     popup "X is using the camera" with "Always allow" (listed in Trusted programs, removable).
+  3. *Cryptocurrency miners*: known miner name, pool address (`stratum+tcp://`, pool domains) or miner options in the
+     command line → danger and suspension; connection to a pool port with a saturated CPU → danger; a program outside
+     the packages that keeps a CPU core busy for 15 minutes → warning (games under Steam, Lutris, Heroic or Wine left out).
+  4. *Added root certificates*: system anchors (`/usr/local/share/ca-certificates`, `/etc/pki/ca-trust/source/anchors`)
+     and NSS databases (Firefox, Chrome, Thunderbird, snap and Flatpak included; read on a copy with `certutil`). New
+     checklist item "Added root certificates", "Ignore" by SHA-256 fingerprint; each new certificate raises an alert.
+  5. *Network redirection*: `/etc/hosts` entries pointing to a public address, proxies (GNOME/Cinnamon, KDE, Firefox,
+     `/etc/environment`, apt, dnf) and a new unknown public DNS server on an already known network (well-known resolvers,
+     VPN links and the router's IPv6 address left out). New checklist item "Network redirection", "Ignore" per entry; each
+     new one raises an alert.
+  Three new switches in Settings › Real-time protection; journal category "Camera and microphone".
+- **Score history, security journal and report (2.1)** — the service keeps one score per day (400 days) and the Score
+  and checklist page shows its curve over 30 days, 90 days or a year, with a crosshair tooltip and a table of values.
+  New Security › Journal page: alerts and service actions (scans, behaviour, firewall, network, honeypot, USB, updates,
+  hardening, approvals, accounts, backups, settings) merged from the alert list and the service log, filtered by period,
+  category, severity and text, exported as CSV or JSON; scan engine warnings are left out. "PDF report" and "HTML
+  report" produce a security report of the computer (system, score and its trend, every check, vulnerabilities, integrity,
+  alerts of the last 30 days), the PDF being printed offscreen by WebKit.
 - **2.0.1: shield after the migration** — the previous package's user service could restart its shield just before its
   files were deleted; that ghost process kept the instance lock carried over with the data folder, so the Dukiwi Shield
   shield exited at once and no tray icon appeared. The lock has a new name, and the service stops the old user service
@@ -609,8 +638,8 @@ python3 dukiwi-shield.py
 ## Building the packages
 
 ```bash
-./build-deb.sh        # dukiwi-shield_2.0.1_all.deb   (Mint / Ubuntu)
-./build-rpm.sh        # dukiwi-shield-2.0.1-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
+./build-deb.sh        # dukiwi-shield_2.2.0_all.deb   (Mint / Ubuntu)
+./build-rpm.sh        # dukiwi-shield-2.2.0-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
 ```
 
 Both packages share the same file tree (`build-deb.sh --stage-only`) and the same signed integrity manifest.
@@ -694,6 +723,7 @@ dukiwi-shield/
 ├── dukiwi-shield.py              # Python app (GTK3 + WebKit2 + AppIndicator)
 ├── dukiwi-shield-daemon.py       # Root system service (Unix socket) + --request client
 ├── dukiwi_shield_common.py                 # Shared paths, exclusions, protocol
+├── dukiwi_shield_guard.py                  # Decoys, camera/microphone, miners, root certificates, redirection
 ├── systemd/
 │   ├── dukiwi-shield-daemon.service
 │   ├── dukiwi-shield-update.service

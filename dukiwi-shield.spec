@@ -141,6 +141,7 @@ if [ "$1" = "0" ]; then
     systemctl disable dukiwi-shield-update.timer >/dev/null 2>&1 || true
     systemctl stop dukiwi-shield-daemon.service >/dev/null 2>&1 || true
     systemctl disable dukiwi-shield-daemon.service >/dev/null 2>&1 || true
+    find /home -maxdepth 4 -xdev -type f -name '.dukiwi-guard-*' -delete >/dev/null 2>&1 || true
 fi
 
 %postun

@@ -76,6 +76,8 @@ function setLanguage(code) {
     document.querySelectorAll('[data-i18n-placeholder]').forEach(el => { el.placeholder = t(el.dataset.i18nPlaceholder); });
     document.querySelectorAll('[data-i18n-title]').forEach(el => { el.title = t(el.dataset.i18nTitle); });
     if ($('creditsModal') && $('creditsModal').classList.contains('open')) renderCredits();
+    if (typeof renderJournal === 'function' && $('journalBox') && journalData.events.length) renderJournal();
+    if (typeof renderScoreHistory === 'function' && secData.checklist) renderScoreHistory();
     ['langSelect', 'langSelectSimple', 'setLanguage'].forEach(id => { const sel = $(id); if (sel && sel.value !== code) sel.value = code; });
     // Re-rendre les zones dynamiques avec la nouvelle langue
     if (lastStatus) updateDashboardStatus(lastStatus);
@@ -117,7 +119,7 @@ function locale() {
 // « Ignorer », « C'est normal », « Faire confiance », « Réafficher »… : le service recalcule bouclier, score et listes.
 // Trois secondes après, tout l'état affiché est relu pour montrer le nouveau statut sans changer d'onglet.
 const RELOAD_AFTER_ACTIONS = new Set(['acknowledge_vuln', 'acknowledge_port', 'acknowledge_integrity', 'acknowledge_persistence',
-    'ignore_check', 'acknowledge_sudoers', 'timeshift_ignore', 'trust_program', 'untrust_program', 'untrust_usb', 'hid_allow', 'hid_forget', 'network_gateway_accept', 'honeypot_block', 'honeypot_ignore', 'honeypot_forget', 'feature_answer', 'url_allow']);
+    'ignore_check', 'acknowledge_sudoers', 'timeshift_ignore', 'trust_program', 'untrust_program', 'untrust_usb', 'hid_allow', 'hid_forget', 'network_gateway_accept', 'honeypot_block', 'honeypot_ignore', 'honeypot_forget', 'feature_answer', 'url_allow', 'guard_ack', 'privacy_allow']);
 let statusReloadTimer = null;
 
 function scheduleStatusReload(delay = 3000) {
@@ -416,6 +418,7 @@ function onSecurityData(data) {
     if (data.available === false) { renderSecurityUnavailable(type); return; }
     if (type === 'integrity' && data.after_scan && data.data && scan.running) setHeroNote((data.data.warnings || 0) ? t('scan.note.integrity_warn', { n: data.data.warnings }) : t('scan.note.integrity_ok'));
     secData[type] = data.data || null;
+    if (type === 'journal') { onJournalData(data.data); return; }
     if (type === 'vulns') { renderVulns(data.refreshing); }
     else if (type === 'checklist') renderChecklist();
     else if (type === 'integrity') renderIntegrity(data.refreshing);
@@ -451,6 +454,7 @@ function renderChecklist() {
     $('scoreValue').textContent = c.score;
     $('scoreGrade').textContent = c.grade || '';
     $('scoreFill').style.strokeDashoffset = RING_CIRC * (1 - (c.score || 0) / 100);
+    if (typeof renderScoreHistory === 'function') renderScoreHistory();
     $('scoreChecked').textContent = c.checked_at ? t('system.checked', { date: formatDateTime(c.checked_at), rel: formatRelative(c.checked_at) }) : '';
     // Un contrôle peut être complété côté interface (réglages utilisateur : Spices Cinnamon et Flatpak pour les mises à jour)
     const items = (c.items || []).map(i => {
@@ -462,6 +466,8 @@ function renderChecklist() {
     $('checklistCounts').textContent = t('security.checklist.counts', { ok: counts.ok, warn: counts.warn, fail: counts.fail });
     const order = { fail: 0, warn: 1, unknown: 2, ok: 3, na: 4 };
     items.forEach(i => { if (i.key === 'secrets' && i.params && (i.params.secrets || []).length) i.detail = i.params.secrets.map(s => `${s.user}: ${s.name} (${t('check.secrets.kind.' + s.kind)})`).join(', '); });
+    items.forEach(i => { if (i.key === 'root_ca' && i.params && (i.params.certs || []).length) i.detail = i.params.certs.map(c => `${c.name} (${(c.stores || []).join(', ')})`).join(', '); });
+    items.forEach(i => { if (i.key === 'network_redirect' && i.params && (i.params.redirects || []).length) i.detail = i.params.redirects.map(r => `${t('check.network_redirect.type.' + r.type)}${lang === 'fr' ? ' : ' : ': '}${r.value}`).join(', '); });
     $('checklistList').innerHTML = items.slice().sort((a, b) => order[a.status] - order[b.status] || b.weight - a.weight).map(i => `
         <div class="check-item check-${i.status}">
             <span class="check-icon">${i.status === 'ok' ? '✓' : i.status === 'fail' ? '✕' : i.status === 'warn' ? '!' : '?'}</span>
@@ -1180,7 +1186,8 @@ function gatewayAccept(key) { sendToBackend({ action: 'network_gateway_accept', 
 function acknowledgePersistence(key, remove = false) { sendToBackend({ action: 'acknowledge_persistence', key, remove }); }
 
 function onTrustedList(data) {
-    trustedData = { programs: (data && data.programs) || [], acknowledged: (data && data.acknowledged) || [], usb: (data && data.usb) || [], hid: (data && data.hid) || [], sudoers: (data && data.sudoers) || [] };
+    trustedData = { programs: (data && data.programs) || [], acknowledged: (data && data.acknowledged) || [], usb: (data && data.usb) || [], hid: (data && data.hid) || [], sudoers: (data && data.sudoers) || [],
+        privacy: (data && data.privacy) || [], certs: (data && data.certs) || [], redirects: (data && data.redirects) || [] };
     renderTrusted();
 }
 
@@ -1188,8 +1195,19 @@ function renderTrusted() {
     const el = $('trustedList');
     if (!el) return;
     const progs = trustedData.programs, ack = trustedData.acknowledged, usb = trustedData.usb || [], hid = trustedData.hid || [], sud = trustedData.sudoers || [];
-    if (!progs.length && !ack.length && !usb.length && !hid.length && !sud.length) { el.innerHTML = `<p class="text-muted">${t('settings.trusted.none')}</p>`; return; }
+    const priv = trustedData.privacy || [], certs = trustedData.certs || [], redir = trustedData.redirects || [];
+    if (!progs.length && !ack.length && !usb.length && !hid.length && !sud.length && !priv.length && !certs.length && !redir.length) { el.innerHTML = `<p class="text-muted">${t('settings.trusted.none')}</p>`; return; }
+    const row = (badge, name, sub, at, js) => `<div class="package-item">
+            <span class="scope-badge scope-user">${badge}</span>
+            <span class="package-name">${escapeHtml(name)}</span>
+            <span class="package-versions" title="${escapeHtml(sub)}">${escapeHtml(sub)}</span>
+            <span class="alert-meta">${at ? formatDateTime(at) : ''}</span>
+            <button class="btn btn-secondary btn-sm" onclick="${js}">${t('settings.trusted.remove')}</button>
+        </div>`;
     el.innerHTML = [
+        ...priv.map(p => row(t(`settings.trusted.privacy_${p.device === 'microphone' ? 'microphone' : 'camera'}`), p.comm || p.exe, p.exe, p.at, `sendToBackend({action:'privacy_allow', remove:true, exe:'${escapeJs(p.exe)}'})`)),
+        ...certs.map(c => row(t('settings.trusted.cert'), c.name || c.fp, `SHA-256 ${(c.fp || '').slice(0, 16)}…`, c.at, `sendToBackend({action:'guard_ack', group:'certs', remove:true, keys:['${escapeJs(c.fp)}']})`)),
+        ...redir.map(r => row(t('settings.trusted.redirect'), r.name || r.key, r.key, r.at, `sendToBackend({action:'guard_ack', group:'redirects', remove:true, keys:['${escapeJs(r.key)}']})`)),
         ...sud.map(s => `<div class="package-item">
             <span class="scope-badge scope-user">${t('settings.trusted.sudoers')}</span>
             <span class="package-name">${escapeHtml(s.path)}</span>
@@ -1258,6 +1276,9 @@ function onSettingsData(data) {
     if ($('setUrlGuardResolve')) $('setUrlGuardResolve').checked = sys.url_guard_resolve !== false;
     if ($('setOnAccess')) $('setOnAccess').checked = sys.on_access_scan !== false;
     if ($('setHidGuard')) $('setHidGuard').checked = sys.usb_keyboard_guard !== false;
+    if ($('setDecoys')) $('setDecoys').checked = sys.ransomware_decoys !== false;
+    if ($('setPrivacyWatch')) $('setPrivacyWatch').checked = sys.privacy_watch !== false;
+    if ($('setMinerWatch')) $('setMinerWatch').checked = sys.miner_watch !== false;
     if ($('setMailScan')) $('setMailScan').checked = sys.mail_scan_attachments !== false;
     $('setGeoip').checked = sys.geoip_lookup !== false;
     if ($('setGeoipKey')) $('setGeoipKey').value = sys.geoip_api_key || '';
@@ -1273,7 +1294,7 @@ function onSettingsData(data) {
     if ($('setScanCacheDays')) $('setScanCacheDays').value = sys.scan_cache_days ?? 30;
     if ($('telemetryLast')) $('telemetryLast').textContent = data.telemetry_sent ? t('settings.telemetry.last', { rel: formatRelative(data.telemetry_sent) }) : '';
     const locked = new Set(data.locked || []);
-    const map = { setUploadMonitor: 'upload_monitor', setUploadGb: 'upload_alert_gb', setUploadHours: 'upload_window_hours', setBurstMonitor: 'burst_monitor', setBurstInfo: 'burst_info_threshold', setBurstDanger: 'burst_danger_threshold', setBurstWindow: 'burst_window_sec', setUsbAuto: 'usb_auto_scan', setUsbMax: 'usb_auto_scan_max_gib', setUpdateTime: 'update_hour', setFamilyMode: 'family_mode', setOnAccess: 'on_access_scan', setHidGuard: 'usb_keyboard_guard', setAutoResponse: 'auto_response', setConnectionMonitor: 'connection_monitor', setHoneypot: 'honeypot', setUrlGuard: 'url_guard', setUrlGuardResolve: 'url_guard_resolve', setMailScan: 'mail_scan_attachments', setGeoip: 'geoip_lookup', setGeoipKey: 'geoip_api_key', setIntegrityWeekly: 'integrity_weekly', setIntegrityDay: 'integrity_day', setIntegrityHour: 'integrity_hour', setAppUpdateCheck: 'app_update_check', setAppUpdateAuto: 'app_update_auto', setWeekly: 'weekly_scan', setWeeklyDay: 'weekly_scan_day', setWeeklyHour: 'weekly_scan_hour', setBackupCheck: 'backup_check', setTimeshiftCheck: 'timeshift_check', setTelemetry: 'telemetry', setAutoHarden: 'auto_harden', setScanCacheDays: 'scan_cache_days' };
+    const map = { setUploadMonitor: 'upload_monitor', setUploadGb: 'upload_alert_gb', setUploadHours: 'upload_window_hours', setBurstMonitor: 'burst_monitor', setBurstInfo: 'burst_info_threshold', setBurstDanger: 'burst_danger_threshold', setBurstWindow: 'burst_window_sec', setUsbAuto: 'usb_auto_scan', setUsbMax: 'usb_auto_scan_max_gib', setUpdateTime: 'update_hour', setFamilyMode: 'family_mode', setOnAccess: 'on_access_scan', setHidGuard: 'usb_keyboard_guard', setDecoys: 'ransomware_decoys', setPrivacyWatch: 'privacy_watch', setMinerWatch: 'miner_watch', setAutoResponse: 'auto_response', setConnectionMonitor: 'connection_monitor', setHoneypot: 'honeypot', setUrlGuard: 'url_guard', setUrlGuardResolve: 'url_guard_resolve', setMailScan: 'mail_scan_attachments', setGeoip: 'geoip_lookup', setGeoipKey: 'geoip_api_key', setIntegrityWeekly: 'integrity_weekly', setIntegrityDay: 'integrity_day', setIntegrityHour: 'integrity_hour', setAppUpdateCheck: 'app_update_check', setAppUpdateAuto: 'app_update_auto', setWeekly: 'weekly_scan', setWeeklyDay: 'weekly_scan_day', setWeeklyHour: 'weekly_scan_hour', setBackupCheck: 'backup_check', setTimeshiftCheck: 'timeshift_check', setTelemetry: 'telemetry', setAutoHarden: 'auto_harden', setScanCacheDays: 'scan_cache_days' };
     Object.entries(map).forEach(([id, key]) => { const el = $(id); if (!el) return; const row = el.closest('.setting-row'); if (locked.has(key)) { el.disabled = true; if (row) { row.classList.add('locked'); row.title = t('settings.locked_note'); } } else if (row) { row.classList.remove('locked'); row.title = ''; } });
     const banner = $('policyBanner');
     if (banner) { banner.hidden = !data.policy; if (data.policy) banner.textContent = t('settings.policy.banner', { name: data.policy.name || '—', signed: data.policy.signed ? t('settings.policy.signed') : '', n: (data.locked || []).length }) + (data.allowlist && data.allowlist.version ? ' · ' + t('settings.allowlist', { version: data.allowlist.version, n: data.allowlist.patterns || 0 }) : ''); }
@@ -1353,6 +1374,9 @@ function saveSettings() {
         mail_scan_attachments: $('setMailScan') ? $('setMailScan').checked : true,
         on_access_scan: $('setOnAccess') ? $('setOnAccess').checked : true,
         usb_keyboard_guard: $('setHidGuard') ? $('setHidGuard').checked : true,
+        ransomware_decoys: $('setDecoys') ? $('setDecoys').checked : true,
+        privacy_watch: $('setPrivacyWatch') ? $('setPrivacyWatch').checked : true,
+        miner_watch: $('setMinerWatch') ? $('setMinerWatch').checked : true,
         geoip_lookup: $('setGeoip').checked,
         geoip_api_key: $('setGeoipKey') ? $('setGeoipKey').value.trim() : '',
         integrity_weekly: $('setIntegrityWeekly').checked,
@@ -1723,6 +1747,48 @@ function onAlertEvent(alert) {
     renderAlerts();
 }
 
+// Centre de sécurité : leurre anti-rançongiciel, caméra/micro, mineur, certificat racine, détournement réseau
+const GUARD_KINDS = ['ransomware', 'privacy', 'miner', 'certificate', 'redirect'];
+
+function guardAlertText(a) {
+    const prog = a.comm || a.title || '?';
+    const file = (a.path || a.detail || '').split('/').pop();
+    const reason = (a.reasons || [])[0] || '';
+    if (a.kind === 'ransomware') return a.severity === 'danger' ? t('popup.ransomware.body', { program: prog, file, folder: a.top_dir || '' }) : t(`popup.ransomware.${reason}`, { file, folder: a.top_dir || '' });
+    if (a.kind === 'privacy') return t(`popup.privacy.${a.device || 'camera'}_body`, { program: prog });
+    if (a.kind === 'miner') return `${t('popup.miner.body', { program: prog, cpu: a.cpu || 0 })} ${t(`alert.reason.${reason}`)}`;
+    if (a.kind === 'certificate') return t('popup.certificate.body', { name: a.title || '?', stores: a.detail || '' });
+    return t(`popup.redirect.${a.subtype || 'hosts'}`, { value: a.title || '?', where: a.detail || '' });
+}
+
+function renderGuardAlert(a) {
+    const cls = a.severity === 'danger' ? ['alert-danger', 'badge-red'] : a.severity === 'warn' ? ['alert-warn', 'badge-amber'] : ['alert-info', 'badge-blue'];
+    const badge = a.kind === 'privacy' ? t(`system.alert.privacy_${a.device || 'camera'}`) : t(`system.alert.${a.kind}`);
+    const btn = (label, js, kind = 'secondary') => `<button class="btn btn-${kind} btn-sm" onclick="${js}">${label}</button>`;
+    const actions = [];
+    if (a.suspended && (a.kind === 'ransomware' || a.kind === 'miner')) {
+        actions.push(btn(t('popup.btn.kill'), `sendToBackend({action:'process_action', pid:${a.pid}, action:'kill'})`, 'danger'),
+            btn(t('popup.btn.quarantine_exe'), `sendToBackend({action:'process_action', pid:${a.pid}, action:'quarantine'})`, 'danger'),
+            btn(t('popup.btn.resume'), `sendToBackend({action:'process_action', pid:${a.pid}, action:'continue'})`));
+    }
+    if (a.kind === 'privacy' && a.exe) actions.push(btn(t('popup.privacy.allow'), `sendToBackend({action:'privacy_allow', exe:'${escapeJs(a.exe)}', comm:'${escapeJs(a.comm || '')}', device:'${escapeJs(a.device || '')}'})`));
+    if ((a.kind === 'ransomware' || a.kind === 'miner') && a.exe && a.pid) actions.push(btn(t('popup.btn.its_me'), `trustProgram('${escapeJs(a.exe)}','${escapeJs(a.comm || '')}')`));
+    if (a.kind === 'ransomware' && a.top_dir) actions.push(btn(t('popup.btn.scan_folder'), `startScan('${escapeJs(a.top_dir)}')`));
+    if (a.kind === 'certificate' && a.fp) actions.push(btn(t('security.ignore'), `sendToBackend({action:'guard_ack', group:'certs', keys:['${escapeJs(a.fp)}']})`));
+    if (a.kind === 'redirect' && a.key) actions.push(btn(t('security.ignore'), `sendToBackend({action:'guard_ack', group:'redirects', keys:['${escapeJs(a.key)}']})`));
+    return `
+        <div class="alert-item ${cls[0]}">
+            <div class="alert-head">
+                <span class="badge ${cls[1]}">${escapeHtml(badge)}</span>
+                <span class="alert-program">${escapeHtml(a.comm || a.title || '?')}</span>
+                <span class="alert-meta">${formatDateTime(a.time)}${a.pid ? ` · pid ${a.pid}` : ''}${a.user ? ` · ${escapeHtml(a.user)}` : ''}</span>
+            </div>
+            <div class="alert-body">${escapeHtml(guardAlertText(a))}</div>
+            ${a.exe || a.fp ? `<div class="alert-exe">${escapeHtml(a.exe || a.fp)}</div>` : ''}
+            ${actions.length ? `<div class="alert-actions">${actions.join(' ')}</div>` : ''}
+        </div>`;
+}
+
 function renderAlerts(available = true) {
     const el = $('alertsList');
     $('alertsHint').textContent = available ? '' : t('system.alerts.unavailable');
@@ -1816,6 +1882,7 @@ function renderAlerts(available = true) {
             <div class="alert-actions">${a.gateway ? '' : `<button class="btn btn-danger btn-sm" onclick="honeypotBlock('${escapeJs(a.ip || '')}')">${t('honeypot.block')}</button> `}<button class="btn btn-secondary btn-sm" onclick="setViewMode('advanced'); switchTab('security'); scrollToHoneypot()">${t('popup.btn.details')}</button></div>
         </div>`;
         }
+        if (GUARD_KINDS.includes(a.kind)) return renderGuardAlert(a);
         if (a.kind === 'persistence' || a.kind === 'integrity' || a.kind === 'update') {
             const titles = { persistence: t('popup.persistence.title'), integrity: t('popup.integrity.title'), update: t('popup.appupdate.title', { version: a.title || '' }) };
             // Veille noyau/processus : programme, motif traduit et lignes concernées (pid, nom, chemin)
@@ -2769,6 +2836,17 @@ function simulateBackend(data) {
             break;
         case 'get_security_data': {
             const now = new Date().toISOString();
+            if (data.type === 'journal') {
+                const ago = h => new Date(Date.now() - h * 3600e3).toISOString().slice(0, 19);
+                reply('securityData', { type: 'journal', available: true, data: { days: data.days || 30, events: [
+                    { t: ago(2), src: 'alert', cat: 'network', sev: 'danger', text: 'WIFI-Maison — gateway aa:bb:cc:dd:ee:01 → de:ad:be:ef:00:01' },
+                    { t: ago(5), src: 'log', cat: 'approvals', sev: 'info', text: 'sudoers acknowledged by uid 1000: /etc/sudoers.d/asus-camera' },
+                    { t: ago(9), src: 'log', cat: 'firewall', sev: 'info', text: 'network WIFI-Maison [wifi]: profile home' },
+                    { t: ago(26), src: 'alert', cat: 'scan', sev: 'danger', text: 'facture.pdf.exe — Win.Trojan.Agent-123' },
+                    { t: ago(30), src: 'log', cat: 'updates', sev: 'info', text: 'signatures updated (daily 27801)' },
+                    { t: ago(50), src: 'log', cat: 'hardening', sev: 'warn', text: 'harden KRNL-6000 applied (sysctl)' }] } });
+                break;
+            }
             if (data.type === 'integrity' && data.run) {          // dev : progression simulée des outils
                 reply('securityData', { type: 'integrity_running' }, 50);
                 const steps = [['lynis', 20, 'Boot and services'], ['lynis', 55, 'Networking'], ['lynis', 90, 'File Permissions'], ['unhide', 50, 'Searching for Hidden processes through comparison'], ['chkrootkit', 40, 'ifpromisc'], ['debsums', 30, '']];
@@ -2783,8 +2861,8 @@ function simulateBackend(data) {
                 break;
             }
             const sim = {
-                checklist: { checked_at: now, score: 78, grade: 'B', ports: [{ proto: 'tcp', addr: '0.0.0.0', port: 22, process: 'sshd', service: 'ssh', exposed: true, verdict: 'reachable', key: '22/tcp:sshd' }, { proto: 'tcp', addr: '0.0.0.0', port: 80, process: 'apache2', service: 'http', exposed: true, verdict: 'reachable', key: '80/tcp:apache2', acknowledged: true }, { proto: 'tcp', addr: '127.0.0.1', port: 631, process: 'cupsd', service: 'cups', exposed: false, verdict: 'local', key: '631/tcp:cupsd' }],
-                    items: [{ key: 'firewall', status: 'ok', weight: 15, detail: 'deny/allow' }, { key: 'disk_encryption', status: 'warn', weight: 8, detail: '' }, { key: 'secure_boot', status: 'ok', weight: 5 }, { key: 'apparmor', status: 'ok', weight: 6 }, { key: 'auto_updates', status: 'warn', weight: 6 }, { key: 'security_updates', status: 'fail', weight: 12, detail: '2' }, { key: 'empty_passwords', status: 'ok', weight: 10 }, { key: 'nopasswd_sudo', status: 'ok', weight: 5 }, { key: 'open_ports', status: 'warn', weight: 8, detail: '22/tcp sshd' }, { key: 'signatures', status: 'ok', weight: 8, detail: '0 d' }, { key: 'realtime', status: 'ok', weight: 6 }, { key: 'open_vulns', status: 'warn', weight: 6, detail: '12 unfixed, 2 high/critical' }] },
+                checklist: { checked_at: now, score: 78, grade: 'B', history: Array.from({ length: 75 }, (_, i) => { const d = new Date(Date.now() - (74 - i) * 86400e3).toISOString().slice(0, 10); const sc = Math.round(Math.min(96, 52 + i * 0.45 + 6 * Math.sin(i / 5) + (i > 60 ? 6 : 0))); return { d, s: sc, g: sc >= 90 ? 'A' : sc >= 75 ? 'B' : sc >= 60 ? 'C' : 'D' }; }), ports: [{ proto: 'tcp', addr: '0.0.0.0', port: 22, process: 'sshd', service: 'ssh', exposed: true, verdict: 'reachable', key: '22/tcp:sshd' }, { proto: 'tcp', addr: '0.0.0.0', port: 80, process: 'apache2', service: 'http', exposed: true, verdict: 'reachable', key: '80/tcp:apache2', acknowledged: true }, { proto: 'tcp', addr: '127.0.0.1', port: 631, process: 'cupsd', service: 'cups', exposed: false, verdict: 'local', key: '631/tcp:cupsd' }],
+                    items: [{ key: 'firewall', status: 'ok', weight: 15, detail: 'deny/allow' }, { key: 'disk_encryption', status: 'warn', weight: 8, detail: '' }, { key: 'secure_boot', status: 'ok', weight: 5 }, { key: 'apparmor', status: 'ok', weight: 6 }, { key: 'auto_updates', status: 'warn', weight: 6 }, { key: 'security_updates', status: 'fail', weight: 12, detail: '2' }, { key: 'empty_passwords', status: 'ok', weight: 10 }, { key: 'nopasswd_sudo', status: 'ok', weight: 5 }, { key: 'open_ports', status: 'warn', weight: 8, detail: '22/tcp sshd' }, { key: 'signatures', status: 'ok', weight: 8, detail: '0 d' }, { key: 'realtime', status: 'ok', weight: 6 }, { key: 'open_vulns', status: 'warn', weight: 6, detail: '12 unfixed, 2 high/critical' }, { key: 'root_ca', status: 'warn', weight: 4, detail: 'Corp-Proxy-CA', params: { certs: [{ fp: 'D3EF', name: 'Corp-Proxy-CA', stores: ['firefox (user)'] }] } }, { key: 'network_redirect', status: 'warn', weight: 4, detail: '', params: { redirects: [{ key: 'proxy:env:http_proxy=http://10.9.9.9:3128', type: 'proxy_env', value: 'http_proxy=http://10.9.9.9:3128', where: '/etc/environment' }] } }] },
                 vulns: { checked_at: now, ok: true, sources: 1480, counts: { unfixed: 12, pro_only: 3, fix_available: 5, kernel_pending: 3569, not_applicable: 651, na_embedded: 622, na_vendor: 29, acknowledged: 1, acknowledged_cves: 1 }, embedded: { mozjs115: { users: ['cjs', 'polkitd'] } }, vendor: { thunderbird: '1:153.3.1esr+linuxmint1' }, context: { vpn_connections: [] }, running_kernel: { release: '7.0.0-34-generic', source: 'linux-hwe-7.0' }, by_priority: { high: 2, medium: 9, low: 9 }, flatpak: [{ id: 'org.gimp.GIMP', version: '3.2.7', name: 'GIMP' }], snap: [],
                     items: [{ id: 'UBUNTU-CVE-2026-32741', cve: 'CVE-2026-32741', package: 'libheif', installed: '1.17.6-1ubuntu4', fixed: '', status: 'unfixed', priority: 'high', cvss: 'CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:H/A:H', summary: 'Heap buffer overflow when decoding crafted HEIF images', url: 'https://ubuntu.com/security/CVE-2026-32741' }, { id: 'x', cve: 'CVE-2026-54369', package: 'acl', installed: '2.3.2-1build1.1', fixed: '', status: 'unfixed', priority: 'medium', cvss: '', summary: 'Race condition in setfacl', url: '#' }, { id: 'x2', cve: 'CVE-2025-9999', package: 'libpng16-16t64', installed: '1.6.43-5build1', fixed: '', status: 'unfixed', priority: 'medium', cvss: '', summary: 'Out-of-bounds read in png_read_chunk (needs a crafted local file)', url: '#', acknowledged: true, acknowledged_at: now }, { id: 'y', cve: 'CVE-2026-63072', package: 'openssl', installed: '3.0.13-0ubuntu3.13', fixed: '3.0.13-0ubuntu3.15', status: 'fix_available', priority: 'medium', cvss: '', summary: 'Heap Buffer Overflow in CMS Key Unwrapping', url: '#' }, { id: 'z', cve: 'CVE-2025-1234', package: 'libxml2', installed: '2.9.14', fixed: '2.9.14+esm1', status: 'pro_only', priority: 'low', cvss: '', summary: 'Use-after-free in xmlXPath', url: '#' }, { id: 'k', cve: 'CVE-2026-64564', package: 'linux-hwe-7.0', installed: '7.0.0-34.34~24.04.1', fixed: '', status: 'kernel_pending', priority: 'critical', cvss: '', summary: 'net: use-after-free in tcp_read_sock', url: '#' }, { id: 'tv', cve: 'CVE-2024-3661', package: 'openvpn', installed: '2.6.19-0ubuntu0.24.04.3', fixed: '', status: 'unfixed', priority: 'high', cvss: 'CVSS:3.1/AV:A/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:L', summary: 'DHCP can add routes to a client’s routing table via the classless static route option (121). VPN-based security solutions that rely on routes to redirect traffic can be forced to leak traffic over the physical interface.', url: '#', note: 'tunnelvision' }, { id: 'm', cve: 'CVE-2024-9680', package: 'mozjs115', installed: '115.10.0-1', fixed: '', status: 'not_applicable', priority: 'high', cvss: '', summary: 'An attacker was able to achieve code execution in the content process by exploiting a use-after-free in Animation timelines. This vulnerability affects Firefox < 131.0.2', url: '#' }] },
                 integrity: { checked_at: now, warnings: 1, lynis: { index: 64, warnings: [], suggestions: 8, items: [{ test: 'KRNL-6000', text: 'One or more sysctl values differ from the scan profile and could be tweaked', details: 'fs.suid_dumpable 2→0, kernel.kptr_restrict 1→2, kernel.sysrq 176→0' }, { test: 'KRNL-5820', text: 'If not required, consider explicit disabling of core dump in /etc/security/limits.conf file', details: '' }, { test: 'AUTH-9328', text: 'Default umask in /etc/login.defs could be more strict like 027', details: '' }, { test: 'BANN-7126', text: 'Add a legal banner to /etc/issue, to warn unauthorized users', details: '' }, { test: 'PKGS-7410', text: 'Remove any unneeded kernel packages', details: '13 kernels' }, { test: 'PKGS-7420', text: 'Consider using a tool to automatically apply upgrades', details: '' }, { test: 'USB-1000', text: 'Disable drivers like USB storage when not used, to prevent unauthorized storage or data theft', details: '' }, { test: 'LOGG-2190', text: 'Check what deleted files are still in use and why.', details: '' }] },
@@ -2809,7 +2887,12 @@ function simulateBackend(data) {
             break;
         }
         case 'get_alerts':
-            reply('alertsList', { available: true, alerts: [{ time: new Date().toISOString(), severity: 'danger', reasons: ['untrusted_home_burst'], pid: 4242, comm: 'cryptolocker', exe: '/home/user/Downloads/cryptolocker', cmdline: './cryptolocker', user: 'user', trusted: false, count: 120, home_count: 120, window: 15, sample: ['/home/user/Documents/a.docx.locked', '/home/user/Documents/b.xlsx.locked'], top_dir: '/home/user/Documents', infected_exe: [], infected_files: [] },
+            reply('alertsList', { available: true, alerts: [
+                { kind: 'ransomware', time: new Date().toISOString(), severity: 'danger', reasons: ['decoy_modified'], pid: 5150, comm: 'invoice.bin', exe: '/home/user/Downloads/invoice.bin', user: 'user', suspended: true, title: '.dukiwi-guard-7f0f5d.docx', path: '/home/user/Documents/.dukiwi-guard-7f0f5d.docx', top_dir: '/home/user/Documents' },
+                { kind: 'privacy', time: new Date().toISOString(), severity: 'info', reasons: ['privacy_camera'], pid: 3001, comm: 'zoom', exe: '/opt/zoom/zoom', device: 'camera', title: 'zoom' },
+                { kind: 'miner', time: new Date().toISOString(), severity: 'danger', reasons: ['miner_pool'], pid: 666, comm: 'kworkerds', exe: '/tmp/.x/kworkerds', cpu: 390, suspended: true, title: 'kworkerds' },
+                { kind: 'certificate', time: new Date().toISOString(), severity: 'warn', reasons: ['new_root_ca'], title: 'Corp-Proxy-CA', detail: 'firefox (user)', fp: 'D3EF8DEA3E5BA95C22C926E31EC801C7D424CDAFA50379492F4210D8C452C129' },
+                { kind: 'redirect', time: new Date().toISOString(), severity: 'warn', reasons: ['redirect_hosts'], subtype: 'hosts', title: 'login.microsoftonline.com → 45.33.32.156', detail: '/etc/hosts', key: 'hosts:45.33.32.156 login.microsoftonline.com' },{ time: new Date().toISOString(), severity: 'danger', reasons: ['untrusted_home_burst'], pid: 4242, comm: 'cryptolocker', exe: '/home/user/Downloads/cryptolocker', cmdline: './cryptolocker', user: 'user', trusted: false, count: 120, home_count: 120, window: 15, sample: ['/home/user/Documents/a.docx.locked', '/home/user/Documents/b.xlsx.locked'], top_dir: '/home/user/Documents', infected_exe: [], infected_files: [] },
                                                             { time: new Date(Date.now() - 600e3).toISOString(), severity: 'info', reasons: [], pid: 1234, comm: 'apt', exe: '/usr/bin/apt', cmdline: 'apt upgrade', user: 'root', trusted: true, count: 340, home_count: 0, window: 15, sample: ['/usr/lib/x86_64-linux-gnu/libssl.so.3'], top_dir: '/usr/lib/x86_64-linux-gnu', infected_exe: [], infected_files: [] }] });
             break;
         case 'scan': {
@@ -2982,6 +3065,7 @@ function sectionsOf(tab) { return [...document.querySelectorAll(`#tab-${tab} .ac
 // Page principale d'un onglet (clic sur l'élément du menu) : ses sections data-main (Pare-feu : pare-feu et type de réseau ;
 // Paramètres : général et popups ; Sécurité : score et checklist) ; les autres sections sont les pages du sous-menu.
 function showSubpage(tab, key, persist = true) {
+    if (tab === 'security' && key === 'journal' && typeof loadJournal === 'function') loadJournal();
     const secs = sectionsOf(tab);
     if (!secs.length) return;
     const target = secs.find(s => s.dataset.acc === key && !s.dataset.main);
@@ -2992,7 +3076,7 @@ function showSubpage(tab, key, persist = true) {
     if (parentBtn) parentBtn.classList.toggle('on-main', !target);
     const activeBtn = document.querySelector(`.nav-sub[data-tab="${tab}"] .nav-sub-btn.active`);
     if (activeBtn && activeBtn.offsetParent) setTimeout(() => activeBtn.scrollIntoView({ block: 'nearest' }), 30);
-    if (persist) { const st = subpageLoad(); st[tab] = target.dataset.acc; try { localStorage.setItem(SUBPAGE_STORE, JSON.stringify(st)); } catch (e) { /* facultatif */ } }
+    if (persist && target) { const st = subpageLoad(); st[tab] = target.dataset.acc; try { localStorage.setItem(SUBPAGE_STORE, JSON.stringify(st)); } catch (e) { /* facultatif */ } }
     const main = document.querySelector('main.content') || document.scrollingElement;
     if (main && main.scrollTo) main.scrollTo({ top: 0 });
 }
@@ -3412,6 +3496,8 @@ const CHECK_FIX = {
     firmware: () => sendToBackend({ action: 'firmware_update' }),
     thunderbolt: null,
     secrets: null,
+    root_ca: null,
+    network_redirect: null,
     login_failures: () => { switchTab('system'); setTimeout(() => { const el = $('alertsList'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 150); },
     hardening: () => openSection('security', 'hardening'),
 };
@@ -3420,7 +3506,15 @@ const CHECK_FIX = {
 const CHECK_FIX_LABEL = { auto_updates: 'check.auto_updates.action', firmware: 'check.firmware.action' };
 
 /** Contrôles que l'utilisateur peut ignorer en connaissance de cause (« Ignorer ») : ports ouverts voulus (développement web…). */
-const CHECK_ACK = { open_ports: () => ackAllPorts(), open_vulns: () => ackAllVulns(), nopasswd_sudo: () => ackSudoers() };
+const CHECK_ACK = { open_ports: () => ackAllPorts(), open_vulns: () => ackAllVulns(), nopasswd_sudo: () => ackSudoers(),
+    root_ca: () => ackGuard('root_ca', 'certs'), network_redirect: () => ackGuard('network_redirect', 'redirects') };
+
+/** « Ignorer » les certificats racine ajoutés (proxy d'entreprise, outil de développement) ou les détournements voulus. */
+async function ackGuard(key, group) {
+    const it = ((secData.checklist || {}).items || []).find(i => i.key === key) || {};
+    const ok = await appConfirm({ title: t(`check.${key}.ack_title`), message: t(`check.${key}.ack_msg`, { list: it.detail || '' }), ok: t('security.ignore'), cancel: t('modal.cancel') });
+    if (ok) sendToBackend({ action: 'guard_ack', group });
+}
 
 // ─── Ports joignables voulus : ignorés par port+programme, ne comptent plus dans la checklist ni le score ───
 // ─── Protections avancées proposées (pot de miel…) : toujours demander, jamais activer d'office ────

@@ -37,6 +37,7 @@ from gi.repository import Gtk, Gdk, WebKit2, GLib
 import subprocess
 import signal
 import threading
+import urllib.parse
 import socket
 import fcntl
 import json
@@ -1278,6 +1279,9 @@ class ClamAVAntivirusApp:
         if kind == "honeypot":
             self.show_honeypot_alert(alert)
             return
+        if kind in ("ransomware", "privacy", "miner", "certificate", "redirect"):
+            self.show_guard_alert(alert)
+            return
         if kind == "account":
             self.popup("warning", T("popup.account.title", name=alert.get("title") or "?"), T("popup.account.body", name=alert.get("title") or "?"),
                        timeout=None, buttons=[(T("popup.btn.details"), None, lambda: self.show_tab("system"))], on_activate=lambda: self.show_tab("system"))
@@ -1378,6 +1382,96 @@ class ClamAVAntivirusApp:
                        meta=" · ".join(meta_parts) or None,
                        buttons=[(T("popup.btn.its_me"), None, lambda e=alert.get("exe"), c=comm: self.trust_program(e, c))] if alert.get("exe") else None,
                        on_activate=lambda: self.show_tab("system"))
+
+    def suspended_buttons(self, alert):
+        T = self.T
+        pid, comm = alert.get("pid"), alert.get("comm") or "?"
+        its_me = (T("popup.btn.its_me"), None, lambda e=alert.get("exe"), c=comm: self.trust_program(e, c))
+        if alert.get("suspended"):
+            return [(T("popup.btn.kill"), "danger", lambda p=pid: self.process_action(p, "kill")),
+                    (T("popup.btn.quarantine_exe"), "danger", lambda p=pid: self.process_action(p, "quarantine")),
+                    (T("popup.btn.resume"), None, lambda p=pid: self.process_action(p, "continue")), its_me]
+        return [(T("popup.btn.details"), None, lambda: self.show_tab("system"))] + ([its_me] if alert.get("exe") else [])
+
+    def show_guard_alert(self, alert):
+        """Centre de sécurité : leurre anti-rançongiciel touché, caméra/micro utilisé, mineur, certificat racine ajouté,
+        détournement réseau (hosts, proxy, DNS)."""
+        T = self.T
+        kind, sev = alert.get("kind"), alert.get("severity")
+        comm = alert.get("comm") or alert.get("title") or "?"
+        meta = alert.get("exe") or None
+        if kind == "ransomware":
+            file = os.path.basename(alert.get("path") or alert.get("detail") or "")
+            if sev == "danger":
+                body = T("popup.ransomware.body", program=comm, file=file, folder=alert.get("top_dir") or "")
+                if alert.get("suspended"):
+                    body += "\n" + T("popup.alert.suspended")
+                self.popup("danger", T("popup.ransomware.title"), body, meta=meta, buttons=self.suspended_buttons(alert),
+                           on_activate=lambda: self.show_tab("system"))
+            else:
+                self.popup("warning", T("popup.ransomware.removed_title"), T(f"popup.ransomware.{alert.get('reasons', [''])[0]}", file=file,
+                           folder=alert.get("top_dir") or ""), timeout=None,
+                           buttons=[(T("popup.btn.scan_folder"), "primary", lambda d=alert.get("top_dir") or "/": self.request_scan(d)),
+                                    (T("popup.btn.details"), None, lambda: self.show_tab("system"))],
+                           on_activate=lambda: self.show_tab("system"))
+            return
+        if kind == "privacy":
+            device = alert.get("device") or "camera"
+
+            def allow(e=alert.get("exe") or comm, c=comm, d=device):
+                self.act_privacy_allow({"exe": e, "comm": c, "device": d})
+            self.popup("warning" if sev == "warn" else "info", T(f"popup.privacy.{device}_title"), T(f"popup.privacy.{device}_body", program=comm),
+                       timeout=20, meta=meta, buttons=[(T("popup.privacy.allow"), "primary", allow), (T("popup.btn.details"), None, lambda: self.show_tab("system"))],
+                       on_activate=lambda: self.show_tab("system"))
+            return
+        if kind == "miner":
+            reason = (alert.get("reasons") or ["miner_cpu"])[0]
+            body = T("popup.miner.body", program=comm, cpu=alert.get("cpu", 0)) + "\n" + T(f"alert.reason.{reason}", port=alert.get("port") or "")
+            if alert.get("suspended"):
+                body += "\n" + T("popup.alert.suspended")
+            self.popup("danger" if sev == "danger" else "warning", T("popup.miner.title"), body, meta=meta, timeout=None,
+                       buttons=self.suspended_buttons(alert), on_activate=lambda: self.show_tab("system"))
+            return
+        group, key = ("certs", alert.get("fp")) if kind == "certificate" else ("redirects", alert.get("key"))
+        if kind == "certificate":
+            title, body = T("popup.certificate.title"), T("popup.certificate.body", name=alert.get("title") or "?", stores=alert.get("detail") or "")
+        else:
+            title = T("popup.redirect.title")
+            body = T(f"popup.redirect.{alert.get('subtype') or 'hosts'}", value=alert.get("title") or "?", where=alert.get("detail") or "")
+        self.popup("warning", title, body, timeout=None, meta=(key or "")[:80] or None,
+                   buttons=[(T("security.ignore"), None, lambda g=group, k=key: self.act_guard_ack({"group": g, "keys": [k]})),
+                            (T("popup.btn.details"), "primary", lambda: self.show_tab("security"))],
+                   on_activate=lambda: self.show_tab("security"))
+
+    def act_privacy_allow(self, data):
+        """« Toujours autoriser » un programme sur la caméra / le micro (ou retirer l'autorisation depuis Programmes de confiance)."""
+        remove = bool(data.get("remove"))
+        params = {"exe": str(data.get("exe") or ""), "comm": str(data.get("comm") or ""), "device": str(data.get("device") or ""), "remove": remove}
+
+        def done(resp):
+            self.send_to_js("operationResult", {"status": "success" if resp.get("ok") else "error", "op": "security",
+                                                "message": self.T("msg.privacy_removed" if remove else "msg.privacy_allowed") if resp.get("ok") else self.daemon_error(resp)})
+            self.act_get_trusted({})
+            return False
+        self.run_admin("privacy_allow", params, done)
+
+    def act_guard_ack(self, data):
+        """« Ignorer » un certificat racine ou un détournement réseau voulu (ou le réafficher avec remove)."""
+        remove = bool(data.get("remove"))
+        group = "certs" if data.get("group") == "certs" else "redirects"
+        params = {"group": group, "keys": [str(k) for k in (data.get("keys") or []) if k][:50], "remove": remove}
+
+        def done(resp):
+            if resp.get("ok"):
+                self.send_to_js("operationResult", {"status": "success", "op": "security",
+                                                    "message": self.T("msg.guard_unacknowledged" if remove else "msg.guard_acknowledged", n=resp.get("n", 0))})
+                if isinstance(resp.get("checklist"), dict):
+                    self.send_to_js("securityData", {"type": "checklist", "data": resp["checklist"], "available": True})
+                self.act_get_trusted({})
+            else:
+                self.send_to_js("operationResult", {"status": "error", "op": "security", "message": self.daemon_error(resp)})
+            return False
+        self.run_admin("guard_ack", params, done)
 
     def show_honeypot_alert(self, alert):
         """Pot de miel : un appareil du réseau a touché un leurre (avertissement) ou balaie les ports / tente de se
@@ -2008,6 +2102,73 @@ class ClamAVAntivirusApp:
         self.send_to_js("operationResult", {"status": status, "message": message, "op": "quarantine"})
         self.send_to_js("quarantineList", {"files": self._merged_quarantine()})
 
+    def _ask_save_path(self, default_name, pattern, label):
+        dialog = Gtk.FileChooserDialog(title=self.T("dialog.save"), parent=self.window, action=Gtk.FileChooserAction.SAVE)
+        dialog.add_buttons(self.T("dialog.cancel"), Gtk.ResponseType.CANCEL, self.T("dialog.save"), Gtk.ResponseType.OK)
+        dialog.set_do_overwrite_confirmation(True)
+        dialog.set_current_folder(GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_DOCUMENTS) or HOME_DIR)
+        dialog.set_current_name(default_name)
+        flt = Gtk.FileFilter(); flt.set_name(label); flt.add_pattern(pattern); dialog.add_filter(flt)
+        resp = dialog.run()
+        path = dialog.get_filename() if resp == Gtk.ResponseType.OK else None
+        dialog.destroy()
+        return path
+
+    def act_save_text(self, data):
+        """Export (journal CSV/JSON, rapport HTML) : boîte « Enregistrer sous » native, écriture avec les droits de l'utilisateur."""
+        name = os.path.basename(str(data.get("filename") or "dukiwi-shield.txt"))
+        ext = os.path.splitext(name)[1] or ".txt"
+        path = self._ask_save_path(name, "*" + ext, ext.lstrip(".").upper())
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(str(data.get("content") or ""))
+            self.send_to_js("operationResult", {"status": "success", "message": self.T("msg.file_saved", path=path)})
+        except OSError as e:
+            self.send_to_js("operationResult", {"status": "error", "message": str(e)})
+
+    def act_save_report_pdf(self, data):
+        """Rapport de sécurité en PDF : le HTML composé par l'interface est rendu hors écran par WebKit puis imprimé dans un fichier."""
+        path = self._ask_save_path(os.path.basename(str(data.get("filename") or "dukiwi-shield-report.pdf")), "*.pdf", "PDF")
+        if not path:
+            return
+        win = Gtk.OffscreenWindow()
+        view = WebKit2.WebView()
+        view.set_size_request(900, 1200)
+        win.add(view)
+        win.show_all()
+        state = {"done": False}
+
+        def finished(_op, *_a):
+            if state["done"]:
+                return
+            state["done"] = True
+            ok = os.path.exists(path) and os.path.getsize(path) > 0
+            self.send_to_js("operationResult", {"status": "success" if ok else "error",
+                                                "message": self.T("msg.file_saved", path=path) if ok else self.T("msg.report_failed")})
+            GLib.idle_add(win.destroy)
+
+        def on_load(v, ev):
+            if ev != WebKit2.LoadEvent.FINISHED or state.get("printing"):
+                return
+            state["printing"] = True
+            po = WebKit2.PrintOperation.new(v)
+            ps = Gtk.PrintSettings()
+            ps.set_printer("Print to File")
+            ps.set(Gtk.PRINT_SETTINGS_OUTPUT_FILE_FORMAT, "pdf")
+            ps.set(Gtk.PRINT_SETTINGS_OUTPUT_URI, "file://" + urllib.parse.quote(path))
+            po.set_print_settings(ps)
+            setup = Gtk.PageSetup()
+            setup.set_paper_size(Gtk.PaperSize.new(Gtk.PAPER_NAME_A4))
+            po.set_page_setup(setup)
+            po.connect("finished", finished)
+            po.connect("failed", lambda *_a: finished(None))
+            GLib.timeout_add(400, lambda: (po.print_(), False)[1])
+        view.connect("load-changed", on_load)
+        view.load_html(str(data.get("html") or ""), "file:///")
+        GLib.timeout_add(30000, lambda: (finished(None), False)[1])
+
     def act_pick_folder(self, data):
         """Sélecteur de dossier natif GTK (chemin personnalisé, restauration)."""
         purpose = data.get("purpose", "scan")
@@ -2118,10 +2279,9 @@ class ClamAVAntivirusApp:
 
     def act_get_trusted(self, _data):
         resp = DaemonClient.request("trusted_programs")
-        self.send_to_js("trustedList", {"programs": resp.get("programs", []) if resp.get("ok") else [],
-                                        "acknowledged": resp.get("acknowledged", []) if resp.get("ok") else [],
-                                        "usb": resp.get("usb", []) if resp.get("ok") else [],
-                                        "available": bool(resp.get("ok"))})
+        ok = bool(resp.get("ok"))
+        self.send_to_js("trustedList", dict({k: resp.get(k, []) if ok else [] for k in ("programs", "acknowledged", "usb", "hid", "sudoers", "privacy", "certs", "redirects")},
+                                            available=ok))
 
     def act_acknowledge_vuln(self, data):
         """« Ignorer » des failles sans correctif (ou les réafficher avec remove) : elles ne comptent plus dans l'état."""
@@ -3101,7 +3261,8 @@ class ClamAVAntivirusApp:
         """Données du centre de sécurité : vulns, checklist, intégrité, persistance, connexions, mise à jour."""
         kind = data.get("type")
         cmd = {"vulns": "vulns", "checklist": "checklist", "integrity": "integrity", "persistence": "persistence",
-               "connections": "connections", "app_update": "check_update", "honeypot": "honeypot", "urlguard": "urlguard"}.get(kind)
+               "connections": "connections", "app_update": "check_update", "honeypot": "honeypot", "urlguard": "urlguard",
+               "journal": "security_journal"}.get(kind)
         if not cmd:
             return
         params = {}
@@ -3109,6 +3270,8 @@ class ClamAVAntivirusApp:
             params["refresh"] = True
         if kind == "integrity" and data.get("run"):
             params["run"] = True
+        if kind == "journal":
+            params["days"] = int(data.get("days") or 30)
         if kind == "app_update" and not data.get("refresh"):
             ds = self.last_daemon_status if isinstance(self.last_daemon_status, dict) else {}
             self.send_to_js("securityData", {"type": "app_update", "data": ds.get("app_update") or {}, "available": ds != {}})

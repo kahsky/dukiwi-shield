@@ -13,7 +13,7 @@ import struct
 import subprocess
 from datetime import datetime
 
-VERSION = "2.0.1"
+VERSION = "2.2.0"
 
 # ─── Chemins système (daemon root) ───────────────────────────────────────────
 # Surchargeables par variables d'environnement pour les tests sans root.
@@ -99,6 +99,10 @@ DEFAULT_SETTINGS = {
     "on_access_scan": True,
     # BadUSB : un nouveau clavier USB est coupé dès son branchement jusqu'à l'accord de l'utilisateur (popup)
     "usb_keyboard_guard": True,
+    # Centre de sécurité : leurres anti-rançongiciel (fichiers cachés surveillés), caméra et micro, mineurs de cryptomonnaie
+    "ransomware_decoys": True,
+    "privacy_watch": True,
+    "miner_watch": True,
     "geoip_lookup": True,
     # Clé ip-api.com Pro (optionnelle) : HTTPS et sans limite ; vide = service gratuit (15 requêtes groupées/min, HTTP)
     "geoip_api_key": "",
