@@ -3332,7 +3332,8 @@ def collect_checklist(daemon):
     # Paquets pip / npm malveillants
     devp = daemon.state.get("dev_packages") or {}
     add("dev_packages", "unknown" if not devp else ("fail" if devp.get("malicious") else "ok"), 4,
-        ", ".join(f"{m['name']} {m['version']} ({m['ecosystem']})" for m in (devp.get("malicious") or [])[:5]),
+        ", ".join(f"{m['name']} {m['version']} ({m['ecosystem']}) — " + (f"npm uninstall -g {m['name']}" if m["ecosystem"] == "npm" else f"pip uninstall {m['name']}")
+                  for m in (devp.get("malicious") or [])[:5]),
         params={"counts": devp.get("counts") or {}, "malicious": (devp.get("malicious") or [])[:10]})
     # Fichiers SUID / SGID qu'aucun paquet ne livre (porte dérobée classique pour redevenir root)
     suid = daemon.suid_status()

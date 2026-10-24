@@ -345,7 +345,11 @@ def npm_packages(users):
 
 
 _ADVISORY_CACHE = {}
-MALWARE_RE = re.compile(r"malicious (package|code|version)|embedded malicious|malware|considered malicious|backdoor|credential[- ]steal", re.I)
+# Titre d'une fiche de logiciel malveillant (GitHub : « Malicious Package in X », « Embedded Malicious Code in X ») ; une
+# faille dont le titre parle de « malicious code execution » reste une faille (ex. GHSA-m3mh-3mpg-37hw d'openclaw).
+MALWARE_TITLE_RE = re.compile(r"^(malicious (package|code|version)s?\b|embedded malicious code\b)|\bcontains? malware\b|"
+                              r"\b(is|was|are|were) (considered )?malicious\b|\bcompromised (package|version|release)s?\b", re.I)
+VULN_WORDS_RE = re.compile(r"vulnerab|execution|injection|bypass|traversal|overflow|denial of service|xss|csrf|ssrf|escalation", re.I)
 
 
 def is_malware_advisory(vuln_id):
@@ -358,7 +362,8 @@ def is_malware_advisory(vuln_id):
         with urllib.request.urlopen(f"https://api.osv.dev/v1/vulns/{vuln_id}", timeout=20) as r:
             d = json.loads(r.read(1 << 20).decode())
         cwes = (d.get("database_specific") or {}).get("cwe_ids") or []
-        verdict = "CWE-506" in cwes or bool(MALWARE_RE.search((d.get("summary") or "") + " " + (d.get("details") or "")[:600]))
+        summary = (d.get("summary") or "").strip()
+        verdict = "CWE-506" in cwes or (bool(MALWARE_TITLE_RE.search(summary)) and not VULN_WORDS_RE.search(summary))
     except (OSError, ValueError):
         return False                                   # réessayé au prochain relevé
     _ADVISORY_CACHE[vuln_id] = verdict
