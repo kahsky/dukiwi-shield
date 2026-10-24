@@ -70,6 +70,10 @@
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9,12 12,15 15,9"/></svg>
                     <span data-i18n="simple.scan_now">Analyser mon ordinateur</span>
                 </button>
+                <button class="btn btn-secondary btn-lg" id="simpleQuickBtn" onclick="startQuickScan()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13,2 3,14 12,14 11,22 21,10 12,10"/></svg>
+                    <span data-i18n="simple.quick_scan">Analyse rapide</span>
+                </button>
                 <button class="btn btn-secondary btn-lg" onclick="showAwareness()">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
                     <span data-i18n="simple.learn">Apprendre à me protéger</span>
@@ -229,7 +233,7 @@
                     <option value="de">Deutsch</option>
                     <option value="it">Italiano</option>
                 </select></label>
-                <small class="version">v2.5.0 — <a href="#" class="credits-link" onclick="openCredits(); return false;" data-i18n="sidebar.credits">Crédits</a> · <a href="#" class="credits-link" onclick="openLegal(); return false;" data-i18n="legal.link">Avertissement</a></small>
+                <small class="version">v2.5.1 — <a href="#" class="credits-link" onclick="openCredits(); return false;" data-i18n="sidebar.credits">Crédits</a> · <a href="#" class="credits-link" onclick="openLegal(); return false;" data-i18n="legal.link">Avertissement</a></small>
             </div>
         </div>
     </aside>
@@ -393,6 +397,16 @@
                 </div>
 
                 <div class="card card-actions-col">
+                    <div class="card-action" onclick="startQuickScan()">
+                        <div class="card-icon accent-amber">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13,2 3,14 12,14 11,22 21,10 12,10"/></svg>
+                        </div>
+                        <div class="card-body">
+                            <h3 data-i18n="dash.action.quick_scan">Analyse rapide</h3>
+                            <p class="text-muted" data-i18n="dash.action.quick_scan_hint">Dossier personnel et emplacements où les logiciels malveillants s'installent</p>
+                        </div>
+                        <svg class="card-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                    </div>
                     <div class="card-action" onclick="startFullSystemScan(true)">
                         <div class="card-icon accent-blue">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -519,6 +533,10 @@
                     <div class="integrity-progress" id="integrityProgress" hidden></div>
 
                     <div class="scan-hero-actions">
+                        <button class="btn btn-primary" id="btnQuickScan" onclick="startQuickScan()" data-i18n-title="scan.quick_hint" title="Dossiers personnels, dossiers temporaires, démarrage automatique, tâches planifiées, /usr/local, /opt et programmes en cours d'exécution">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13,2 3,14 12,14 11,22 21,10 12,10"/></svg>
+                            <span data-i18n="scan.btn.quick">Analyse rapide</span>
+                        </button>
                         <button class="btn btn-full-scan" id="btnFullAnalysis" onclick="startFullSystemScan(true)" data-i18n-title="scan.full_analysis_hint" title="Intégrité d'abord (Lynis, chkrootkit, debsums), puis analyse antivirus des fichiers non vérifiés">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9,12 12,15 15,9"/></svg>
                             <span data-i18n="scan.btn.full_analysis">Scan complet (intégrité + fichiers)</span>

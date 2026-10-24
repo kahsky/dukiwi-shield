@@ -79,7 +79,7 @@ from dukiwi_shield_common import (  # noqa: E402
     SYSTEM_FILELIST_CACHE, FIRST_SCAN_FLAG, SYSTEM_LOG_FILE, USB_MOUNT_ROOT,
     SYSTEM_SETTINGS_FILE, DEFAULT_SETTINGS, DAEMON_ALLOWED_ROOTS, LANGUAGES,
     BURST_PID_COOLDOWN_SEC, BURST_GLOBAL_COOLDOWN, BURST_IGNORE_PREFIXES, BURST_IGNORE_PARTS,
-    LineSocket, peer_credentials, daemon_connect, daemon_request, find_command,
+    LineSocket, peer_credentials, daemon_connect, daemon_request, find_command, SCAN_EXCLUDE,
     is_noise_line, classify_line, db_last_update, db_files_info, t,
     sanitize_settings, parse_ufw_verbose, parse_ufw_numbered, systemd_is_active,
 )
@@ -538,16 +538,49 @@ def usb_manifest_write(mountpoint, files, db_version, infected):
         return False
 
 
+# ── Analyse rapide : dossiers personnels + emplacements où les logiciels malveillants s'installent ──
+QUICK_SCAN = "quick"
+QUICK_SCAN_DIRS = ("/tmp", "/var/tmp", "/dev/shm", "/etc/cron.d", "/etc/cron.hourly", "/etc/cron.daily", "/etc/cron.weekly",
+                   "/etc/cron.monthly", "/var/spool/cron", "/etc/systemd/system", "/etc/xdg/autostart", "/etc/profile.d",
+                   "/etc/init.d", "/etc/rc.local", "/etc/ld.so.preload", "/usr/local/bin", "/usr/local/sbin", "/usr/local/lib",
+                   "/usr/local/share", "/opt", "/var/www", "/srv", "/root")
+# /dev/shm et /run/user font partie de l'analyse rapide : les autres exclusions du scan complet restent
+QUICK_SCAN_EXCLUDE = [e for e in SCAN_EXCLUDE if e not in ("/dev/*", "/run/*")]
+SYSTEM_EXE_PREFIXES = ("/usr/", "/bin/", "/sbin/", "/lib/", "/lib64/", "/snap/", "/app/", "/var/lib/flatpak/", "/opt/dukiwi-shield/")
+
+
+def quick_scan_paths():
+    """Dossiers personnels, dossiers temporaires, démarrage automatique et tâches planifiées, logiciels installés à la
+    main (/usr/local, /opt), sites web locaux, et les programmes en cours d'exécution qui ne viennent pas du système."""
+    roots = [p for p in QUICK_SCAN_DIRS if os.path.exists(p)]
+    roots += [pw.pw_dir for pw in human_users() if pw.pw_uid >= 1000 and os.path.isdir(pw.pw_dir)]
+    for pid in os.listdir("/proc"):
+        if not pid.isdigit():
+            continue
+        try:
+            exe = os.readlink(f"/proc/{pid}/exe").replace(" (deleted)", "")
+        except OSError:
+            continue
+        if os.path.isfile(exe) and (not exe.startswith(SYSTEM_EXE_PREFIXES) or exe.startswith("/usr/local/")):
+            roots.append(exe)
+    out = []
+    for p in sorted(set(roots), key=len):
+        if not any(p == r or p.startswith(r.rstrip("/") + "/") for r in out):
+            out.append(p)                                   # déjà couvert par un dossier parent : pas repris
+    return sorted(out)
+
+
 class Job:
     _counter = 0
     _counter_lock = threading.Lock()
 
-    def __init__(self, kind, path=None, resume=False, auto=False, requested_by=None, usb=None, integrity=False, use_cache=True):
+    def __init__(self, kind, path=None, resume=False, auto=False, requested_by=None, usb=None, integrity=False, use_cache=True, paths=None):
         with Job._counter_lock:
             Job._counter += 1
             self.id = Job._counter
         self.kind = kind            # 'scan' | 'update'
         self.path = path
+        self.paths = paths          # analyse rapide : liste des emplacements (path vaut alors "quick")
         self.resume = resume
         self.auto = auto            # lancé par le système (première installation, reprise)
         self.usb = usb              # dict décrivant le support USB analysé, ou None
@@ -5105,7 +5138,12 @@ class Daemon:
         job.found = 0
         job.cached = 0
         self.emit_progress(job)
-        cmd = find_command(job.path, exclude=[], stat=True) if job.usb else find_command(job.path, stat=True)
+        if job.usb:
+            cmd = find_command(job.path, exclude=[], stat=True)
+        elif job.paths:
+            cmd = find_command(job.paths, exclude=QUICK_SCAN_EXCLUDE, stat=True)
+        else:
+            cmd = find_command(job.path, stat=True)
         with job.proc_lock:
             job.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
                                         stderr=subprocess.DEVNULL, text=True, bufsize=1)
@@ -7970,6 +8008,15 @@ class Daemon:
             self.broadcast({"event": "suspended", "suspended": list(self.suspended.values())})
             self.refresh_overall()
             return {"ok": True}
+
+        if cmd == "scan" and req.get("path") == QUICK_SCAN:
+            with self.queue_lock:
+                if self.current or self.queue:
+                    busy = (self.current or self.queue[0]).public()
+                    return {"ok": False, "error": "busy", "busy": busy}
+            job = self.enqueue(Job("scan", path=QUICK_SCAN, paths=quick_scan_paths(), resume=bool(req.get("resume")),
+                                   requested_by=uid, use_cache=not bool(req.get("nocache"))))
+            return {"ok": True, "job_id": job.id, "queued": False}
 
         if cmd == "scan":
             path = req.get("path", "/")

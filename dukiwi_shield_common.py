@@ -13,7 +13,7 @@ import struct
 import subprocess
 from datetime import datetime
 
-VERSION = "2.5.0"
+VERSION = "2.5.1"
 
 # ─── Chemins système (daemon root) ───────────────────────────────────────────
 # Surchargeables par variables d'environnement pour les tests sans root.
@@ -260,9 +260,9 @@ def quarantine_enrich(files, quarantine_dir):
 
 
 def find_command(path, exclude=SCAN_EXCLUDE, stat=False):
-    """Commande find listant les fichiers réguliers à scanner sous `path`. Avec `stat`, chaque ligne porte aussi
+    """Commande find listant les fichiers réguliers à scanner sous `path` (un chemin ou une liste de chemins). Avec `stat`, chaque ligne porte aussi
     l'empreinte (taille, mtime, ctime, inode) séparée par des tabulations, pour le cache des fichiers sains."""
-    cmd = ['find', path, '-type', 'f']
+    cmd = ['find'] + (list(path) if isinstance(path, (list, tuple)) else [path]) + ['-type', 'f']
     for excl in exclude:
         cmd += ['!', '-path', excl]
     if stat:

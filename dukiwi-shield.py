@@ -956,6 +956,9 @@ class TrayIcon:
         self.item_show = Gtk.MenuItem(label="")
         self.item_show.connect("activate", self.on_show)
         menu.append(self.item_show)
+        self.item_quick = Gtk.MenuItem(label="")
+        self.item_quick.connect("activate", self.on_quick_scan)
+        menu.append(self.item_quick)
         self.item_scan = Gtk.MenuItem(label="")
         self.item_scan.connect("activate", self.on_full_scan)
         menu.append(self.item_scan)
@@ -990,6 +993,7 @@ class TrayIcon:
     def relabel(self):
         T = self.app.T
         self.item_show.set_label(T("tray.open"))
+        self.item_quick.set_label(T("tray.quick_scan"))
         self.item_scan.set_label(T("tray.full_scan"))
         self.item_update.set_label(T("tray.update"))
         self.item_system.set_label(T("tray.system"))
@@ -1031,6 +1035,10 @@ class TrayIcon:
 
     def on_show(self, _):
         self.app.window.present()
+
+    def on_quick_scan(self, _):
+        self.app.window.present()
+        self.app.run_js('if(typeof startQuickScan==="function")startQuickScan();')
 
     def on_full_scan(self, _):
         self.app.window.present()
@@ -1778,7 +1786,7 @@ class ClamAVAntivirusApp:
         self.daemon_job = job
         if job.get("kind") == "scan":
             self.scan_source = "daemon"
-            self.tray.set_job(self.T("tray.scanning", path=job.get("path")))
+            self.tray.set_job(self.T("tray.scanning", path=self.scan_label(job.get("path"))))
             self.send_to_js("scanStarted", {"source": "daemon", "path": job.get("path"),
                                             "resume": job.get("resume"), "auto": job.get("auto"),
                                             "usb": job.get("usb"), "resumed": resumed,
@@ -2097,7 +2105,23 @@ class ClamAVAntivirusApp:
         self.send_to_js("updateStarted", {"source": "local"})
         ClamAVBackend.update_database_pkexec(self.operation_callback)
 
+    def scan_label(self, path):
+        """Libellé lisible d'une analyse : « Analyse rapide », « Système complet » ou le chemin."""
+        return self.T("scan.quick.label") if path == "quick" else (self.T("scan.full_system") if path == "/" else path)
+
     def act_scan(self, data):
+        if data.get("path") == "quick":
+            # Analyse rapide : dossiers personnels et emplacements sensibles, par le service ; sans service, le dossier personnel
+            if self.scan_source or self.local_scan:
+                self.send_to_js("operationResult", {"status": "error", "message": self.T("msg.scan_running")})
+                return
+            resp = DaemonClient.request("scan", path="quick", resume=bool(data.get("resume")), nocache=bool(data.get("nocache")))
+            if resp.get("ok"):
+                return
+            if not resp.get("unavailable"):
+                self.send_to_js("operationResult", {"status": "error", "message": self.daemon_error(resp)})
+                return
+            data = dict(data, path=HOME_DIR)
         path = os.path.normpath(data.get("path") or HOME_DIR)
         resume = bool(data.get("resume", False))
         full = path == "/"
@@ -2110,7 +2134,8 @@ class ClamAVAntivirusApp:
 
         # 1) Service système (root, sans mot de passe)
         if daemon_can_scan(path):
-            resp = DaemonClient.request("scan", path=path, resume=resume, integrity=bool(data.get("integrity")) and full)
+            resp = DaemonClient.request("scan", path=path, resume=resume, integrity=bool(data.get("integrity")) and full,
+                                        nocache=bool(data.get("nocache")))
             if resp.get("ok"):
                 return  # l'événement job_started déclenchera scanStarted
             if not resp.get("unavailable"):

@@ -48,15 +48,15 @@ versions itself (popup or Security tab) and can install them on its own when the
 
 ### Direct download
 
-- Mint / Ubuntu: [dukiwi-shield_2.5.0_all.deb](https://www.dukiwi.com/repo/dukiwi-shield/dukiwi-shield_2.5.0_all.deb)
-- Fedora: [dukiwi-shield-2.5.0-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/dukiwi-shield-2.5.0-1.noarch.rpm)
+- Mint / Ubuntu: [dukiwi-shield_2.5.1_all.deb](https://www.dukiwi.com/repo/dukiwi-shield/dukiwi-shield_2.5.1_all.deb)
+- Fedora: [dukiwi-shield-2.5.1-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/dukiwi-shield-2.5.1-1.noarch.rpm)
 - All versions: [www.dukiwi.com/repo](https://www.dukiwi.com/repo)
 
 ### Installing a downloaded package by hand
 
 ```bash
-sudo apt install ./dukiwi-shield_2.5.0_all.deb          # Mint / Ubuntu
-sudo dnf install ./dukiwi-shield-2.5.0-1.noarch.rpm      # Fedora
+sudo apt install ./dukiwi-shield_2.5.1_all.deb          # Mint / Ubuntu
+sudo dnf install ./dukiwi-shield-2.5.1-1.noarch.rpm      # Fedora
 ```
 
 The installation enables the system service and the scheduler, then starts the initial scan:
@@ -78,6 +78,11 @@ sudo dnf remove dukiwi-shield   # Fedora
 
 ## Features
 
+- **Quick scan (2.5.1)** — "Quick scan" button on the dashboard, the Scan tab, the simple view and the shield menu:
+  scans the home folders and the places where malware settles in (`/tmp`, `/var/tmp`, `/dev/shm`, cron and systemd
+  folders, autostart, `/etc/profile.d`, `/etc/init.d`, `/usr/local`, `/opt`, `/var/www`, `/srv`, `/root`) plus the
+  executables of running programs that do not come from the system. Same engine, quarantine and cache as the full
+  scan (unchanged files already verified are not read again); started by the service without a password.
 - **Extensions, SSH keys, scheduled tasks and services, SUID files, weekly summary (2.5)** —
   1. *Real-time persistence watch*: every minute the service compares a cheap fingerprint of the autostart folders,
      crontabs, `/etc/cron.*`, `/etc/systemd/system`, user units, `at` jobs, `/etc/profile.d`, `rc.local`, `ld.so.preload`
@@ -695,8 +700,8 @@ python3 dukiwi-shield.py
 ## Building the packages
 
 ```bash
-./build-deb.sh        # dukiwi-shield_2.5.0_all.deb   (Mint / Ubuntu)
-./build-rpm.sh        # dukiwi-shield-2.5.0-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
+./build-deb.sh        # dukiwi-shield_2.5.1_all.deb   (Mint / Ubuntu)
+./build-rpm.sh        # dukiwi-shield-2.5.1-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
 ```
 
 Both packages share the same file tree (`build-deb.sh --stage-only`) and the same signed integrity manifest.

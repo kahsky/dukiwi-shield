@@ -2285,7 +2285,14 @@ window.I18N = {
     "alert.reason.ext_permissions": "nouvelles permissions d'extension",
     "persist.user_timer": "minuterie utilisateur",
     "persist.system_timer": "minuterie système",
-    "persist.at_job": "tâche « at » en attente"
+    "persist.at_job": "tâche « at » en attente",
+    "scan.quick.label": "Analyse rapide",
+    "scan.btn.quick": "Analyse rapide",
+    "scan.quick_hint": "Dossiers personnels, dossiers temporaires, démarrage automatique, tâches planifiées, /usr/local, /opt et programmes en cours d'exécution",
+    "simple.quick_scan": "Analyse rapide",
+    "dash.action.quick_scan": "Analyse rapide",
+    "dash.action.quick_scan_hint": "Dossier personnel et emplacements où les logiciels malveillants s'installent",
+    "tray.quick_scan": "Analyse rapide"
   },
   "en": {
     "admin.lock": "Lock",
@@ -4573,7 +4580,14 @@ window.I18N = {
     "alert.reason.ext_permissions": "new extension permissions",
     "persist.user_timer": "user timer",
     "persist.system_timer": "system timer",
-    "persist.at_job": "pending \"at\" job"
+    "persist.at_job": "pending \"at\" job",
+    "scan.quick.label": "Quick scan",
+    "scan.btn.quick": "Quick scan",
+    "scan.quick_hint": "Home folders, temporary folders, autostart, scheduled tasks, /usr/local, /opt and running programs",
+    "simple.quick_scan": "Quick scan",
+    "dash.action.quick_scan": "Quick scan",
+    "dash.action.quick_scan_hint": "Home folder and the places where malware settles in",
+    "tray.quick_scan": "Quick scan"
   },
   "de": {
     "admin.lock": "Sperren",
@@ -6861,7 +6875,14 @@ window.I18N = {
     "alert.reason.ext_permissions": "neue Berechtigungen der Erweiterung",
     "persist.user_timer": "Benutzer-Timer",
     "persist.system_timer": "System-Timer",
-    "persist.at_job": "wartender „at“-Auftrag"
+    "persist.at_job": "wartender „at“-Auftrag",
+    "scan.quick.label": "Schnellscan",
+    "scan.btn.quick": "Schnellscan",
+    "scan.quick_hint": "Persönliche Ordner, temporäre Ordner, Autostart, geplante Aufgaben, /usr/local, /opt und laufende Programme",
+    "simple.quick_scan": "Schnellscan",
+    "dash.action.quick_scan": "Schnellscan",
+    "dash.action.quick_scan_hint": "Persönlicher Ordner und Orte, an denen sich Schadsoftware einnistet",
+    "tray.quick_scan": "Schnellscan"
   },
   "it": {
     "admin.lock": "Blocca",
@@ -9149,6 +9170,13 @@ window.I18N = {
     "alert.reason.ext_permissions": "nuovi permessi dell'estensione",
     "persist.user_timer": "timer utente",
     "persist.system_timer": "timer di sistema",
-    "persist.at_job": "attività «at» in attesa"
+    "persist.at_job": "attività «at» in attesa",
+    "scan.quick.label": "Analisi rapida",
+    "scan.btn.quick": "Analisi rapida",
+    "scan.quick_hint": "Cartelle personali, cartelle temporanee, avvio automatico, attività pianificate, /usr/local, /opt e programmi in esecuzione",
+    "simple.quick_scan": "Analisi rapida",
+    "dash.action.quick_scan": "Analisi rapida",
+    "dash.action.quick_scan_hint": "Cartella personale e luoghi dove si installano i malware",
+    "tray.quick_scan": "Analisi rapida"
   }
 };

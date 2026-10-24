@@ -990,6 +990,7 @@ function renderSimpleView() {
     const ls = lastStatus && lastStatus.last_scan;
     $('simpleLastScan').textContent = ls ? t('simple.last_scan', { rel: formatRelative(ls.date) }) : t('simple.never_scanned');
     $('simpleScanBtn').disabled = scan.running;
+    if ($('simpleQuickBtn')) $('simpleQuickBtn').disabled = scan.running;
     syncSimpleScan();
 }
 
@@ -1533,7 +1534,7 @@ function updateDashboardStatus(data) {
 
 function scanPathLabel(path, usb) {
     if (usb && (usb.label || usb.model)) return `USB ${usb.label || usb.model}`;
-    return path === '/' ? t('scan.full_system') : (path || '?');
+    return path === '/' ? t('scan.full_system') : path === 'quick' ? t('scan.quick.label') : (path || '?');
 }
 
 function renderHistory(list) {
@@ -1981,6 +1982,16 @@ function startFullSystemScan(withIntegrity = false) {
     sendToBackend({ action: 'scan', path: '/', integrity: !!withIntegrity, nocache: scanNoCache() });
 }
 
+/** Analyse rapide : dossiers personnels et emplacements sensibles (temporaires, démarrage, tâches planifiées, /usr/local,
+ *  /opt, programmes en cours d'exécution). Les fichiers inchangés déjà vérifiés ne sont pas relus. */
+function startQuickScan() {
+    if (scan.running) { showToast(t('toast.scan_running'), 'info'); if (viewMode === 'advanced') switchTab('scan'); return; }
+    scan.integrity = false;
+    if (viewMode === 'advanced') switchTab('scan');
+    prepareScanUI('quick');
+    sendToBackend({ action: 'scan', path: 'quick', nocache: scanNoCache() });
+}
+
 function startScan(path) {
     if (scan.running) { showToast(t('toast.scan_running'), 'info'); return; }
     path = (path || '').trim();
@@ -2224,6 +2235,8 @@ function renderScanHero() {
     syncSimpleScan();
     const sb = $('simpleScanBtn');
     if (sb) sb.disabled = scan.running;
+    const qb = $('simpleQuickBtn');
+    if (qb) qb.disabled = scan.running;
 }
 
 function updateTimeStats() {
@@ -3739,6 +3752,8 @@ function syncScanButtons() {
     const set = (id, disabled) => { const el = $(id); if (el) el.disabled = disabled; };
     set('btnFullAnalysis', busy || integrityRunning);
     set('btnFullScan', busy);
+    set('btnQuickScan', busy);
+    set('simpleQuickBtn', busy);
     set('btnIntegrityOnly', busy || integrityRunning);
     set('btnIntegrityRun', (busy && scan.integrity) || integrityRunning);
     set('simpleScanBtn', busy || integrityRunning);

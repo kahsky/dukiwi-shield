@@ -8,7 +8,7 @@
 set -e
 
 APP_NAME="dukiwi-shield"
-VERSION="2.5.0"
+VERSION="2.5.1"
 ARCH="all"
 PKG_DIR="${APP_NAME}_${VERSION}_${ARCH}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
