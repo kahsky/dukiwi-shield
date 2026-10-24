@@ -48,15 +48,15 @@ versions itself (popup or Security tab) and can install them on its own when the
 
 ### Direct download
 
-- Mint / Ubuntu: [dukiwi-shield_2.0.0_all.deb](https://www.dukiwi.com/repo/dukiwi-shield/dukiwi-shield_2.0.0_all.deb)
-- Fedora: [dukiwi-shield-2.0.0-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/dukiwi-shield-2.0.0-1.noarch.rpm)
+- Mint / Ubuntu: [dukiwi-shield_2.0.1_all.deb](https://www.dukiwi.com/repo/dukiwi-shield/dukiwi-shield_2.0.1_all.deb)
+- Fedora: [dukiwi-shield-2.0.1-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/dukiwi-shield-2.0.1-1.noarch.rpm)
 - All versions: [www.dukiwi.com/repo](https://www.dukiwi.com/repo)
 
 ### Installing a downloaded package by hand
 
 ```bash
-sudo apt install ./dukiwi-shield_2.0.0_all.deb          # Mint / Ubuntu
-sudo dnf install ./dukiwi-shield-2.0.0-1.noarch.rpm      # Fedora
+sudo apt install ./dukiwi-shield_2.0.1_all.deb          # Mint / Ubuntu
+sudo dnf install ./dukiwi-shield-2.0.1-1.noarch.rpm      # Fedora
 ```
 
 The installation enables the system service and the scheduler, then starts the initial scan:
@@ -78,6 +78,10 @@ sudo dnf remove dukiwi-shield   # Fedora
 
 ## Features
 
+- **2.0.1: shield after the migration** — the previous package's user service could restart its shield just before its
+  files were deleted; that ghost process kept the instance lock carried over with the data folder, so the Dukiwi Shield
+  shield exited at once and no tray icon appeared. The lock has a new name, and the service stops the old user service
+  and any leftover process of the previous package in every session, then launches the shield right away.
 - **Dukiwi Shield 2.0** — the program is now Dukiwi Shield from end to end: package `dukiwi-shield`, files under
   `/opt/dukiwi-shield`, `/var/lib/dukiwi-shield` and `/var/log/dukiwi-shield`, service `dukiwi-shield-daemon`, modules
   `dukiwi_shield_*.py`, extensions and command `dukiwi-shield`. Installing it replaces the previous package
@@ -605,8 +609,8 @@ python3 dukiwi-shield.py
 ## Building the packages
 
 ```bash
-./build-deb.sh        # dukiwi-shield_2.0.0_all.deb   (Mint / Ubuntu)
-./build-rpm.sh        # dukiwi-shield-2.0.0-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
+./build-deb.sh        # dukiwi-shield_2.0.1_all.deb   (Mint / Ubuntu)
+./build-rpm.sh        # dukiwi-shield-2.0.1-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
 ```
 
 Both packages share the same file tree (`build-deb.sh --stage-only`) and the same signed integrity manifest.

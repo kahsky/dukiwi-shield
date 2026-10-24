@@ -5738,6 +5738,27 @@ class Daemon:
                 log(f"Courrier : {e}")
             self.shutdown.wait(10)
 
+    def stop_legacy_tray(self, s):
+        """Bouclier du paquet précédent encore en mémoire après la migration (son service utilisateur Restart=always l'a
+        relancé juste avant l'effacement de ses fichiers) : service utilisateur arrêté, processus terminé, une fois."""
+        uid = s["uid"]
+        legacy = "/opt/" + "clamav" + "-antivirus/"
+        r = run_quiet(["pgrep", "-u", str(uid), "-f", legacy], timeout=10)
+        pids = [int(p) for p in (r.stdout or "").split() if p.isdigit()]
+        if not pids:
+            return
+        if os.path.exists(f"/run/user/{uid}/bus"):
+            env = {"XDG_RUNTIME_DIR": f"/run/user/{uid}", "DBUS_SESSION_BUS_ADDRESS": f"unix:path=/run/user/{uid}/bus"}
+            run_quiet(["runuser", "-u", s["user"], "--", "env"] + [f"{k}={v}" for k, v in env.items()]
+                      + ["systemctl", "--user", "stop", "clamav" + "-antivirus-tray.service"], timeout=20)
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except OSError:
+                pass
+        self.tray_launched.pop(uid, None)                 # nouveau bouclier lancé tout de suite, sans attendre 60 s
+        self.write_log(f"legacy tray stopped for {s['user']}: {pids}")
+
     def check_tray(self):
         """Le bouclier doit être présent dans chaque session graphique active : s'il a été tué, il est relancé
         dans la session (service utilisateur transitoire), sauf si un administrateur l'a quitté dans cette session."""
@@ -5745,6 +5766,7 @@ class Daemon:
             return
         for s in graphical_sessions():
             uid = s["uid"]
+            self.stop_legacy_tray(s)
             if s["id"] in (self.tray_stopped.get(uid) or set()):
                 continue
             r = run_quiet(["pgrep", "-u", str(uid), "-f", TRAY_PROCESS_RE], timeout=10)

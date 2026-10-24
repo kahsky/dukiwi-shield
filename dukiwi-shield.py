@@ -77,7 +77,7 @@ APP_DIR = os.path.dirname(os.path.abspath(__file__))
 UI_DIR = os.path.join(APP_DIR, "ui")
 ICONS_DIR = os.path.join(APP_DIR, "icons")
 DATA_DIR           = os.path.expanduser("~/.local/share/dukiwi-shield")
-INSTANCE_SOCKET    = os.path.join(DATA_DIR, "instance.sock")
+INSTANCE_SOCKET    = os.path.join(DATA_DIR, "tray.sock")
 LOG_FILE           = os.path.join(DATA_DIR, "scan.log")
 STATE_FILE         = os.path.join(DATA_DIR, "state.json")
 QUARANTINE_DIR     = os.path.join(DATA_DIR, "quarantine")
@@ -3444,7 +3444,9 @@ def try_activate_existing():
         return False
 
 
-INSTANCE_LOCK = os.path.join(DATA_DIR, "instance.lock")
+# Nom propre à Dukiwi Shield : le dossier de données repris d'une version précédente peut contenir son ancien verrou,
+# encore tenu par un bouclier fantôme (fichiers du paquet déjà effacés), qui bloquerait sinon le démarrage
+INSTANCE_LOCK = os.path.join(DATA_DIR, "tray.lock")
 _instance_lock_fd = None
 
 
