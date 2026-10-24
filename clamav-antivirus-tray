@@ -1,5 +1,5 @@
 #!/bin/sh
-# Linux Shield — lance le bouclier (tray) dans un service utilisateur transitoire relancé automatiquement
+# Dukiwi Shield — lance le bouclier (tray) dans un service utilisateur transitoire relancé automatiquement
 # s'il est tué (Restart=always). « Quitter » (administrateur) arrête proprement ce service.
 # Une seule instance par session : si le service est déjà actif, on sort ; si le gestionnaire utilisateur (systemd --user)
 # n'est pas encore joignable juste après l'ouverture de session, on attend jusqu'à 20 s au lieu de lancer le programme
@@ -24,7 +24,7 @@ if command -v systemd-run >/dev/null 2>&1 && [ -n "$XDG_RUNTIME_DIR" ]; then
     # flock : deux lanceurs simultanés (bureau + service système) ne créent qu'une unité
     exec flock -n "$LOCK" systemd-run --user --quiet --unit="$UNIT" --collect \
         -p Restart=always -p RestartSec=1 -p KillMode=process \
-        --description="Linux Shield (tray)" /bin/sh -c "exec $CMD"
+        --description="Dukiwi Shield (tray)" /bin/sh -c "exec $CMD"
 fi
 # Sans systemd --user : exécution directe, verrouillée (une seule instance)
 exec flock -n "$LOCK" /bin/sh -c "exec $CMD"

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Linux Shield — module partagé entre le GUI et le daemon système.
+Dukiwi Shield — module partagé entre le GUI et le daemon système.
 Chemins, exclusions de scan, protocole socket (JSON par ligne) et utilitaires.
 (c) 2026 Dukiwi SA - Estavayer-le-Lac
 """
@@ -13,7 +13,7 @@ import struct
 import subprocess
 from datetime import datetime
 
-VERSION = "1.30.5"
+VERSION = "1.31.0"
 
 # ─── Chemins système (daemon root) ───────────────────────────────────────────
 # Surchargeables par variables d'environnement pour les tests sans root.
@@ -37,7 +37,7 @@ USB_MOUNT_ROOT         = os.path.join(os.path.dirname(DAEMON_SOCKET), "mnt")
 
 # Unités systemd
 UPDATE_TIMER_UNIT  = "clamav-antivirus-update.timer"
-DAEMON_UNIT        = "linux-shield-daemon.service"
+DAEMON_UNIT        = "dukiwi-shield-daemon.service"
 
 # ─── Détection avancée ───────────────────────────────────────────────────────
 # Supports USB : en dessous de cette taille, scan automatique avant montage ;

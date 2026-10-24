@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Linux Shield — branchement des extensions dans les navigateurs et Thunderbird (root, à l'installation du paquet).
+Dukiwi Shield — branchement des extensions dans les navigateurs et Thunderbird (root, à l'installation du paquet).
 
 install : écrit le manifeste de l'hôte de messagerie native pour Firefox/Thunderbird (/usr/lib[64]/mozilla) et pour
           Chrome, Chromium, Edge, Brave ; dépose une politique Chrome/Chromium/Edge/Brave (extension installée depuis
@@ -22,7 +22,7 @@ HOST = os.path.join(APP_DIR, "clamav-antivirus-native-host")
 NAME = "clamav_antivirus"
 ROOT = os.environ.get("CLAMAV_SETUP_ROOT", "")            # préfixe de test (jamais en production)
 STATE = ROOT + "/var/lib/clamav-antivirus/browser-setup.json"
-DESC = "Linux Shield — contrôle des liens et des courriels"
+DESC = "Dukiwi Shield — contrôle des liens et des courriels"
 
 MOZILLA_HOST_DIRS = [ROOT + "/usr/lib/mozilla/native-messaging-hosts"] + ([ROOT + "/usr/lib64/mozilla/native-messaging-hosts"] if os.path.isdir("/usr/lib64") else [])
 CHROME_HOST_DIRS = [ROOT + d for d in ("/etc/opt/chrome/native-messaging-hosts", "/etc/chromium/native-messaging-hosts",

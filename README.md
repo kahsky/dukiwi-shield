@@ -1,13 +1,13 @@
-# 🛡️ Linux Shield
+# 🛡️ Dukiwi Shield
 
-Linux Shield bundles in a single application the building blocks that secure a Linux desktop: the **ClamAV**
-antivirus with a system service and real-time protection, firewall, security centre (vulnerabilities, integrity,
-persistence, honeypot), link and e-mail checking, backups and hardening. **Linux Mint 22**,
+Dukiwi Shield is an antivirus, protection and integrity-checking program for Linux: the **ClamAV** antivirus with
+a system service and real-time protection, firewall and network profiles, known vulnerabilities, integrity and
+rootkit checks, hardening, link and e-mail checking, honeypot, backups and encrypted vault. **Linux Mint 22**,
 **Ubuntu 24.04 to 26.04** and **Fedora 44+**. The interface follows the system language: French, English, German,
 Italian (English for any other locale), changeable in Settings. Developed by **Dukiwi SA** —
 Estavayer-le-Lac, Switzerland.
 
-![Linux Shield interface](https://www.dukiwi.com/repo/clamav-antivirus/clamav-antivirus.png?v=1251)
+![Dukiwi Shield interface](https://www.dukiwi.com/repo/clamav-antivirus/clamav-antivirus.png?v=1310)
 
 
 ## Installation
@@ -21,12 +21,12 @@ sudo mkdir -p /usr/share/keyrings
 curl -fsSL https://www.dukiwi.com/repo/apt/dukiwi.gpg | sudo tee /usr/share/keyrings/dukiwi.gpg > /dev/null
 echo "deb [signed-by=/usr/share/keyrings/dukiwi.gpg] https://www.dukiwi.com/repo/apt noble main" | sudo tee /etc/apt/sources.list.d/dukiwi.list
 echo "msmtp msmtp/apparmor boolean false" | sudo debconf-set-selections   # answers the only question asked during installation (see below)
-sudo apt update && sudo apt install -y linux-shield
+sudo apt update && sudo apt install -y dukiwi-shield
 ```
 
-`linux-shield` is a metapackage: it installs the technical package `clamav-antivirus` (name, paths, services and
+`dukiwi-shield` is a metapackage: it installs the technical package `clamav-antivirus` (name, paths, services and
 repository unchanged, so existing installations keep updating without any action, and
-`sudo apt install clamav-antivirus` still works) and the `linux-shield` command.
+`sudo apt install clamav-antivirus` still works) and the `dukiwi-shield` command.
 
 Unattended installation: chkrootkit recommends a mail server and the package picks msmtp, the lightest one; msmtp
 asks on the way whether to enable its AppArmor profile (default answer: no). The `debconf-set-selections` line
@@ -37,7 +37,7 @@ answers in advance. Without it, `DEBIAN_FRONTEND=noninteractive` in front of `ap
 ```bash
 sudo curl -fsSL -o /etc/yum.repos.d/dukiwi.repo https://www.dukiwi.com/repo/rpm/dukiwi.repo
 sudo rpm --import https://www.dukiwi.com/repo/rpm/dukiwi.asc
-sudo dnf install linux-shield
+sudo dnf install dukiwi-shield
 ```
 
 Signed "noarch" RPM, signed dnf repository (packages and index). On Fedora the application talks dnf and rpm
@@ -52,23 +52,23 @@ versions itself (popup or Security tab) and can install them on its own when the
 
 ### Direct download
 
-- Mint / Ubuntu: [clamav-antivirus_1.30.5_all.deb](https://www.dukiwi.com/repo/clamav-antivirus/clamav-antivirus_1.30.5_all.deb)
-- Fedora: [clamav-antivirus-1.30.5-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/clamav-antivirus-1.30.5-1.noarch.rpm)
+- Mint / Ubuntu: [clamav-antivirus_1.31.0_all.deb](https://www.dukiwi.com/repo/clamav-antivirus/clamav-antivirus_1.31.0_all.deb)
+- Fedora: [clamav-antivirus-1.31.0-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/clamav-antivirus-1.31.0-1.noarch.rpm)
 - All versions: [www.dukiwi.com/repo](https://www.dukiwi.com/repo)
 
 ### Installing a downloaded package by hand
 
 ```bash
-sudo apt install ./clamav-antivirus_1.30.5_all.deb          # Mint / Ubuntu
-sudo dnf install ./clamav-antivirus-1.30.5-1.noarch.rpm      # Fedora
+sudo apt install ./clamav-antivirus_1.31.0_all.deb          # Mint / Ubuntu
+sudo dnf install ./clamav-antivirus-1.31.0-1.noarch.rpm      # Fedora
 ```
 
 The installation enables the system service and the scheduler, then starts the initial scan:
 
 ```bash
-systemctl status linux-shield-daemon          # service (root)
+systemctl status dukiwi-shield-daemon          # service (root)
 systemctl list-timers clamav-antivirus-update # next update check
-journalctl -u linux-shield-daemon -f          # follow the initial scan
+journalctl -u dukiwi-shield-daemon -f          # follow the initial scan
 ```
 
 ### Uninstalling
@@ -82,7 +82,7 @@ sudo dnf remove clamav-antivirus   # Fedora
 
 ## Features
 
-- **System service** (`linux-shield-daemon`) — runs permanently as root and performs full scans and updates
+- **System service** (`dukiwi-shield-daemon`) — runs permanently as root and performs full scans and updates
   on behalf of a user **without admin rights**, hence **without a password**. If the service is missing, the
   application asks for the administrator password (`pkexec`).
 - **Scheduled updates** — signature check **every day at 07:00** and **5 minutes after each boot** (systemd timer,
@@ -214,13 +214,16 @@ sudo dnf remove clamav-antivirus   # Fedora
   the flagged /etc/sudoers.d files are approved together with the SHA-256 of their content, so they no longer count in
   the score but are flagged again as soon as the file changes (a rule widened to `NOPASSWD: ALL` reappears). Approved
   rules are listed in Security › Trusted programs with "Remove"; administrator required in family mode.
-- **Service renamed `linux-shield-daemon`** — the system service unit is now `linux-shield-daemon.service`, with
+- **Dukiwi Shield** — new product name (GitHub repository `kahsky/dukiwi-shield`), used everywhere it is displayed
+  (window, shield, popups, mails, extensions, .desktop files, polkit, packages); the metapackage is `dukiwi-shield` and the
+  command `dukiwi-shield`. The system service is `dukiwi-shield-daemon.service`; on upgrade the units of previous versions
+  are stopped and their activation and alias links removed, `clamav-antivirus-daemon.service` stays an alias. The
+  community credits were removed from the Credits window and the README.
+- **Service renamed** — the system service unit is now `dukiwi-shield-daemon.service`, with
   `clamav-antivirus-daemon.service` kept as an alias so existing commands, scripts and logs keep working. On upgrade the
   package stops the old unit and removes its activation link before enabling the new one (Debian postinst; RPM %post
   while the old file is still present); package name, paths and socket are unchanged, so automatic updates go through.
-- **Thanks to the community** — the Credits window names the people who helped make Linux Shield better: Christiaan
-  Van Jaarsveld (the name "Linux Shield") and TimMayle (issues: hard-coded kernel CVEs and Linux Mint texts).
-- **Credits: every component and data source** — the Credits window lists the 26 tools Linux Shield drives, grouped
+- **Credits: every component and data source** — the Credits window lists the 26 tools Dukiwi Shield drives, grouped
   (Antivirus, Integrity and audit, Firewall and network, System, Backups and encryption, Applications and browsers,
   Interface), each with its role, licence and website, and the 10 data sources and online services it consults (Cisco
   Talos signatures, OSV.dev and the Ubuntu CVE Tracker, Fedora advisories, OpenPhish, Phishing.Database, URLhaus via
@@ -291,12 +294,11 @@ sudo dnf remove clamav-antivirus   # Fedora
   classified "not applicable: headers only, kernel not installed" (note and badge) instead of 49 high "unfixed"
   ones, and the "install the HWE kernel" advice only appears when the original kernel is really the running one;
   stored reports are reclassified at service startup. Central allowlist: Claude Code binaries of Claude Desktop.
-- **`linux-shield` metapackage** — `apt install linux-shield` and `dnf install linux-shield` install the technical
+- **`dukiwi-shield` metapackage** — `apt install dukiwi-shield` and `dnf install dukiwi-shield` install the technical
   package `clamav-antivirus` (name, paths, units and repository unchanged: transparent for existing installations,
-  which keep updating) and the `linux-shield` command. Own version (1.0.0), built by `build-meta.sh` and published
+  which keep updating) and the `dukiwi-shield` command. Own version (1.0.0), built by `build-meta.sh` and published
   once; the unversioned dependency always pulls the latest clamav-antivirus.
-- **Linux Shield** — new project name (GitHub repository `kahsky/linux-shield`): no longer just an interface for
-  ClamAV but a set of protections for Linux. The name changes everywhere it is displayed (window, shield, popups,
+- **New project name** — no longer just an interface for ClamAV but a set of protections for Linux. The name changes everywhere it is displayed (window, shield, popups,
   mails, extensions, .desktop files, services, packages); the package name, paths, systemd units and repository stay
   `clamav-antivirus` so existing installations update without any action. The interface language follows the
   system: environment variables, then the locale configured in /etc/default/locale or /etc/locale.conf if the
@@ -581,7 +583,7 @@ sudo dnf remove clamav-antivirus   # Fedora
 
 ## Warranty disclaimer and limitation of liability
 
-Linux Shield is provided by **Dukiwi SA "AS IS"**, without any warranty, express or implied. It is at most a
+Dukiwi Shield is provided by **Dukiwi SA "AS IS"**, without any warranty, express or implied. It is at most a
 **first barrier**: no antivirus, firewall or detection tool can identify every threat, and a green indicator in no
 way guarantees that a computer is clean. Only careful and informed behaviour on the user's part (security
 awareness) really limits the risks.
@@ -621,9 +623,9 @@ python3 clamav-antivirus.py
 ## Building the packages
 
 ```bash
-./build-deb.sh        # clamav-antivirus_1.30.5_all.deb   (Mint / Ubuntu)
-./build-rpm.sh        # clamav-antivirus-1.30.5-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
-./build-meta.sh       # linux-shield_1.0.0_all.deb + linux-shield-1.0.0-1.noarch.rpm (metapackage, published once)
+./build-deb.sh        # clamav-antivirus_1.31.0_all.deb   (Mint / Ubuntu)
+./build-rpm.sh        # clamav-antivirus-1.31.0-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
+./build-meta.sh       # dukiwi-shield_1.0.0_all.deb + dukiwi-shield-1.0.0-1.noarch.rpm (metapackage, published once)
 ```
 
 Both packages share the same file tree (`build-deb.sh --stage-only`) and the same signed integrity manifest.
@@ -634,7 +636,7 @@ Both packages share the same file tree (`build-deb.sh --stage-only`) and the sam
 
 | systemd unit                       | Role                                                                  |
 |------------------------------------|-----------------------------------------------------------------------|
-| `linux-shield-daemon.service`      | Root daemon, socket `/run/clamav-antivirus/daemon.sock` (mode 0666); alias `clamav-antivirus-daemon.service` |
+| `dukiwi-shield-daemon.service`      | Root daemon, socket `/run/clamav-antivirus/daemon.sock` (mode 0666); alias `clamav-antivirus-daemon.service` |
 | `clamav-antivirus-update.timer`    | `OnCalendar=07:00` + `OnBootSec=5min` + `Persistent=true`             |
 | `clamav-antivirus-update.service`  | Oneshot: asks the daemon for the update (`--request update`)          |
 
@@ -708,7 +710,7 @@ clamav-antivirus/
 ├── clamav-antivirus-daemon.py       # Root system service (Unix socket) + --request client
 ├── clamav_common.py                 # Shared paths, exclusions, protocol
 ├── systemd/
-│   ├── linux-shield-daemon.service  # alias clamav-antivirus-daemon.service
+│   ├── dukiwi-shield-daemon.service  # alias clamav-antivirus-daemon.service
 │   ├── clamav-antivirus-update.service
 │   └── clamav-antivirus-update.timer # 07:00 daily + 5 min after boot
 ├── udev/80-clamav-antivirus-usb.rules # USB stick scan before mounting
@@ -716,7 +718,7 @@ clamav-antivirus/
 ├── polkit/com.dukiwi.clamav-antivirus.policy
 ├── keys/dukiwi.gpg            # Public key verifying updates
 ├── dukiwi.repo                      # dnf repository file shipped by the RPM (shared Dukiwi repository)
-├── build-meta.sh, linux-shield.spec # linux-shield metapackage (deb + rpm)
+├── build-meta.sh, dukiwi-shield.spec # dukiwi-shield metapackage (deb + rpm)
 ├── ui/
 │   ├── index.html                   # HTML interface
 │   ├── style.css                    # CSS theme (editable variables)
@@ -734,15 +736,6 @@ clamav-antivirus/
 ├── build-deb.sh                     # .deb build script
 └── README.md
 ```
-
----
-
-## Community
-
-Thanks to the people who helped make Linux Shield better:
-
-- **Christiaan Van Jaarsveld** — the name "Linux Shield"
-- **TimMayle** — issues: hard-coded kernel CVEs and Linux Mint texts
 
 ---
 

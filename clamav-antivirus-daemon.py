@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Linux Shield — service système (root).
+Dukiwi Shield — service système (root).
 
 Tourne en permanence via systemd et écoute sur un socket Unix. Il permet à un
 utilisateur sans droits administrateur de demander :
@@ -1202,7 +1202,7 @@ def timeshift_write_config(cfg):
 
 TIMESHIFT_MIN_FREE = 10 * 1024 ** 3        # sous ce seuil, les instantanés planifiés sont suspendus
 TIMESHIFT_GUARD_CRON = ("SHELL=/bin/sh\nPATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin\n"
-                        "# Linux Shield : instantane planifie seulement s'il reste au moins 10 Go sur le disque principal\n"
+                        "# Dukiwi Shield : instantane planifie seulement s'il reste au moins 10 Go sur le disque principal\n"
                         "@hourly root a=$(df -k --output=avail / | tail -n1 | tr -d ' '); [ \"${a:-0}\" -ge 10485760 ] && timeshift --check\n")
 DU_EXCLUDES = ["/home", "/root", "/timeshift", "/timeshift-btrfs", "/dev", "/proc", "/sys", "/run", "/tmp", "/media", "/mnt",
                "/var/lib/docker", "/var/lib/schroot", "/snap", "/var/cache/apt/archives", "/var/log", "/swapfile", "/lost+found"]
@@ -4501,7 +4501,7 @@ def mail_read_password():
 
 def mail_write_config(cfg, password):
     """/etc/msmtprc (root, 600) : compte par défaut utilisé par tout programme du système appelant sendmail."""
-    lines = ["# Généré par Linux Shield — Paramètres › Notifications par courrier. Lisible par root seulement.",
+    lines = ["# Généré par Dukiwi Shield — Paramètres › Notifications par courrier. Lisible par root seulement.",
              "defaults", f"logfile {MAIL_LOG_FILE}", "tls_trust_file /etc/ssl/certs/ca-certificates.crt", "",
              "account default", f"host {cfg['host']}", f"port {cfg['port']}", f"from {cfg['from']}"]
     sec = cfg.get("security")
@@ -4523,10 +4523,10 @@ def mail_build(cfg, subject, body):
     host = socket.gethostname()
     msg["From"] = cfg.get("from") or f"clamav-antivirus@{host}"
     msg["To"] = ", ".join(cfg.get("to") or [])
-    msg["Subject"] = f"[Linux Shield · {host}] {subject}"
+    msg["Subject"] = f"[Dukiwi Shield · {host}] {subject}"
     msg["Date"] = email.utils.formatdate(localtime=True)
     msg["Message-ID"] = email.utils.make_msgid(domain=host)
-    msg["X-Mailer"] = f"Linux Shield {VERSION}"
+    msg["X-Mailer"] = f"Dukiwi Shield {VERSION}"
     msg.set_content(body)
     return msg.as_bytes()
 
@@ -5563,7 +5563,7 @@ class Daemon:
         """Premier instantané juste après l'activation (quelques minutes), puis état rafraîchi."""
         r = run_quiet(["timeshift", "--check", "--scripted"], timeout=1800)
         if r.returncode != 0 or "snapshot" not in ((r.stdout or "") + (r.stderr or "")).lower():
-            r = run_quiet(["timeshift", "--create", "--scripted", "--tags", "D", "--comments", "Linux Shield"], timeout=1800)
+            r = run_quiet(["timeshift", "--create", "--scripted", "--tags", "D", "--comments", "Dukiwi Shield"], timeout=1800)
         self.write_log(f"timeshift first snapshot → {r.returncode}")
         self.refresh_backup(force=True)
         self.refresh_overall()
@@ -8153,7 +8153,7 @@ class Daemon:
                 self.daily_tasks()
         threading.Thread(target=warmup, daemon=True).start()
 
-        log(f"Linux Shield daemon v{VERSION} à l'écoute sur {DAEMON_SOCKET}"
+        log(f"Dukiwi Shield daemon v{VERSION} à l'écoute sur {DAEMON_SOCKET}"
             + (" (mode test)" if TEST_MODE else ""))
         while not self.shutdown.is_set():
             try:

@@ -1,12 +1,12 @@
 {
   "ext_name": {
-    "message": "Linux Shield — Link Guard"
+    "message": "Dukiwi Shield — Link Guard"
   },
   "ext_desc": {
-    "message": "Checks every address before opening it: phishing sites, lookalike sites, malware (OpenPhish, URLhaus, Phishing.Database lists and the Linux Shield service's heuristics)."
+    "message": "Checks every address before opening it: phishing sites, lookalike sites, malware (OpenPhish, URLhaus, Phishing.Database lists and the Dukiwi Shield service's heuristics)."
   },
   "mail_name": {
-    "message": "Linux Shield — E-mail Protection"
+    "message": "Dukiwi Shield — E-mail Protection"
   },
   "mail_desc": {
     "message": "Checks e-mail links before opening the browser and scans attachments with ClamAV."
@@ -15,13 +15,13 @@
     "message": "Dangerous link blocked"
   },
   "warn_lead": {
-    "message": "Linux Shield prevented this address from opening:"
+    "message": "Dukiwi Shield prevented this address from opening:"
   },
   "warn_why": {
     "message": "Why"
   },
   "warn_foot": {
-    "message": "Decision made by this computer's Linux Shield service. Allowed sites and lists are managed in Security › Links and e-mails."
+    "message": "Decision made by this computer's Dukiwi Shield service. Allowed sites and lists are managed in Security › Links and e-mails."
   },
   "btn_back": {
     "message": "Back to safety"
@@ -45,7 +45,7 @@
     "message": "Displayed address:"
   },
   "offline": {
-    "message": "Linux Shield service unreachable: links not checked"
+    "message": "Dukiwi Shield service unreachable: links not checked"
   },
   "notif_warn_title": {
     "message": "Caution with this site"

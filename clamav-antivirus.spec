@@ -1,11 +1,11 @@
-# Linux Shield — paquet RPM (Fedora et dérivés). Construit par build-rpm.sh à partir de l'arborescence
+# Dukiwi Shield — paquet RPM (Fedora et dérivés). Construit par build-rpm.sh à partir de l'arborescence
 # commune (build-deb.sh --stage-only) : mêmes fichiers que le paquet Debian, manifeste d'intégrité signé inclus.
 Name:           clamav-antivirus
 Version:        %{version}
 Release:        1%{?dist}
-Summary:        Linux Shield — suite de sécurité pour Linux : antivirus ClamAV, pare-feu, intégrité, sauvegardes
+Summary:        Dukiwi Shield — antivirus, protection et vérification d'intégrité pour Linux
 License:        Proprietary
-URL:            https://github.com/kahsky/linux-shield
+URL:            https://github.com/kahsky/dukiwi-shield
 BuildArch:      noarch
 Source0:        %{name}-%{version}.tar.gz
 
@@ -56,7 +56,7 @@ install -D -m 644 dukiwi.repo %{buildroot}%{_sysconfdir}/yum.repos.d/dukiwi.repo
 
 %post
 mkdir -p /var/lib/clamav-antivirus
-# Anciens noms du fichier de dépôt (dukiwi-clamav < 1.25.1, linux-shield = 1.25.1) : même dépôt, retiré pour ne pas le lister deux fois
+# Anciens noms du fichier de dépôt (dukiwi-clamav < 1.25.1, nom de 1.25.1) : même dépôt : même dépôt, retiré pour ne pas le lister deux fois
 rm -f /etc/yum.repos.d/dukiwi-clamav.repo /etc/yum.repos.d/dukiwi-clamav.repo.rpmsave /etc/yum.repos.d/linux-shield.repo /etc/yum.repos.d/linux-shield.repo.rpmsave
 if [ "$1" = "1" ] && [ ! -f /var/lib/clamav-antivirus/state.json ]; then
     touch /var/lib/clamav-antivirus/first-scan-pending
@@ -69,16 +69,19 @@ fi
 systemctl enable clamd@scan.service >/dev/null 2>&1 || true
 systemctl enable clamav-freshclam.service >/dev/null 2>&1 || true
 systemctl start clamav-freshclam.service >/dev/null 2>&1 || true
-# Service renommé (1.30.5) : l'ancienne unité (fichier encore présent pendant %post) est arrêtée et désactivée
-if [ -f %{_unitdir}/linux-shield-daemon.service ] && [ ! -L %{_unitdir}/linux-shield-daemon.service ]; then
-    systemctl disable --now clamav-antivirus-daemon.service >/dev/null 2>&1 || true
-fi
+# Service renommé (1.31.0) : dukiwi-shield-daemon.service (alias clamav-antivirus-daemon.service). Les unités des versions
+# précédentes (fichiers encore présents pendant %post) sont arrêtées et désactivées
+for old in clamav-antivirus-daemon linux-shield-daemon; do
+    if [ -f %{_unitdir}/$old.service ] && [ ! -L %{_unitdir}/$old.service ]; then
+        systemctl disable --now $old.service >/dev/null 2>&1 || true
+    fi
+done
 systemctl daemon-reload >/dev/null 2>&1 || true
 udevadm control --reload-rules >/dev/null 2>&1 || true
 /opt/clamav-antivirus/clamav-antivirus-browser-setup install >/dev/null 2>&1 || true
-systemctl enable linux-shield-daemon.service >/dev/null 2>&1 || true
+systemctl enable dukiwi-shield-daemon.service >/dev/null 2>&1 || true
 systemctl enable clamav-antivirus-update.timer >/dev/null 2>&1 || true
-systemctl restart linux-shield-daemon.service >/dev/null 2>&1 || true
+systemctl restart dukiwi-shield-daemon.service >/dev/null 2>&1 || true
 systemctl start clamav-antivirus-update.timer >/dev/null 2>&1 || true
 pkill -f "/opt/clamav-antivirus/clamav-antivirus.py" >/dev/null 2>&1 || true
 if command -v update-desktop-database >/dev/null 2>&1; then update-desktop-database /usr/share/applications/ >/dev/null 2>&1 || true; fi
@@ -90,8 +93,8 @@ if [ "$1" = "0" ]; then
     pkill -f "/opt/clamav-antivirus/clamav-antivirus.py" >/dev/null 2>&1 || true
     systemctl stop clamav-antivirus-update.timer >/dev/null 2>&1 || true
     systemctl disable clamav-antivirus-update.timer >/dev/null 2>&1 || true
-    systemctl stop linux-shield-daemon.service >/dev/null 2>&1 || true
-    systemctl disable linux-shield-daemon.service >/dev/null 2>&1 || true
+    systemctl stop dukiwi-shield-daemon.service >/dev/null 2>&1 || true
+    systemctl disable dukiwi-shield-daemon.service >/dev/null 2>&1 || true
 fi
 
 %postun
@@ -100,7 +103,7 @@ udevadm control --reload-rules >/dev/null 2>&1 || true
 
 %files
 /opt/clamav-antivirus
-%{_unitdir}/linux-shield-daemon.service
+%{_unitdir}/dukiwi-shield-daemon.service
 %{_unitdir}/clamav-antivirus-update.service
 %{_unitdir}/clamav-antivirus-update.timer
 %{_udevrulesdir}/*.rules

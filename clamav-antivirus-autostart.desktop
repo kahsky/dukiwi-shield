@@ -1,6 +1,6 @@
 [Desktop Entry]
-Name=Linux Shield (tray)
-Comment=Bouclier Linux Shield dans la barre des tâches
+Name=Dukiwi Shield (tray)
+Comment=Bouclier Dukiwi Shield dans la barre des tâches
 Exec=/opt/clamav-antivirus/clamav-antivirus-tray
 Icon=/opt/clamav-antivirus/icons/logo.svg
 Terminal=false

@@ -1,12 +1,12 @@
 {
   "ext_name": {
-    "message": "Linux Shield — Link-Schutz"
+    "message": "Dukiwi Shield — Link-Schutz"
   },
   "ext_desc": {
-    "message": "Prüft jede Adresse vor dem Öffnen: Phishing-Seiten, Nachahmer-Seiten, Schadsoftware (Listen OpenPhish, URLhaus, Phishing.Database und Heuristiken des Dienstes Linux Shield)."
+    "message": "Prüft jede Adresse vor dem Öffnen: Phishing-Seiten, Nachahmer-Seiten, Schadsoftware (Listen OpenPhish, URLhaus, Phishing.Database und Heuristiken des Dienstes Dukiwi Shield)."
   },
   "mail_name": {
-    "message": "Linux Shield — E-Mail-Schutz"
+    "message": "Dukiwi Shield — E-Mail-Schutz"
   },
   "mail_desc": {
     "message": "Prüft Links in E-Mails vor dem Öffnen des Browsers und scannt Anhänge mit ClamAV."
@@ -15,13 +15,13 @@
     "message": "Gefährlicher Link blockiert"
   },
   "warn_lead": {
-    "message": "Linux Shield hat das Öffnen dieser Adresse verhindert:"
+    "message": "Dukiwi Shield hat das Öffnen dieser Adresse verhindert:"
   },
   "warn_why": {
     "message": "Warum"
   },
   "warn_foot": {
-    "message": "Entscheidung des Dienstes Linux Shield dieses Computers. Erlaubte Seiten und Listen werden unter Sicherheit › Links und E-Mails verwaltet."
+    "message": "Entscheidung des Dienstes Dukiwi Shield dieses Computers. Erlaubte Seiten und Listen werden unter Sicherheit › Links und E-Mails verwaltet."
   },
   "btn_back": {
     "message": "Zurück in Sicherheit"
@@ -45,7 +45,7 @@
     "message": "Angezeigte Adresse:"
   },
   "offline": {
-    "message": "Dienst Linux Shield nicht erreichbar: Links werden nicht geprüft"
+    "message": "Dienst Dukiwi Shield nicht erreichbar: Links werden nicht geprüft"
   },
   "notif_warn_title": {
     "message": "Vorsicht bei dieser Seite"

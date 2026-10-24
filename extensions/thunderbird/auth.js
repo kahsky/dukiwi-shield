@@ -1,4 +1,4 @@
-/* Linux Shield — authentification de l'expéditeur (Thunderbird). SPF, DKIM et DMARC sont lus dans les en-têtes
+/* Dukiwi Shield — authentification de l'expéditeur (Thunderbird). SPF, DKIM et DMARC sont lus dans les en-têtes
    Authentication-Results (et ARC-Authentication-Results, Received-SPF) posés par le serveur de réception, avec
    alignement sur le domaine de l'expéditeur ; plus deux heuristiques d'usurpation : adresse de réponse d'un autre
    domaine (fraude au président) et nom affiché contenant une autre adresse e-mail. Fonctions pures (testables avec node). */

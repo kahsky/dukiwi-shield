@@ -1,7 +1,8 @@
 [Desktop Entry]
-Name=Linux Shield
-Comment=Interface graphique pour ClamAV
-Comment[fr]=Interface graphique pour ClamAV
+Name=Dukiwi Shield
+Comment=Antivirus, protection et vérification d'intégrité pour Linux
+Comment[fr]=Antivirus, protection et vérification d'intégrité pour Linux
+Comment[en]=Antivirus, protection and integrity checking for Linux
 Exec=/opt/clamav-antivirus/clamav-antivirus.py
 Icon=/opt/clamav-antivirus/icons/logo.svg
 Terminal=false

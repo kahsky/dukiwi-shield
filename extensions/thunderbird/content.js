@@ -1,4 +1,4 @@
-/* Linux Shield — script injecté dans chaque message affiché (Thunderbird).
+/* Dukiwi Shield — script injecté dans chaque message affiché (Thunderbird).
    Relève les liens, demande leur verdict au fond d'écran, marque les liens dangereux (clic intercepté → confirmation
    dans le message, jamais de dialogue natif) et affiche un bandeau : liens vérifiés, pièces jointes analysées. */
 (() => {

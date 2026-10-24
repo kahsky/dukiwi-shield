@@ -1,5 +1,5 @@
-# Linux Shield — analyse des supports USB avant leur mise à disposition.
-# Quand le service linux-shield-daemon tourne (son socket existe), le montage
+# Dukiwi Shield — analyse des supports USB avant leur mise à disposition.
+# Quand le service dukiwi-shield-daemon tourne (son socket existe), le montage
 # automatique par udisks est désactivé pour les périphériques de stockage USB :
 # le service monte la clé en privé, l'analyse, puis l'interface la monte pour
 # l'utilisateur. Sans le service, le comportement habituel est conservé.

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Linux Shield — fonctions côté utilisateur (sans root) :
+Dukiwi Shield — fonctions côté utilisateur (sans root) :
 - fuites de données : mots de passe (Have I Been Pwned, k-anonymity : seuls 5 caractères du SHA-1 sont envoyés)
   et adresses e-mail (API HIBP avec clé, ou relais Dukiwi) ;
 - inventaire des applications hors dépôts : Flatpak (permissions larges), Snap (confinement classic, plugs

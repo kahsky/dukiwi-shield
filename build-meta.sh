@@ -1,13 +1,13 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════════════════════
-# LINUX SHIELD — métapaquet « linux-shield » (deb, et rpm si rpmbuild est présent).
+# DUKIWI SHIELD — métapaquet « dukiwi-shield » (deb, et rpm si rpmbuild est présent).
 # Il dépend du paquet technique clamav-antivirus (nom, chemins, unités et dépôt inchangés pour les installations
-# existantes) et fournit la commande linux-shield. Version propre au métapaquet : il n'est reconstruit que s'il change.
-# Usage : ./build-meta.sh   →  linux-shield_<META_VERSION>_all.deb, linux-shield-<META_VERSION>-1.noarch.rpm
-# Publication : cd ../repo && ./publish.sh ../clamav-antivirus/linux-shield_<META_VERSION>_all.deb
+# existantes) et fournit la commande dukiwi-shield. Version propre au métapaquet : il n'est reconstruit que s'il change.
+# Usage : ./build-meta.sh   →  dukiwi-shield_<META_VERSION>_all.deb, dukiwi-shield-<META_VERSION>-1.noarch.rpm
+# Publication : cd ../repo && ./publish.sh ../clamav-antivirus/dukiwi-shield_<META_VERSION>_all.deb
 # ═══════════════════════════════════════════════════════════════════════════
 set -e
-META="linux-shield"
+META="dukiwi-shield"
 META_VERSION="1.0.0"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PKG_DIR="${META}_${META_VERSION}_all"
@@ -23,15 +23,15 @@ Priority: optional
 Architecture: all
 Depends: clamav-antivirus
 Maintainer: Dukiwi SA <info@dukiwi.ch>
-Homepage: https://github.com/kahsky/linux-shield
-Description: Linux Shield - sécurité du poste Linux (métapaquet : installe clamav-antivirus)
- Linux Shield réunit en une application les protections d'un poste Linux :
+Homepage: https://github.com/kahsky/dukiwi-shield
+Description: Dukiwi Shield - antivirus, protection et vérification d'intégrité pour Linux (métapaquet)
+ Dukiwi Shield réunit en une application les protections d'un poste Linux :
  antivirus ClamAV avec service système et protection en temps réel, pare-feu,
  centre de sécurité (failles, intégrité, persistance, pot de miel), contrôle
  des liens et des courriels, sauvegardes et durcissement.
  .
  Ce métapaquet installe le paquet technique clamav-antivirus (toujours à jour
- depuis le dépôt Dukiwi) et la commande linux-shield.
+ depuis le dépôt Dukiwi) et la commande dukiwi-shield.
 CTRL
 chmod -R go-w "${PKG_DIR}"
 dpkg-deb --build --root-owner-group "${PKG_DIR}" >/dev/null

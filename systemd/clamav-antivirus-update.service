@@ -1,6 +1,6 @@
 [Unit]
-Description=Linux Shield - recherche de mises à jour des signatures
-After=network-online.target linux-shield-daemon.service
+Description=Dukiwi Shield - recherche de mises à jour des signatures
+After=network-online.target dukiwi-shield-daemon.service
 Wants=network-online.target
 
 [Service]

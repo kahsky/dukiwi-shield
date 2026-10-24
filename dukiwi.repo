@@ -1,5 +1,5 @@
 [dukiwi]
-name=Dukiwi (Linux Shield, OpenVPN GUI)
+name=Dukiwi (Dukiwi Shield, OpenVPN GUI)
 baseurl=https://www.dukiwi.com/repo/rpm/fedora/
 enabled=1
 gpgcheck=1

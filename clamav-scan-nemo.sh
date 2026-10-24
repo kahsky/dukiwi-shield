@@ -1,6 +1,6 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════════════════════
-# Linux Shield — Nemo right-click scan handler
+# Dukiwi Shield — Nemo right-click scan handler
 # Scans selected file(s)/folder(s) and shows results in a dialog
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -14,14 +14,14 @@ mkdir -p "$(dirname "$LOG_FILE")"
 
 # Check if clamscan is available
 if ! command -v clamscan &> /dev/null; then
-    zenity --error --title="Linux Shield" \
+    zenity --error --title="Dukiwi Shield" \
         --text="ClamAV n'est pas installé.\nInstallez-le avec : sudo apt install clamav" \
         --width=350 2>/dev/null
     exit 1
 fi
 
 if [ -z "$TARGET" ]; then
-    zenity --error --title="Linux Shield" \
+    zenity --error --title="Dukiwi Shield" \
         --text="Aucun fichier ou dossier sélectionné." \
         --width=300 2>/dev/null
     exit 1
@@ -35,7 +35,7 @@ TMPFILE=$(mktemp /tmp/clamav-scan-XXXXXX.log)
     echo "# Analyse de : $BASENAME"
     clamscan -r --infected --suppress-ok-results --move="$QUARANTINE_DIR" "$TARGET" > "$TMPFILE" 2>&1
     echo "100"
-) | zenity --progress --title="Linux Shield" \
+) | zenity --progress --title="Dukiwi Shield" \
     --text="Analyse en cours..." \
     --pulsate --auto-close --no-cancel --width=400 2>/dev/null
 
@@ -51,11 +51,11 @@ cat "$TMPFILE" >> "$LOG_FILE"
 # Show results
 if [ "$INFECTED" -gt 0 ]; then
     FOUND_FILES=$(grep "FOUND" "$TMPFILE" | sed 's/: .* FOUND$//' | sed 's|^|  • |')
-    zenity --warning --title="Linux Shield — Menaces détectées !" \
+    zenity --warning --title="Dukiwi Shield — Menaces détectées !" \
         --text="<b>$INFECTED menace(s) détectée(s)</b> dans :\n<i>$BASENAME</i>\n\nFichiers infectés (déplacés en quarantaine) :\n$FOUND_FILES\n\nFichiers analysés : $SCANNED\nDurée : $SCAN_TIME" \
         --width=500 2>/dev/null
 else
-    zenity --info --title="Linux Shield — Aucune menace" \
+    zenity --info --title="Dukiwi Shield — Aucune menace" \
         --text="<b>Aucune menace détectée</b>\n\nCible : <i>$BASENAME</i>\nFichiers analysés : $SCANNED\nDurée : $SCAN_TIME" \
         --width=400 2>/dev/null
 fi

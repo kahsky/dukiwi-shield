@@ -8,7 +8,7 @@
 set -e
 
 APP_NAME="clamav-antivirus"
-VERSION="1.30.5"
+VERSION="1.31.0"
 ARCH="all"
 PKG_DIR="${APP_NAME}_${VERSION}_${ARCH}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -131,8 +131,8 @@ Depends: python3 (>= 3.8), python3-gi, python3-pyudev, python3-apt, gir1.2-webki
 Recommends: libnotify-bin, mintupdate | update-manager, timeshift, rclone, rsync, gocryptfs, flatpak
 Maintainer: Dukiwi SA <info@dukiwi.ch>
 Homepage: https://dukiwi.ch
-Description: Linux Shield - sécurité du poste Linux (antivirus ClamAV, pare-feu, intégrité, sauvegardes)
- Suite de sécurité pour Linux réunissant antivirus ClamAV, pare-feu, intégrité, sauvegardes et contrôle des liens :
+Description: Dukiwi Shield - antivirus, protection et vérification d'intégrité pour Linux
+ Dukiwi Shield : antivirus (ClamAV), protection du poste et vérification d'intégrité pour Linux :
  - Service système : scan complet et mises à jour sans mot de passe
  - Mises à jour planifiées tous les jours à 07:00 et 5 min après le démarrage
  - Scan complet automatique après la première installation
@@ -145,7 +145,7 @@ Description: Linux Shield - sécurité du poste Linux (antivirus ClamAV, pare-fe
  - Scan rapide de répertoires avec progression détaillée
  - Quarantaine automatique des fichiers infectés
  - Icône bouclier dans la barre des tâches
- - Intégration Nemo (clic droit : Scan with Linux Shield)
+ - Intégration Nemo (clic droit : Scan with Dukiwi Shield)
  - Interface HTML/CSS facilement personnalisable
  .
  Développé par Dukiwi SA, Estavayer-le-Lac, Suisse.
@@ -171,19 +171,24 @@ if [ "$1" = "configure" ] && [ ! -f "$STATE_DIR/state.json" ]; then
     FIRST_INSTALL=1
 fi
 
-# Service renommé (1.30.5) : clamav-antivirus-daemon.service → linux-shield-daemon.service (alias de l'ancien nom).
-# L'ancienne unité tourne encore (son fichier vient d'être retiré par dpkg) : arrêt, puis lien d'activation orphelin supprimé.
-if [ -L /etc/systemd/system/multi-user.target.wants/clamav-antivirus-daemon.service ]; then
-    systemctl stop clamav-antivirus-daemon.service 2>/dev/null || true
-    rm -f /etc/systemd/system/multi-user.target.wants/clamav-antivirus-daemon.service
+# Service renommé (1.31.0) : dukiwi-shield-daemon.service, alias clamav-antivirus-daemon.service. Les unités des versions
+# précédentes tournent encore (dpkg vient de retirer leur fichier) : arrêt, puis liens d'activation et d'alias orphelins supprimés.
+for old in clamav-antivirus-daemon linux-shield-daemon; do
+    if [ -L /etc/systemd/system/multi-user.target.wants/$old.service ]; then
+        systemctl stop $old.service 2>/dev/null || true
+        rm -f /etc/systemd/system/multi-user.target.wants/$old.service
+    fi
+done
+if [ -L /etc/systemd/system/clamav-antivirus-daemon.service ] && [ ! -e /etc/systemd/system/clamav-antivirus-daemon.service ]; then
+    rm -f /etc/systemd/system/clamav-antivirus-daemon.service       # alias de la 1.30.x vers un fichier disparu
 fi
 systemctl daemon-reload 2>/dev/null || true
 udevadm control --reload-rules 2>/dev/null || true
 # Extensions : hôte natif et politiques pour Thunderbird, Firefox, Chrome, Chromium, Edge, Brave
 /opt/clamav-antivirus/clamav-antivirus-browser-setup install 2>/dev/null || true
-systemctl enable linux-shield-daemon.service 2>/dev/null || true
+systemctl enable dukiwi-shield-daemon.service 2>/dev/null || true
 systemctl enable clamav-antivirus-update.timer 2>/dev/null || true
-systemctl restart linux-shield-daemon.service 2>/dev/null || true
+systemctl restart dukiwi-shield-daemon.service 2>/dev/null || true
 systemctl start clamav-antivirus-update.timer 2>/dev/null || true
 
 # Relancer les GUI ouvertes pour charger la nouvelle version : le service utilisateur (Restart=always) ou la
@@ -197,12 +202,12 @@ fi
 
 echo ""
 echo "═══════════════════════════════════════════════════"
-echo "  ✅ Linux Shield installé avec succès !"
+echo "  ✅ Dukiwi Shield installé avec succès !"
 echo ""
 echo "  Lancez-le depuis le menu Applications > Système"
 echo "  ou via: /opt/clamav-antivirus/clamav-antivirus.py"
 echo ""
-echo "  Service système : linux-shield-daemon (actif)"
+echo "  Service système : dukiwi-shield-daemon (actif)"
 echo "  Mises à jour    : tous les jours à 07:00 et"
 echo "                    5 minutes après le démarrage"
 echo "  Surveillance    : écritures (fanotify), clés USB (udev)"
@@ -229,8 +234,8 @@ if [ "$1" = "remove" ]; then
     /opt/clamav-antivirus/clamav-antivirus-browser-setup remove 2>/dev/null || true
     systemctl stop clamav-antivirus-update.timer 2>/dev/null || true
     systemctl disable clamav-antivirus-update.timer 2>/dev/null || true
-    systemctl stop linux-shield-daemon.service 2>/dev/null || true
-    systemctl disable linux-shield-daemon.service 2>/dev/null || true
+    systemctl stop dukiwi-shield-daemon.service 2>/dev/null || true
+    systemctl disable dukiwi-shield-daemon.service 2>/dev/null || true
 fi
 exit 0
 EOF

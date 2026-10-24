@@ -11,7 +11,7 @@
     const reasons = (r.reasons || []).filter(x => x !== 'brand_login' || true);
     const meta = r.meta || {};
 
-    document.title = t('warn_title') + ' — Linux Shield';
+    document.title = t('warn_title') + ' — Dukiwi Shield';
     $('title').textContent = t('warn_title');
     $('lead').textContent = t('warn_lead');
     $('host').textContent = r.host || '';

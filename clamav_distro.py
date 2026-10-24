@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Linux Shield — couche de distribution.
+Dukiwi Shield — couche de distribution.
 Debian / Ubuntu / Linux Mint : apt, dpkg, ufw. Fedora / RHEL et dérivés : dnf, rpm, firewalld, SELinux.
 Tout ce qui dépend de la distribution passe par ici ; le reste du programme ne parle ni apt ni dnf.
 Test : CLAMAV_ANTIVIRUS_OS_RELEASE=<fichier> simule une autre distribution.
