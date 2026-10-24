@@ -1,25 +1,118 @@
-# Dukiwi Shield — métapaquet RPM « dukiwi-shield » : dépend du paquet technique clamav-antivirus (inchangé pour les
-# installations existantes) et fournit la commande dukiwi-shield. Construit par build-meta.sh.
-Name:           dukiwi-shield
+# Dukiwi Shield — paquet RPM (Fedora et dérivés). Construit par build-rpm.sh à partir de l'arborescence
+# commune (build-deb.sh --stage-only) : mêmes fichiers que le paquet Debian, manifeste d'intégrité signé inclus.
+Name:           clamav-antivirus
 Version:        %{version}
 Release:        1%{?dist}
-Summary:        Dukiwi Shield — antivirus, protection et vérification d'intégrité pour Linux (métapaquet)
+Summary:        Dukiwi Shield — antivirus, protection et vérification d'intégrité pour Linux
 License:        Proprietary
 URL:            https://github.com/kahsky/dukiwi-shield
 BuildArch:      noarch
-Requires:       clamav-antivirus
+Source0:        %{name}-%{version}.tar.gz
+
+Requires:       python3 >= 3.8
+Requires:       python3-gobject
+Requires:       python3-pyudev
+Requires:       webkit2gtk4.1
+Requires:       libayatana-appindicator-gtk3
+Requires:       gtk3
+Requires:       polkit
+Requires:       clamav
+Requires:       clamd
+Requires:       clamav-update
+Requires:       lynis
+Requires:       unhide
+Requires:       chkrootkit
+Requires:       msmtp
+Requires:       zenity
+Requires:       systemd
+Requires:       udisks2
+Requires:       firewalld
+Requires:       dnf-plugins-core
+Recommends:     gnome-shell-extension-appindicator
+Recommends:     timeshift
+Recommends:     rsync
+Recommends:     rclone
+Recommends:     gocryptfs
+Recommends:     flatpak
+Recommends:     dnf-automatic
+%{?systemd_requires}
 
 %description
-Dukiwi Shield réunit en une application les protections d'un poste Linux : antivirus ClamAV avec service système et
-protection en temps réel, pare-feu, centre de sécurité (failles, intégrité, persistance, pot de miel), contrôle des
-liens et des courriels, sauvegardes et durcissement. Ce métapaquet installe le paquet technique clamav-antivirus et la
-commande dukiwi-shield.
+Interface graphique moderne pour ClamAV avec un service système : analyses complètes sans mot de passe,
+mises à jour planifiées, surveillance des rafales d'écritures (fanotify), analyse des clés USB avant
+mise à disposition, état du système (avis de sécurité dnf et CVE), pare-feu firewalld piloté depuis
+l'application, vérification d'intégrité (rpm -V, chkrootkit, unhide, Lynis, noyau, processus),
+notifications par courrier, interface en français, anglais, allemand et italien.
+Développé par Dukiwi SA, Estavayer-le-Lac, Suisse.
 
 %prep
-%build
+%setup -q
+
 %install
-mkdir -p %{buildroot}%{_bindir}
-ln -s /opt/clamav-antivirus/clamav-antivirus.py %{buildroot}%{_bindir}/dukiwi-shield
+rm -rf %{buildroot}
+mkdir -p %{buildroot}
+cp -a tree/. %{buildroot}/
+install -D -m 644 dukiwi.repo %{buildroot}%{_sysconfdir}/yum.repos.d/dukiwi.repo
+
+%post
+mkdir -p /var/lib/clamav-antivirus
+# Anciens noms du fichier de dépôt (dukiwi-clamav < 1.25.1, nom de 1.25.1) : même dépôt : même dépôt, retiré pour ne pas le lister deux fois
+rm -f /etc/yum.repos.d/dukiwi-clamav.repo /etc/yum.repos.d/dukiwi-clamav.repo.rpmsave /etc/yum.repos.d/linux-shield.repo /etc/yum.repos.d/linux-shield.repo.rpmsave
+if [ "$1" = "1" ] && [ ! -f /var/lib/clamav-antivirus/state.json ]; then
+    touch /var/lib/clamav-antivirus/first-scan-pending
+fi
+# clamd@scan : Fedora livre LocalSocket commenté dans scan.conf ; sans lui, pas de moteur clamd (clamscan lent)
+if [ -f /etc/clamd.d/scan.conf ] && ! grep -q '^LocalSocket' /etc/clamd.d/scan.conf; then
+    sed -i '0,/^#\s*LocalSocket\s/s|^#\s*LocalSocket\s\+\(\S\+\)|LocalSocket \1|' /etc/clamd.d/scan.conf
+    grep -q '^LocalSocket' /etc/clamd.d/scan.conf || echo 'LocalSocket /run/clamd.scan/clamd.sock' >> /etc/clamd.d/scan.conf
+fi
+systemctl enable clamd@scan.service >/dev/null 2>&1 || true
+systemctl enable clamav-freshclam.service >/dev/null 2>&1 || true
+systemctl start clamav-freshclam.service >/dev/null 2>&1 || true
+# Service renommé (1.31.0) : dukiwi-shield-daemon.service (alias clamav-antivirus-daemon.service). Les unités des versions
+# précédentes (fichiers encore présents pendant %post) sont arrêtées et désactivées
+for old in clamav-antivirus-daemon linux-shield-daemon; do
+    if [ -f %{_unitdir}/$old.service ] && [ ! -L %{_unitdir}/$old.service ]; then
+        systemctl disable --now $old.service >/dev/null 2>&1 || true
+    fi
+done
+systemctl daemon-reload >/dev/null 2>&1 || true
+udevadm control --reload-rules >/dev/null 2>&1 || true
+/opt/clamav-antivirus/clamav-antivirus-browser-setup install >/dev/null 2>&1 || true
+systemctl enable dukiwi-shield-daemon.service >/dev/null 2>&1 || true
+systemctl enable clamav-antivirus-update.timer >/dev/null 2>&1 || true
+systemctl restart dukiwi-shield-daemon.service >/dev/null 2>&1 || true
+systemctl start clamav-antivirus-update.timer >/dev/null 2>&1 || true
+pkill -f "/opt/clamav-antivirus/clamav-antivirus.py" >/dev/null 2>&1 || true
+if command -v update-desktop-database >/dev/null 2>&1; then update-desktop-database /usr/share/applications/ >/dev/null 2>&1 || true; fi
+if command -v restorecon >/dev/null 2>&1; then restorecon -R /opt/clamav-antivirus /var/lib/clamav-antivirus >/dev/null 2>&1 || true; fi
+
+%preun
+if [ "$1" = "0" ]; then
+    /opt/clamav-antivirus/clamav-antivirus-browser-setup remove >/dev/null 2>&1 || true
+    pkill -f "/opt/clamav-antivirus/clamav-antivirus.py" >/dev/null 2>&1 || true
+    systemctl stop clamav-antivirus-update.timer >/dev/null 2>&1 || true
+    systemctl disable clamav-antivirus-update.timer >/dev/null 2>&1 || true
+    systemctl stop dukiwi-shield-daemon.service >/dev/null 2>&1 || true
+    systemctl disable dukiwi-shield-daemon.service >/dev/null 2>&1 || true
+fi
+
+%postun
+systemctl daemon-reload >/dev/null 2>&1 || true
+udevadm control --reload-rules >/dev/null 2>&1 || true
 
 %files
-%{_bindir}/dukiwi-shield
+/opt/clamav-antivirus
+%{_unitdir}/dukiwi-shield-daemon.service
+%{_unitdir}/clamav-antivirus-update.service
+%{_unitdir}/clamav-antivirus-update.timer
+%{_udevrulesdir}/*.rules
+%{_datadir}/applications/clamav-antivirus.desktop
+%{_datadir}/nemo/actions/clamav-antivirus-nemo.nemo_action
+%{_datadir}/polkit-1/actions/com.dukiwi.clamav-antivirus.policy
+%config(noreplace) %{_sysconfdir}/xdg/autostart/clamav-antivirus-autostart.desktop
+%config(noreplace) %{_sysconfdir}/yum.repos.d/dukiwi.repo
+
+%changelog
+* Thu Oct 15 2026 Dukiwi SA <info@dukiwi.ch> - %{version}-1
+- Prise en charge de Fedora : dnf, rpm, firewalld, SELinux
