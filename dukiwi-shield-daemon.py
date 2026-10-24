@@ -72,6 +72,8 @@ import dukiwi_shield_urlguard  # noqa: E402
 import dukiwi_shield_guard  # noqa: E402
 import dukiwi_shield_protect as protect  # noqa: E402
 import dukiwi_shield_hygiene as hygiene  # noqa: E402
+import dukiwi_shield_audit as audit  # noqa: E402
+import dukiwi_shield_folders  # noqa: E402
 from dukiwi_shield_common import (  # noqa: E402
     VERSION, SYSTEM_STATE_DIR, SYSTEM_LOG_DIR, DAEMON_SOCKET,
     SYSTEM_STATE_FILE, SYSTEM_QUARANTINE_DIR, SYSTEM_PROGRESS_FILE, SYSTEM_SCAN_CACHE_DB, SYSTEM_SECRET_FILE,
@@ -3021,7 +3023,8 @@ def firmware_updates():
 # Catégories du journal de sécurité (lignes du journal du service, par mots-clés)
 JOURNAL_RULES = [
     ("privacy", ("privacy:",)), ("network", ("⚠ certificate", "⚠ redirect")),
-    ("integrity", ("⚠ extension", "⚠ ssh key", "⚠ suid", "ssh key", "suid")),
+    ("integrity", ("⚠ extension", "⚠ ssh key", "⚠ suid", "ssh key", "suid", "malicious pypi", "malicious npm")),
+    ("accounts", ("⚠ login:", "login: night")), ("behaviour", ("keyboard read by", "protected folders")),
     ("behaviour", ("⚠ info:", "⚠ danger:", "burst")), ("network", ("⚠ connection", "connection ")),
     ("firewall", ("firewall", "ufw", "firewalld", "port ", "profile ", "--force ")), ("approvals", ("admin unlock", "admin lock")),
     ("scan", ("■ interrupted", "■ clean", "■ infected", "▶ scan")), ("network", ("network", "gateway", "wi-fi", "wifi")),
@@ -3035,7 +3038,8 @@ ALERT_CATEGORY = {"burst": "behaviour", "connection": "network", "download": "sc
                   "usb_keyboard": "usb", "network": "network", "account": "accounts", "honeypot": "honeypot", "mail": "mail",
                   "update": "updates", "upload": "network", "timeshift": "backup", "ransomware": "behaviour",
                   "miner": "behaviour", "privacy": "privacy", "certificate": "network", "redirect": "network",
-                  "extension": "integrity", "ssh_key": "integrity", "suid": "integrity"}
+                  "extension": "integrity", "ssh_key": "integrity", "suid": "integrity", "keylogger": "behaviour", "login": "accounts",
+                  "dev_package": "integrity", "protected": "behaviour"}
 
 
 def journal_category(text):
@@ -3279,7 +3283,8 @@ def collect_checklist(daemon):
         daemon.state.update(known_users=names)
     # Qualité des nouveaux mots de passe (pam_pwquality)
     pol = daemon.cached("password_policy", 600, hygiene.password_policy)
-    add("password_policy", "ok" if pol["ok"] else "warn", 2, f"{pol['module'] or '—'} · minlen {pol['minlen']}", params={"minlen": hygiene.PWQ_MINLEN})
+    add("password_policy", "ok" if pol["ok"] else "warn", 2, f"pam_{pol['module']} · minlen {pol['minlen']}" if pol["module"] else "pam_pwquality —",
+        params={"minlen": hygiene.PWQ_MINLEN})
     # Réglages de sécurité des navigateurs
     browsers = daemon.cached("browser_security", 600, lambda: hygiene.browser_security(users))
     issues = [b for b in browsers if b["issues"]]
@@ -3314,6 +3319,21 @@ def collect_checklist(daemon):
     dns_state = daemon.state.get("dns_filter") or {}
     add("filtered_dns", "na" if not dns["usable"] and not dns["active"] else ("ok" if dns["active"] or dns_state.get("suspended") else "warn"), 2,
         dns["provider"] or ("enterprise" if dns_state.get("suspended") else ""))
+    # Conteneurs : socket Docker ouvert, groupes docker/lxd (équivalent administrateur), conteneurs privilégiés
+    cont = daemon.cached("containers", 600, lambda: audit.container_audit(users))
+    c_issues = [i for i in cont["issues"] if i["level"] != "info"]
+    add("containers", "na" if not cont["available"] and not c_issues else ("fail" if any(i["level"] == "fail" for i in c_issues) else ("warn" if c_issues else "ok")), 3,
+        ", ".join(f"{i['key']}: {i['detail']}" for i in c_issues[:5]), params={"issues": cont["issues"][:12]})
+    # Applications Flatpak qui sortent de leur bac à sable (tout le disque, service Flatpak)
+    fp_apps = daemon.flatpak_status()
+    fp_bad = [a for a in fp_apps if not a["acknowledged"] and set(a["risks"]) & {"fs_host", "sandbox_escape"}]
+    add("flatpak_permissions", "na" if not shutil.which("flatpak") else ("warn" if fp_bad else "ok"), 2,
+        ", ".join(a["app"] for a in fp_bad[:6]), params={"apps": [{k: a[k] for k in ("app", "user", "risks", "acknowledged")} for a in fp_apps[:20]]})
+    # Paquets pip / npm malveillants
+    devp = daemon.state.get("dev_packages") or {}
+    add("dev_packages", "unknown" if not devp else ("fail" if devp.get("malicious") else "ok"), 4,
+        ", ".join(f"{m['name']} {m['version']} ({m['ecosystem']})" for m in (devp.get("malicious") or [])[:5]),
+        params={"counts": devp.get("counts") or {}, "malicious": (devp.get("malicious") or [])[:10]})
     # Fichiers SUID / SGID qu'aucun paquet ne livre (porte dérobée classique pour redevenir root)
     suid = daemon.suid_status()
     unowned = [u for u in suid.get("unowned") or [] if not u.get("acknowledged")]
@@ -3714,6 +3734,11 @@ def collect_persistence():
                                    "name": str(a.get("defaultLocale", {}).get("name") or a.get("id", ""))[:80],
                                    "version": str(a.get("version", "")), "from_store": a.get("signedState", 0) not in (0, None) or a.get("location") == "app-system-defaults",
                                    "enabled": bool(a.get("active")), "key": f"firefox:{user}:{a.get('id', '')}"})
+    for user, home in user_homes():
+        try:
+            extensions += audit.editor_extensions(user, home)       # VS Code, VSCodium, Cursor, Windsurf
+        except Exception:  # noqa: BLE001
+            pass
     return {"checked_at": now_iso(), "items": items, "extensions": extensions,
             "counts": {"items": len(items), "untrusted": sum(1 for it in items if not it["trusted"]),
                        "extensions": len(extensions), "ext_outside_store": sum(1 for e in extensions if not e["from_store"])}}
@@ -4861,6 +4886,7 @@ class Daemon:
         self.hid_guard = HidGuard(self)
         self.guard = dukiwi_shield_guard.SecurityGuard(self, {"log": log, "write_log": self.write_log, "exe_trusted": self.monitor.exe_trusted,
                                                                "dconf_read": dconf_read, "human_users": human_users})
+        self.folders = dukiwi_shield_folders.ProtectedFolders(self, {"log": log, "write_log": self.write_log})
         self.network = NetworkMonitor(self)
         self.connections = ConnectionMonitor(self)
         self.updater = UpdateChecker(self)
@@ -4983,7 +5009,7 @@ class Daemon:
             self.write_log(f"⚠ {alert.get('kind')}: {alert.get('title', '')} {alert.get('detail', '')}")
         elif alert.get("kind") in ("mail", "url"):
             self.write_log(f"⚠ {alert.get('kind')} {alert.get('severity')}: {alert.get('title', '')} — {alert.get('detail', '')} ({alert.get('source', '')})")
-        elif alert.get("kind") in ("ransomware", "privacy", "miner", "certificate", "redirect", "extension", "ssh_key", "suid"):
+        elif alert.get("kind") in ("ransomware", "privacy", "miner", "certificate", "redirect", "extension", "ssh_key", "suid", "keylogger", "login", "dev_package", "protected"):
             pass                                        # journalisé par le centre de sécurité (dukiwi_shield_guard)
         elif alert.get("kind") == "honeypot":
             self.write_log(f"⚠ honeypot {alert.get('severity')}: {alert.get('ip')} ({alert.get('host') or '?'}) "
@@ -6322,7 +6348,7 @@ class Daemon:
                 for e in pers["extensions"]:
                     old = prev_ext.get(e["key"])
                     if old is None:
-                        severity = "warn" if (not e["from_store"] or "all_sites" in (e.get("perms") or []) or "nativeMessaging" in (e.get("perms") or [])) else "info"
+                        severity = "warn" if (not e["from_store"] or any(p_ in (e.get("perms") or []) for p_ in ("all_sites", "nativeMessaging", "sideloaded"))) else "info"
                         self.write_log(f"⚠ extension: new {e['browser']} extension {e['name']} ({e['user']}) perms {','.join(e.get('perms') or []) or '-'}")
                         self.publish_alert({"kind": "extension", "subtype": "new", "severity": severity, "time": now_iso(), "title": e["name"],
                                             "detail": f"{e['browser']} · {e['user']}", "extension": e, "perms": e.get("perms") or [],
@@ -6380,11 +6406,33 @@ class Daemon:
         log(f"SUID/SGID : {len(paths)} fichier(s), {len(unowned)} hors paquets")
         return info
 
+    def flatpak_status(self):
+        """Applications Flatpak aux permissions sensibles, avec l'état « ignoré » (par application et jeu de droits)."""
+        apps = self.cached("flatpak_audit", 3600, lambda: audit.flatpak_audit(human_users()))
+        acks = self.state.get("acknowledged_flatpak") or {}
+        return [dict(a, acknowledged=set((acks.get(a["app"]) or {}).get("risks") or []) >= set(a["risks"])) for a in apps]
+
     def suid_status(self):
         info = dict(self.state.get("suid") or {})
         acks = self.state.get("acknowledged_suid") or {}
         info["unowned"] = [dict(u, acknowledged=acks.get(u["path"], {}).get("sha256") == u.get("sha256")) for u in info.get("unowned") or []]
         return info
+
+    # ── Paquets de développement malveillants (pip, npm) ─────────────────
+    def refresh_dev_packages(self):
+        """Paquets pip/npm installés hors du système, comparés aux fiches « MAL- » d'OSV ; un nouveau → alerte rouge."""
+        res = audit.malicious_packages(human_users(), osv_query)
+        prev = {(m["ecosystem"], m["name"], m["version"]) for m in ((self.state.get("dev_packages") or {}).get("malicious") or [])}
+        self.state.update(dev_packages=res)
+        for m in res["malicious"]:
+            if (m["ecosystem"], m["name"], m["version"]) in prev:
+                continue
+            self.write_log(f"⚠ danger: malicious {m['ecosystem']} package {m['name']} {m['version']} ({m['where']}) {', '.join(m['ids'])}")
+            self.publish_alert({"kind": "dev_package", "severity": "danger", "time": now_iso(), "title": m["name"], "detail": m["where"],
+                                "ecosystem": m["ecosystem"], "version": m["version"], "ids": m["ids"], "path": m["where"],
+                                "pid": 0, "comm": "", "exe": "", "count": 0, "top_dir": m["where"], "reasons": ["malicious_package"], "sample": []})
+        log(f"Paquets de développement : {res['counts']} — {len(res['malicious'])} malveillant(s)")
+        return res
 
     # ── Résumé de la semaine ─────────────────────────────────────────────
     def weekly_summary(self, days=7):
@@ -6606,6 +6654,11 @@ class Daemon:
                 log(f"Firmware : {e}")
             # Persistance & extensions
             self.refresh_persistence()
+            # Paquets pip / npm malveillants (fiches MAL- d'OSV)
+            try:
+                self.refresh_dev_packages()
+            except Exception as e:  # noqa: BLE001
+                log(f"Paquets de développement : {e}")
             # Fichiers SUID / SGID hors paquets
             if os.geteuid() == 0 and not TEST_MODE:
                 try:
@@ -7448,6 +7501,12 @@ class Daemon:
 
     def admin_required(self, cmd, req, uid):
         """Actions réservées à un administrateur authentifié (pkexec → unlock)."""
+        # Dossiers protégés : n'importe quel programme peut parler au service ; un logiciel malveillant ne doit pouvoir ni
+        # s'autoriser lui-même, ni couper la protection, ni retirer un dossier, sans le mot de passe administrateur.
+        if cmd in ("protected_allow", "protected_folder_remove"):
+            return not (cmd == "protected_allow" and req.get("remove"))
+        if cmd == "set_settings" and (req.get("settings") or {}).get("protected_folders") is False and self.settings.get("protected_folders"):
+            return True
         if cmd == "firewall_set":
             return not req.get("enabled")
         if cmd == "firewall_profile":
@@ -8235,7 +8294,45 @@ class Daemon:
                     "privacy": [dict(v, exe=k) for k, v in (self.state.get("privacy_allowed") or {}).items()],
                     "certs": [dict(v, fp=k) for k, v in (self.state.get("acknowledged_certs") or {}).items()],
                     "redirects": [dict(v, key=k) for k, v in (self.state.get("acknowledged_redirects") or {}).items()],
-                    "suid": [dict(v, path=k) for k, v in (self.state.get("acknowledged_suid") or {}).items()]}
+                    "suid": [dict(v, path=k) for k, v in (self.state.get("acknowledged_suid") or {}).items()],
+                    "flatpak": [dict(v, app=k) for k, v in (self.state.get("acknowledged_flatpak") or {}).items()]}
+
+        if cmd == "protected_status":
+            return {"ok": True, "protected": self.folders.snapshot()}
+
+        if cmd == "protected_allow":
+            exe = str(req.get("exe") or "")[:400]
+            if not exe.startswith("/"):
+                return {"ok": False, "error": "invalid_exe"}
+            allowed = [e for e in (self.state.get("protected_allowed") or []) if e != exe]
+            if not req.get("remove"):
+                allowed.append(exe)
+            self.state.update(protected_allowed=sorted(set(allowed)))
+            self.folders.reload.set()
+            self.write_log(f"protected folders: {'removed' if req.get('remove') else 'allowed'} {exe} by uid {uid}")
+            return {"ok": True, "protected": self.folders.snapshot()}
+
+        if cmd in ("protected_folder_add", "protected_folder_remove"):
+            path = os.path.realpath(str(req.get("path") or ""))
+            extra = [x for x in (self.state.get("protected_extra") or []) if x != path]
+            if cmd == "protected_folder_add":
+                if not os.path.isdir(path) or path in ("/", "/home", "/usr", "/etc", "/var", "/tmp") or path.startswith(("/proc", "/sys", "/dev", "/run")):
+                    return {"ok": False, "error": "invalid_path"}
+                try:
+                    if uid != 0 and os.stat(path).st_uid != uid:
+                        return {"ok": False, "error": "forbidden"}       # seulement ses propres dossiers
+                except OSError:
+                    return {"ok": False, "error": "invalid_path"}
+                extra.append(path)
+            self.state.update(protected_extra=sorted(set(extra)))
+            self.folders.reload.set()
+            self.write_log(f"protected folders: {'added' if cmd.endswith('add') else 'removed'} {path} by uid {uid}")
+            return {"ok": True, "protected": self.folders.snapshot()}
+
+        if cmd == "dev_packages":
+            if req.get("refresh"):
+                return {"ok": True, "dev_packages": self.refresh_dev_packages()}
+            return {"ok": True, "dev_packages": self.state.get("dev_packages") or {}}
 
         if cmd == "ssh_keys":
             return {"ok": True, "ssh_keys": self.guard.ssh_keys()}
@@ -8388,9 +8485,10 @@ class Daemon:
             # « Ignorer » un certificat racine (empreinte), un détournement réseau voulu (proxy d'entreprise, hosts…) ou un
             # fichier SUID installé à la main (chemin + empreinte)
             group = req.get("group")
-            if group not in ("certs", "redirects", "suid"):
+            if group not in ("certs", "redirects", "suid", "flatpak"):
                 return {"ok": False, "error": "invalid_group"}
-            state_key = {"certs": "acknowledged_certs", "redirects": "acknowledged_redirects", "suid": "acknowledged_suid"}[group]
+            state_key = {"certs": "acknowledged_certs", "redirects": "acknowledged_redirects", "suid": "acknowledged_suid",
+                         "flatpak": "acknowledged_flatpak"}[group]
             acks = dict(self.state.get(state_key) or {})
             if req.get("remove"):
                 keys = [str(k) for k in (req.get("keys") or [])][:50]
@@ -8398,19 +8496,23 @@ class Daemon:
                     acks.pop(k, None)
             else:
                 current = {"certs": self.guard.root_cas, "redirects": self.guard.redirects,
-                           "suid": lambda: self.suid_status().get("unowned") or []}[group]()
+                           "suid": lambda: self.suid_status().get("unowned") or [],
+                           "flatpak": lambda: self.flatpak_status()}[group]()
                 wanted = set(str(k) for k in (req.get("keys") or []))
-                field = {"certs": "fp", "redirects": "key", "suid": "path"}[group]
+                field = {"certs": "fp", "redirects": "key", "suid": "path", "flatpak": "app"}[group]
                 items = [c for c in current if not c["acknowledged"] and (not wanted or c[field] in wanted)]
                 if not items:
                     return {"ok": False, "error": "nothing_to_ignore"}
                 for c in items:
-                    acks[c[field]] = {"name": c.get("name") or c.get("value") or c.get("path") or "", "at": now_iso()}
+                    acks[c[field]] = {"name": c.get("name") or c.get("value") or c.get("path") or c.get("app") or "", "at": now_iso()}
+                    if group == "flatpak":
+                        acks[c[field]]["risks"] = c.get("risks")              # réapparaît si l'application obtient d'autres droits
                     if group == "suid":
                         acks[c[field]]["sha256"] = c.get("sha256")          # réapparaît si le fichier change
                 keys = [c[field] for c in items]
             self.state.update(**{state_key: acks})
             self.guard.invalidate()
+            self._check_cache.pop("flatpak_audit", None)
             self.write_log(f"{group} {'re-enabled' if req.get('remove') else 'acknowledged'} by uid {uid}: {', '.join(k[:40] for k in keys)}")
             checklist = self.refresh_checklist()
             return {"ok": True, "n": len(keys), "checklist": checklist}
@@ -8878,6 +8980,7 @@ class Daemon:
         self.onaccess.start()
         self.hid_guard.start()
         self.guard.start()
+        self.folders.start()
         self.network.start()
         self.connections.start()
         self.usb.start()

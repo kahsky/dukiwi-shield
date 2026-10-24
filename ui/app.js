@@ -424,6 +424,7 @@ function onSecurityData(data) {
     if (type === 'exposure') { onExposureData(data.data); return; }
     if (type === 'incident') { onIncidentData(data.data); return; }
     if (type === 'ssh_keys') { onSshKeysData(data.data); return; }
+    if (type === 'protected') { onProtectedData(data.data); return; }
     if (type === 'weekly_summary') { onWeeklySummary(data.data); return; }
     if (type === 'vulns') { renderVulns(data.refreshing); }
     else if (type === 'checklist') renderChecklist();
@@ -473,6 +474,9 @@ function renderChecklist() {
     const order = { fail: 0, warn: 1, unknown: 2, ok: 3, na: 4 };
     items.forEach(i => { if (i.key === 'secrets' && i.params && (i.params.secrets || []).length) i.detail = i.params.secrets.map(s => `${s.user}: ${s.name} (${t('check.secrets.kind.' + s.kind)})`).join(', '); });
     items.forEach(i => { if (i.key === 'browser_security' && i.params && (i.params.browsers || []).length) i.detail = i.params.browsers.map(b => `${b.browser} (${b.user}) : ${b.issues.map(x => t('check.browser_security.issue.' + x)).join(', ')}`).join(' · '); });
+    items.forEach(i => { if (i.key === 'containers' && i.params && (i.params.issues || []).length) i.detail = i.params.issues.filter(x => x.level !== 'info').map(x => `${t('check.containers.issue.' + x.key)} (${x.detail})`).join(', '); });
+    items.forEach(i => { if (i.key === 'flatpak_permissions' && i.params) { const bad = (i.params.apps || []).filter(a => !a.acknowledged && a.risks.some(r => r === 'fs_host' || r === 'sandbox_escape')); if (bad.length) i.detail = bad.map(a => `${a.app}${a.user ? ` (${a.user})` : ''} : ${a.risks.map(r => t('check.flatpak_permissions.risk.' + r)).join(', ')}`).join(' · '); } });
+    items.forEach(i => { if (i.key === 'dev_packages' && i.params && !(i.params.malicious || []).length) { const c = i.params.counts || {}; i.detail = t('check.dev_packages.counted', { pip: c.PyPI || 0, npm: c.npm || 0 }); } });
     items.forEach(i => { if (i.key === 'suid_files' && i.params && (i.params.files || []).length) i.detail = i.params.files.map(f => `${f.path} (${f.suid ? 'SUID' : 'SGID'} ${f.owner})`).join(', '); });
     items.forEach(i => { if (i.key === 'root_ca' && i.params && (i.params.certs || []).length) i.detail = i.params.certs.map(c => `${c.name} (${(c.stores || []).join(', ')})`).join(', '); });
     items.forEach(i => { if (i.key === 'network_redirect' && i.params && (i.params.redirects || []).length) i.detail = i.params.redirects.map(r => `${t('check.network_redirect.type.' + r.type)}${lang === 'fr' ? ' : ' : ': '}${r.value}`).join(', '); });
@@ -1196,7 +1200,8 @@ function acknowledgePersistence(key, remove = false) { sendToBackend({ action: '
 
 function onTrustedList(data) {
     trustedData = { programs: (data && data.programs) || [], acknowledged: (data && data.acknowledged) || [], usb: (data && data.usb) || [], hid: (data && data.hid) || [], sudoers: (data && data.sudoers) || [],
-        privacy: (data && data.privacy) || [], certs: (data && data.certs) || [], redirects: (data && data.redirects) || [], suid: (data && data.suid) || [] };
+        privacy: (data && data.privacy) || [], certs: (data && data.certs) || [], redirects: (data && data.redirects) || [], suid: (data && data.suid) || [],
+        flatpak: (data && data.flatpak) || [] };
     renderTrusted();
 }
 
@@ -1204,8 +1209,8 @@ function renderTrusted() {
     const el = $('trustedList');
     if (!el) return;
     const progs = trustedData.programs, ack = trustedData.acknowledged, usb = trustedData.usb || [], hid = trustedData.hid || [], sud = trustedData.sudoers || [];
-    const priv = trustedData.privacy || [], certs = trustedData.certs || [], redir = trustedData.redirects || [], suid = trustedData.suid || [];
-    if (!progs.length && !ack.length && !usb.length && !hid.length && !sud.length && !priv.length && !certs.length && !redir.length && !suid.length) { el.innerHTML = `<p class="text-muted">${t('settings.trusted.none')}</p>`; return; }
+    const priv = trustedData.privacy || [], certs = trustedData.certs || [], redir = trustedData.redirects || [], suid = trustedData.suid || [], fpk = trustedData.flatpak || [];
+    if (!progs.length && !ack.length && !usb.length && !hid.length && !sud.length && !priv.length && !certs.length && !redir.length && !suid.length && !fpk.length) { el.innerHTML = `<p class="text-muted">${t('settings.trusted.none')}</p>`; return; }
     const row = (badge, name, sub, at, js) => `<div class="package-item">
             <span class="scope-badge scope-user">${badge}</span>
             <span class="package-name">${escapeHtml(name)}</span>
@@ -1216,6 +1221,7 @@ function renderTrusted() {
     el.innerHTML = [
         ...priv.map(p => row(t(`settings.trusted.privacy_${p.device === 'microphone' ? 'microphone' : 'camera'}`), p.comm || p.exe, p.exe, p.at, `sendToBackend({action:'privacy_allow', remove:true, exe:'${escapeJs(p.exe)}'})`)),
         ...certs.map(c => row(t('settings.trusted.cert'), c.name || c.fp, `SHA-256 ${(c.fp || '').slice(0, 16)}…`, c.at, `sendToBackend({action:'guard_ack', group:'certs', remove:true, keys:['${escapeJs(c.fp)}']})`)),
+        ...fpk.map(f => row(t('settings.trusted.flatpak'), f.app, (f.risks || []).map(r => t('check.flatpak_permissions.risk.' + r)).join(', '), f.at, `sendToBackend({action:'guard_ack', group:'flatpak', remove:true, keys:['${escapeJs(f.app)}']})`)),
         ...suid.map(f => row(t('settings.trusted.suid'), f.path, `sha256 ${(f.sha256 || '').slice(0, 12)}…`, f.at, `sendToBackend({action:'guard_ack', group:'suid', remove:true, keys:['${escapeJs(f.path)}']})`)),
         ...redir.map(r => row(t('settings.trusted.redirect'), r.name || r.key, r.key, r.at, `sendToBackend({action:'guard_ack', group:'redirects', remove:true, keys:['${escapeJs(r.key)}']})`)),
         ...sud.map(s => `<div class="package-item">
@@ -1289,6 +1295,9 @@ function onSettingsData(data) {
     if ($('setDecoys')) $('setDecoys').checked = sys.ransomware_decoys !== false;
     if ($('setPrivacyWatch')) $('setPrivacyWatch').checked = sys.privacy_watch !== false;
     if ($('setMinerWatch')) $('setMinerWatch').checked = sys.miner_watch !== false;
+    if ($('setKeyloggerWatch')) $('setKeyloggerWatch').checked = sys.keylogger_watch !== false;
+    if ($('setLoginWatch')) $('setLoginWatch').checked = sys.login_watch !== false;
+    if ($('setProtectedFolders')) $('setProtectedFolders').checked = sys.protected_folders === true;
     if ($('setMailScan')) $('setMailScan').checked = sys.mail_scan_attachments !== false;
     $('setGeoip').checked = sys.geoip_lookup !== false;
     if ($('setGeoipKey')) $('setGeoipKey').value = sys.geoip_api_key || '';
@@ -1304,7 +1313,7 @@ function onSettingsData(data) {
     if ($('setScanCacheDays')) $('setScanCacheDays').value = sys.scan_cache_days ?? 30;
     if ($('telemetryLast')) $('telemetryLast').textContent = data.telemetry_sent ? t('settings.telemetry.last', { rel: formatRelative(data.telemetry_sent) }) : '';
     const locked = new Set(data.locked || []);
-    const map = { setUploadMonitor: 'upload_monitor', setUploadGb: 'upload_alert_gb', setUploadHours: 'upload_window_hours', setBurstMonitor: 'burst_monitor', setBurstInfo: 'burst_info_threshold', setBurstDanger: 'burst_danger_threshold', setBurstWindow: 'burst_window_sec', setUsbAuto: 'usb_auto_scan', setUsbMax: 'usb_auto_scan_max_gib', setUpdateTime: 'update_hour', setFamilyMode: 'family_mode', setOnAccess: 'on_access_scan', setHidGuard: 'usb_keyboard_guard', setDecoys: 'ransomware_decoys', setPrivacyWatch: 'privacy_watch', setMinerWatch: 'miner_watch', setAutoResponse: 'auto_response', setConnectionMonitor: 'connection_monitor', setHoneypot: 'honeypot', setUrlGuard: 'url_guard', setUrlGuardResolve: 'url_guard_resolve', setMailScan: 'mail_scan_attachments', setGeoip: 'geoip_lookup', setGeoipKey: 'geoip_api_key', setIntegrityWeekly: 'integrity_weekly', setIntegrityDay: 'integrity_day', setIntegrityHour: 'integrity_hour', setAppUpdateCheck: 'app_update_check', setAppUpdateAuto: 'app_update_auto', setWeekly: 'weekly_scan', setWeeklyDay: 'weekly_scan_day', setWeeklyHour: 'weekly_scan_hour', setBackupCheck: 'backup_check', setTimeshiftCheck: 'timeshift_check', setTelemetry: 'telemetry', setAutoHarden: 'auto_harden', setScanCacheDays: 'scan_cache_days' };
+    const map = { setUploadMonitor: 'upload_monitor', setUploadGb: 'upload_alert_gb', setUploadHours: 'upload_window_hours', setBurstMonitor: 'burst_monitor', setBurstInfo: 'burst_info_threshold', setBurstDanger: 'burst_danger_threshold', setBurstWindow: 'burst_window_sec', setUsbAuto: 'usb_auto_scan', setUsbMax: 'usb_auto_scan_max_gib', setUpdateTime: 'update_hour', setFamilyMode: 'family_mode', setOnAccess: 'on_access_scan', setHidGuard: 'usb_keyboard_guard', setDecoys: 'ransomware_decoys', setPrivacyWatch: 'privacy_watch', setMinerWatch: 'miner_watch', setKeyloggerWatch: 'keylogger_watch', setLoginWatch: 'login_watch', setProtectedFolders: 'protected_folders', setAutoResponse: 'auto_response', setConnectionMonitor: 'connection_monitor', setHoneypot: 'honeypot', setUrlGuard: 'url_guard', setUrlGuardResolve: 'url_guard_resolve', setMailScan: 'mail_scan_attachments', setGeoip: 'geoip_lookup', setGeoipKey: 'geoip_api_key', setIntegrityWeekly: 'integrity_weekly', setIntegrityDay: 'integrity_day', setIntegrityHour: 'integrity_hour', setAppUpdateCheck: 'app_update_check', setAppUpdateAuto: 'app_update_auto', setWeekly: 'weekly_scan', setWeeklyDay: 'weekly_scan_day', setWeeklyHour: 'weekly_scan_hour', setBackupCheck: 'backup_check', setTimeshiftCheck: 'timeshift_check', setTelemetry: 'telemetry', setAutoHarden: 'auto_harden', setScanCacheDays: 'scan_cache_days' };
     Object.entries(map).forEach(([id, key]) => { const el = $(id); if (!el) return; const row = el.closest('.setting-row'); if (locked.has(key)) { el.disabled = true; if (row) { row.classList.add('locked'); row.title = t('settings.locked_note'); } } else if (row) { row.classList.remove('locked'); row.title = ''; } });
     const banner = $('policyBanner');
     if (banner) { banner.hidden = !data.policy; if (data.policy) banner.textContent = t('settings.policy.banner', { name: data.policy.name || '—', signed: data.policy.signed ? t('settings.policy.signed') : '', n: (data.locked || []).length }) + (data.allowlist && data.allowlist.version ? ' · ' + t('settings.allowlist', { version: data.allowlist.version, n: data.allowlist.patterns || 0 }) : ''); }
@@ -1387,6 +1396,9 @@ function saveSettings() {
         ransomware_decoys: $('setDecoys') ? $('setDecoys').checked : true,
         privacy_watch: $('setPrivacyWatch') ? $('setPrivacyWatch').checked : true,
         miner_watch: $('setMinerWatch') ? $('setMinerWatch').checked : true,
+        keylogger_watch: $('setKeyloggerWatch') ? $('setKeyloggerWatch').checked : true,
+        login_watch: $('setLoginWatch') ? $('setLoginWatch').checked : true,
+        protected_folders: $('setProtectedFolders') ? $('setProtectedFolders').checked : false,
         geoip_lookup: $('setGeoip').checked,
         geoip_api_key: $('setGeoipKey') ? $('setGeoipKey').value.trim() : '',
         integrity_weekly: $('setIntegrityWeekly').checked,
@@ -1759,7 +1771,7 @@ function onAlertEvent(alert) {
 }
 
 // Centre de sécurité : leurre anti-rançongiciel, caméra/micro, mineur, certificat racine, détournement réseau
-const GUARD_KINDS = ['ransomware', 'privacy', 'miner', 'certificate', 'redirect', 'extension', 'ssh_key', 'suid'];
+const GUARD_KINDS = ['ransomware', 'privacy', 'miner', 'certificate', 'redirect', 'extension', 'ssh_key', 'suid', 'keylogger', 'login', 'dev_package', 'protected'];
 
 function guardAlertText(a) {
     const prog = a.comm || a.title || '?';
@@ -1772,6 +1784,12 @@ function guardAlertText(a) {
     if (a.kind === 'extension') return t(`popup.extension.${a.subtype || 'new'}`, { name: a.title || '?', where: a.detail || '', perms: (a.perms || []).map(p => t('ext.perm.' + p) !== 'ext.perm.' + p ? t('ext.perm.' + p) : p).join(', ') || t('ext.perm.none') });
     if (a.kind === 'ssh_key') return t('popup.ssh_key.body', { user: a.user || a.title || '?', comment: a.detail || '?', fp: a.fp || '' });
     if (a.kind === 'suid') return t('popup.suid.body', { path: a.path || a.detail || '?', owner: a.owner || '?' });
+    if (a.kind === 'keylogger') return `${t('popup.keylogger.body', { program: prog, device: a.detail || '' })} ${t('alert.reason.' + reason)}`;
+    if (a.kind === 'login') return a.subtype === 'night_local' ? t('popup.login.night_local', { user: a.title || '?', hour: a.hour || '' })
+        : `${t('popup.login.ssh', { user: a.title || '?', ip: a.ip || '?', country: a.country || '?', hour: a.hour || '', method: a.method || '' })} ${(a.reasons || []).map(r => t('alert.reason.' + r)).join(', ')}`;
+    if (a.kind === 'protected') return (a.reasons || [])[0] === 'protected_selftest_failed' ? t('protected.error.' + (a.detail || 'internal'))
+        : t('popup.protected.body', { program: prog, exe: a.detail || '' });
+    if (a.kind === 'dev_package') return t('popup.dev_package.body', { name: a.title || '?', version: a.version || '', ecosystem: a.ecosystem || '', where: a.detail || '', ids: (a.ids || []).join(', ') });
     return t(`popup.redirect.${a.subtype || 'hosts'}`, { value: a.title || '?', where: a.detail || '' });
 }
 
@@ -1787,6 +1805,9 @@ function renderGuardAlert(a) {
             btn(t('popup.btn.resume'), `sendToBackend({action:'process_action', pid:${a.pid}, action:'continue'})`));
     }
     if (a.kind === 'privacy' && a.exe) actions.push(btn(t('popup.privacy.allow'), `sendToBackend({action:'privacy_allow', exe:'${escapeJs(a.exe)}', comm:'${escapeJs(a.comm || '')}', device:'${escapeJs(a.device || '')}'})`));
+    if (a.kind === 'protected' && (a.script || a.exe)) actions.push(btn(t('popup.protected.allow'), `sendToBackend({action:'protected_allow', exe:'${escapeJs(a.script || a.exe)}'})`));
+    if (a.kind === 'keylogger' && a.exe) actions.push(btn(t('popup.btn.its_me'), `trustProgram('${escapeJs(a.exe)}','${escapeJs(a.comm || '')}')`));
+    if ((a.kind === 'keylogger' || a.kind === 'login') && a.severity === 'danger') actions.push(btn(t('isolate.button'), `openSection('firewall','isolate')`, 'danger'));
     if ((a.kind === 'ransomware' || a.kind === 'miner') && a.exe && a.pid) actions.push(btn(t('popup.btn.its_me'), `trustProgram('${escapeJs(a.exe)}','${escapeJs(a.comm || '')}')`));
     if (a.kind === 'ransomware' && a.top_dir) actions.push(btn(t('popup.btn.scan_folder'), `startScan('${escapeJs(a.top_dir)}')`));
     if (a.kind === 'certificate' && a.fp) actions.push(btn(t('security.ignore'), `sendToBackend({action:'guard_ack', group:'certs', keys:['${escapeJs(a.fp)}']})`));
@@ -3101,6 +3122,7 @@ function sectionsOf(tab) { return [...document.querySelectorAll(`#tab-${tab} .ac
 // Paramètres : général et popups ; Sécurité : score et checklist) ; les autres sections sont les pages du sous-menu.
 function showSubpage(tab, key, persist = true) {
     if (tab === 'security' && key === 'journal' && typeof loadJournal === 'function') { loadJournal(); sendToBackend({ action: 'get_security_data', type: 'weekly_summary' }); }
+    if (tab === 'security' && key === 'protected') sendToBackend({ action: 'get_security_data', type: 'protected' });
     if (tab === 'security' && key === 'sshkeys') sendToBackend({ action: 'get_security_data', type: 'ssh_keys' });
     if (tab === 'security' && key === 'encryption') loadEncryption();
     if (tab === 'firewall' && key === 'dns') loadDnsFilter();
@@ -3545,6 +3567,9 @@ const CHECK_FIX = {
     root_ca: null,
     network_redirect: null,
     suid_files: null,
+    containers: null,
+    flatpak_permissions: null,
+    dev_packages: null,
     login_failures: () => { switchTab('system'); setTimeout(() => { const el = $('alertsList'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 150); },
     hardening: () => openSection('security', 'hardening'),
 };
@@ -3555,7 +3580,8 @@ const CHECK_FIX_LABEL = { auto_updates: 'check.auto_updates.action', firmware: '
 
 /** Contrôles que l'utilisateur peut ignorer en connaissance de cause (« Ignorer ») : ports ouverts voulus (développement web…). */
 const CHECK_ACK = { open_ports: () => ackAllPorts(), open_vulns: () => ackAllVulns(), nopasswd_sudo: () => ackSudoers(),
-    root_ca: () => ackGuard('root_ca', 'certs'), network_redirect: () => ackGuard('network_redirect', 'redirects'), suid_files: () => ackGuard('suid_files', 'suid') };
+    root_ca: () => ackGuard('root_ca', 'certs'), network_redirect: () => ackGuard('network_redirect', 'redirects'), suid_files: () => ackGuard('suid_files', 'suid'),
+    flatpak_permissions: () => ackGuard('flatpak_permissions', 'flatpak') };
 
 /** « Ignorer » les certificats racine ajoutés (proxy d'entreprise, outil de développement) ou les détournements voulus. */
 async function ackGuard(key, group) {

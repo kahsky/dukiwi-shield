@@ -233,7 +233,7 @@
                     <option value="de">Deutsch</option>
                     <option value="it">Italiano</option>
                 </select></label>
-                <small class="version">v2.5.1 — <a href="#" class="credits-link" onclick="openCredits(); return false;" data-i18n="sidebar.credits">Crédits</a> · <a href="#" class="credits-link" onclick="openLegal(); return false;" data-i18n="legal.link">Avertissement</a></small>
+                <small class="version">v2.7.0 — <a href="#" class="credits-link" onclick="openCredits(); return false;" data-i18n="sidebar.credits">Crédits</a> · <a href="#" class="credits-link" onclick="openLegal(); return false;" data-i18n="legal.link">Avertissement</a></small>
             </div>
         </div>
     </aside>
@@ -989,6 +989,12 @@
                     <div id="journalBox"><p class="text-muted" data-i18n="sidebar.loading">Chargement…</p></div>
                 </div>
 
+                <div class="card card-protected" data-acc="protected" data-nav-i18n="nav.security.protected">
+                    <div class="card-title-row"><h4 data-i18n="protected.title">Dossiers protégés</h4><span class="badge" id="protectedBadge">…</span></div>
+                    <p class="text-muted" data-i18n="protected.intro"></p>
+                    <div id="protectedBox"><p class="text-muted" data-i18n="sidebar.loading">Chargement…</p></div>
+                </div>
+
                 <div class="card card-sshkeys" data-acc="sshkeys" data-nav-i18n="nav.security.sshkeys">
                     <div class="card-title-row"><h4 data-i18n="sshkeys.title">Clés SSH autorisées</h4><button class="btn btn-secondary btn-sm" onclick="sendToBackend({action:'get_security_data', type:'ssh_keys'})" data-i18n="system.refresh">Actualiser</button></div>
                     <p class="text-muted" data-i18n="sshkeys.intro"></p>
@@ -1297,6 +1303,9 @@
                     <p class="text-muted setting-note" data-i18n="settings.ransomware_decoys.note">Un fichier caché « .dukiwi-guard-… » est placé dans chaque dossier. Aucun programme n'a de raison d'y toucher : celui qui le modifie est suspendu et signalé. Ne le supprimez pas ; il est recréé automatiquement.</p>
                     <label class="setting-row toggle"><span data-i18n="settings.privacy_watch">Signaler les programmes qui utilisent la caméra ou le micro</span><input type="checkbox" id="setPrivacyWatch"></label>
                     <label class="setting-row toggle"><span data-i18n="settings.miner_watch">Détecter les mineurs de cryptomonnaie (pools, options de minage, processeur saturé)</span><input type="checkbox" id="setMinerWatch"></label>
+                    <label class="setting-row toggle"><span data-i18n="settings.protected_folders">Dossiers protégés : seuls les programmes approuvés peuvent ouvrir Documents, Images et Bureau</span><input type="checkbox" id="setProtectedFolders"></label>
+                    <label class="setting-row toggle"><span data-i18n="settings.keylogger_watch">Signaler les programmes qui lisent directement le clavier (espions)</span><input type="checkbox" id="setKeyloggerWatch"></label>
+                    <label class="setting-row toggle"><span data-i18n="settings.login_watch">Signaler les connexions inhabituelles (nouvelle adresse, nouveau pays, root, en pleine nuit)</span><input type="checkbox" id="setLoginWatch"></label>
                     <div class="setting-row"><span><span data-i18n="settings.sandbox">Bac à sable : clic droit sur un fichier › « Ouvrir dans un bac à sable » (sans réseau, sans accès à vos fichiers)</span> <span class="badge" id="sandboxBadge"></span></span><button class="btn btn-secondary btn-sm" id="btnSandboxInstall" onclick="sendToBackend({action:'install_package', name:'firejail'})" data-i18n="settings.sandbox.install" hidden>Installer firejail</button></div>
                     <label class="setting-row toggle"><span data-i18n="settings.honeypot">Pot de miel réseau : ports leurres à l'écoute, balayages de ports signalés</span><input type="checkbox" id="setHoneypot"></label>
                     <p class="text-muted setting-note" data-i18n="settings.honeypot.note">Actif par défaut. Les ports leurres (deux ports hauts tirés au sort, 23 et 2323) sont ouverts dans le pare-feu et apparaissent comme « pot de miel » dans les ports en écoute ; aucun service ne tourne derrière. Un appareil qui les touche ou balaie d'autres ports fermés est signalé par un popup, avec un bouton pour le bloquer.</p>

@@ -48,15 +48,15 @@ versions itself (popup or Security tab) and can install them on its own when the
 
 ### Direct download
 
-- Mint / Ubuntu: [dukiwi-shield_2.5.1_all.deb](https://www.dukiwi.com/repo/dukiwi-shield/dukiwi-shield_2.5.1_all.deb)
-- Fedora: [dukiwi-shield-2.5.1-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/dukiwi-shield-2.5.1-1.noarch.rpm)
+- Mint / Ubuntu: [dukiwi-shield_2.7.0_all.deb](https://www.dukiwi.com/repo/dukiwi-shield/dukiwi-shield_2.7.0_all.deb)
+- Fedora: [dukiwi-shield-2.7.0-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/dukiwi-shield-2.7.0-1.noarch.rpm)
 - All versions: [www.dukiwi.com/repo](https://www.dukiwi.com/repo)
 
 ### Installing a downloaded package by hand
 
 ```bash
-sudo apt install ./dukiwi-shield_2.5.1_all.deb          # Mint / Ubuntu
-sudo dnf install ./dukiwi-shield-2.5.1-1.noarch.rpm      # Fedora
+sudo apt install ./dukiwi-shield_2.7.0_all.deb          # Mint / Ubuntu
+sudo dnf install ./dukiwi-shield-2.7.0-1.noarch.rpm      # Fedora
 ```
 
 The installation enables the system service and the scheduler, then starts the initial scan:
@@ -78,6 +78,39 @@ sudo dnf remove dukiwi-shield   # Fedora
 
 ## Features
 
+- **Protected folders, secure delete, terminal command (2.7)** —
+  1. *Protected folders* (Security › Protected folders, off by default): only approved programs may open files in
+     Documents, Pictures, Desktop and the folders you add — system packages, `/opt`, snap, Flatpak and the programs you
+     allow. A program dropped in a home folder, `/tmp` or `/usr/local`, a deleted executable, or a system interpreter
+     running a script from `/tmp` gets "permission denied" (fanotify `FAN_OPEN_PERM`; Linux cannot block writes alone, so
+     reads are blocked too, which also stops data theft) and an alert offers "Allow this program". AppImages are
+     identified by their `.AppImage` file. The deciding thread only reads `/proc` and allows on any error; a self-test at
+     each start (system program allowed, copy outside the system denied, no waiting) turns the protection off if it fails.
+     Allowing a program, removing a folder and turning the protection off need the administrator password, so malware
+     cannot unlock itself through the service socket.
+  2. *Secure delete*: right-click › "Delete permanently" overwrites each file (one random pass, then zeros) and deletes it
+     without the trash; folders are handled recursively, links are removed without touching their target. The dialog
+     warns that on an SSD or btrfs an old copy may survive, and that only full disk encryption really protects.
+  3. *Terminal command* `dukiwi-shield`: without arguments it opens the application; `status`, `quick-scan`,
+     `scan FOLDER`, `full-scan [--integrity]`, `update`, `isolate`, `restore-network`, `alerts [-n N]`, `checklist`,
+     `journal [--days N]`, `version`, with `--json` and `--no-wait`; scans are followed with a progress line and exit
+     with code 1 when a threat is found. Output in the session language.
+- **Keyboard spies, unusual logins, containers, Flatpak permissions, malicious pip/npm packages, code-editor extensions (2.6)** —
+  1. *Keyboard spies*: every 15 seconds, programs holding a keyboard device (`/dev/input/event*` marked as keyboard by
+     udev) are checked; the display server, compositors, logind and known remapping/gesture tools are expected, anything
+     else is reported (red from a temporary or home folder), as are known X11 loggers (`logkeys`, `xinput test`…).
+  2. *Unusual logins*: SSH logins read from the journal every minute against the addresses and countries seen for each
+     account (30-day baseline): new address, new country (red), direct root login, password login from the Internet, and
+     local sessions opened between 01:00 and 05:00.
+  3. *Containers*: Docker socket writable by everyone or published on the network, accounts in the docker/lxd groups
+     (administrator without a password), privileged containers or containers mounting `/` or `docker.sock`. Checklist item.
+  4. *Flatpak permissions*: applications that see the whole disk or can talk to the Flatpak service (sandbox escape);
+     home folder and all-devices access listed for information. Checklist item, "Ignore" per application and set of rights.
+  5. *Malicious development packages*: pip (user, /usr/local, pipx) and global npm packages checked daily against OSV;
+     an advisory counts as malware when it is a `MAL-` entry, tagged CWE-506 or described as malicious code. Red alert
+     and checklist item.
+  6. *Code-editor extensions*: VS Code, VSCodium, Cursor, Windsurf and VS Code Server extensions join the browser
+     extension watch (alert within a minute, "starts with the editor" and "installed by hand (VSIX)" flags).
 - **Quick scan (2.5.1)** — "Quick scan" button on the dashboard, the Scan tab, the simple view and the shield menu:
   scans the home folders and the places where malware settles in (`/tmp`, `/var/tmp`, `/dev/shm`, cron and systemd
   folders, autostart, `/etc/profile.d`, `/etc/init.d`, `/usr/local`, `/opt`, `/var/www`, `/srv`, `/root`) plus the
@@ -700,8 +733,8 @@ python3 dukiwi-shield.py
 ## Building the packages
 
 ```bash
-./build-deb.sh        # dukiwi-shield_2.5.1_all.deb   (Mint / Ubuntu)
-./build-rpm.sh        # dukiwi-shield-2.5.1-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
+./build-deb.sh        # dukiwi-shield_2.7.0_all.deb   (Mint / Ubuntu)
+./build-rpm.sh        # dukiwi-shield-2.7.0-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
 ```
 
 Both packages share the same file tree (`build-deb.sh --stage-only`) and the same signed integrity manifest.
@@ -788,6 +821,10 @@ dukiwi-shield/
 ├── dukiwi_shield_guard.py                  # Decoys, camera/microphone, miners, root certificates, redirection
 ├── dukiwi_shield_protect.py                # Filtered DNS, isolation, home encryption check
 ├── dukiwi_shield_hygiene.py                # Password quality, browser settings, exposure test, UPnP
+├── dukiwi_shield_audit.py                  # Keyboard spies, logins, containers, Flatpak, pip/npm, editor extensions
+├── dukiwi_shield_folders.py                # Protected folders (fanotify permission events)
+├── dukiwi-shield-cli                       # Terminal command (/usr/bin/dukiwi-shield)
+├── dukiwi-shield-shred                     # Secure delete (Nemo action)
 ├── dukiwi-shield-sandbox                   # Open a file under firejail (Nemo action)
 ├── systemd/
 │   ├── dukiwi-shield-daemon.service

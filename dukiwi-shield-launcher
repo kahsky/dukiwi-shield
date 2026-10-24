@@ -1,0 +1,6 @@
+#!/bin/sh
+# Dukiwi Shield : sans argument, l'application ; avec une commande (status, quick-scan…), le terminal.
+if [ "$#" -eq 0 ]; then
+    exec /opt/dukiwi-shield/dukiwi-shield.py
+fi
+exec /usr/bin/python3 /opt/dukiwi-shield/dukiwi-shield-cli "$@"

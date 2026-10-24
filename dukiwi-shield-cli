@@ -1,0 +1,223 @@
+#!/usr/bin/env python3
+"""
+Dukiwi Shield — commande pour le terminal (serveurs, utilisateurs avancés, scripts).
+
+    dukiwi-shield status | quick-scan | scan DOSSIER | full-scan | update | isolate | restore-network
+                  alerts [-n N] | checklist | journal [--days N] | version | help        (--json : sortie brute)
+
+Sans argument, `dukiwi-shield` ouvre l'application. Les commandes passent par le service système (sans mot de passe,
+comme l'interface) ; une action réservée à l'administrateur se lance avec sudo.
+(c) 2026 Dukiwi SA - Estavayer-le-Lac
+"""
+
+import json
+import os
+import sys
+import time
+
+sys.path.insert(0, "/opt/dukiwi-shield")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from dukiwi_shield_common import LANGUAGES, VERSION, daemon_request, t  # noqa: E402
+
+COMMANDS = ("status", "quick-scan", "scan", "full-scan", "update", "isolate", "restore-network", "alerts", "checklist",
+            "journal", "version", "help")
+COLORS = {"green": "\033[32m", "yellow": "\033[33m", "blue": "\033[34m", "red": "\033[31m", "reset": "\033[0m", "bold": "\033[1m"}
+
+
+def lang():
+    for var in ("LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"):
+        v = (os.environ.get(var) or "")[:2].lower()
+        if v in LANGUAGES:
+            return v
+    return "en"
+
+
+L = lang()
+
+
+def T(key, **params):
+    return t(L, key, **params)
+
+
+def paint(text, color):
+    return f"{COLORS[color]}{text}{COLORS['reset']}" if sys.stdout.isatty() and color in COLORS else text
+
+
+def request(cmd, timeout=30, **params):
+    resp = daemon_request(cmd, timeout=timeout, **params)
+    if resp.get("unavailable") or resp.get("error") == "daemon_unavailable":
+        sys.exit(paint(T("cli.no_service"), "red"))
+    if resp.get("error") == "admin_required":
+        sys.exit(paint(T("cli.admin_required"), "yellow"))
+    return resp
+
+
+def show_json(obj):
+    print(json.dumps(obj, indent=2, ensure_ascii=False))
+
+
+def cmd_status(as_json):
+    st = request("status", timeout=30)
+    if as_json:
+        return show_json({k: st.get(k) for k in ("version", "overall", "db_last_update", "job", "isolated", "monitor_active")})
+    ov = st.get("overall") or {}
+    color = ov.get("color") or "green"
+    print(paint(f"Dukiwi Shield {st.get('version') or VERSION}", "bold"))
+    print(f"  {T('cli.state')} : {paint(T('mail.color.' + color), color)}"
+          + (f" — {', '.join(T('overall.reason.' + r) for r in ov.get('reasons') or [])}" if ov.get("reasons") else ""))
+    print(f"  {T('cli.signatures')} : {(st.get('db_last_update') or '—')[:16].replace('T', ' ')}")
+    state = st.get("state") or {}
+    if state.get("last_scan"):
+        print(f"  {T('cli.last_scan')} : {str(state['last_scan'])[:16].replace('T', ' ')} — {state.get('last_scan_path')} "
+              f"({state.get('last_scan_infected', 0)} {T('cli.threats')})")
+    job = st.get("job")
+    if job:
+        print(f"  {T('cli.running')} : {job.get('kind')} {job.get('path') or ''} {job.get('scanned', 0)}/{job.get('total', 0)}")
+    if st.get("isolated"):
+        print(paint(f"  {T('isolate.banner', time=str(st['isolated'].get('at', ''))[:16].replace('T', ' '), n=len(st['isolated'].get('suspended') or []))}", "red"))
+    ck = request("checklist", timeout=120).get("checklist") or {}
+    if ck.get("score") is not None:
+        print(f"  {T('cli.score')} : {ck['score']}/100 ({ck.get('grade', '')})")
+
+
+def wait_job(job_id, kind):
+    """Suit la tâche jusqu'à la fin (barre de progression sur une ligne), puis affiche le résultat."""
+    last = ""
+    while True:
+        st = request("status", timeout=30)
+        job = st.get("job")
+        if not job or job.get("id") != job_id:
+            break
+        total, done = job.get("total") or 0, job.get("scanned") or 0
+        pct = f"{100 * done // total:3d} %" if total else "…"
+        line = f"\r{T('cli.' + kind + '_progress')} {pct} {done}/{total} {T('cli.threats')}: {job.get('infected', 0)}"
+        if line != last:
+            sys.stdout.write(line[:110].ljust(110))
+            sys.stdout.flush()
+            last = line
+        time.sleep(1)
+    print()
+    if kind == "scan":
+        hist = (request("status", timeout=30).get("state") or {})
+        infected = hist.get("last_scan_infected", 0)
+        print(paint(T("cli.scan_done", files=hist.get("last_scan_files", 0), infected=infected), "red" if infected else "green"))
+        return 1 if infected else 0
+    print(T("cli.update_done"))
+    return 0
+
+
+def cmd_scan(path, wait, as_json, integrity=False):
+    resp = request("scan", timeout=30, path=path, integrity=integrity)
+    if as_json:
+        show_json(resp)
+        return 0 if resp.get("ok") else 2
+    if not resp.get("ok"):
+        busy = resp.get("busy") or {}
+        sys.exit(T("cli.busy", kind=busy.get("kind", ""), path=busy.get("path", "")) if resp.get("error") == "busy" else T("cli.failed", error=resp.get("error")))
+    print(T("cli.scan_started", path=T("scan.quick.label") if path == "quick" else (T("scan.full_system") if path == "/" else path)))
+    return wait_job(resp.get("job_id"), "scan") if wait else 0
+
+
+def cmd_alerts(n, as_json):
+    alerts = (request("alerts").get("alerts") or [])[:n]
+    if as_json:
+        return show_json(alerts)
+    if not alerts:
+        print(T("cli.no_alerts"))
+    for a in alerts:
+        sev = a.get("severity", "info")
+        what = a.get("comm") or a.get("title") or ""
+        detail = a.get("detail") or a.get("exe") or ""
+        print(f"{str(a.get('time', ''))[:16].replace('T', ' ')}  {paint(sev.upper().ljust(6), {'danger': 'red', 'warn': 'yellow'}.get(sev, 'blue'))} "
+              f"{a.get('kind', ''):12s} {what} {('— ' + detail) if detail and detail != what else ''}".rstrip())
+
+
+def cmd_checklist(as_json):
+    ck = request("checklist", timeout=180).get("checklist") or {}
+    if as_json:
+        return show_json(ck)
+    print(paint(f"{T('cli.score')} : {ck.get('score', '—')}/100 ({ck.get('grade', '')})", "bold"))
+    marks = {"ok": paint("✓", "green"), "warn": paint("!", "yellow"), "fail": paint("✗", "red")}
+    for it in sorted(ck.get("items") or [], key=lambda i: ({"fail": 0, "warn": 1, "ok": 2}.get(i["status"], 3), -i.get("weight", 0))):
+        if it["status"] not in marks:
+            continue
+        print(f"  {marks[it['status']]} {T('check.' + it['key'] + '.title')}" + (f" — {it['detail']}" if it.get("detail") and it["status"] != "ok" else ""))
+
+
+def cmd_journal(days, as_json):
+    data = request("security_journal", timeout=60, days=days)
+    events = (data.get("journal") or {}).get("events") or []
+    if as_json:
+        return show_json(events)
+    for e in events[:200]:
+        print(f"{e['t'][:16].replace('T', ' ')}  {e['sev']:6s} {e['cat']:11s} {e['text']}")
+
+
+def main(argv):
+    as_json = "--json" in argv
+    argv = [a for a in argv if a != "--json"]
+    if not argv or argv[0] in ("help", "-h", "--help"):
+        print(T("cli.help"))
+        return 0
+    cmd = argv[0]
+    if cmd in ("version", "--version", "-V"):
+        print(f"Dukiwi Shield {VERSION}")
+        return 0
+    if cmd not in COMMANDS:
+        print(T("cli.unknown", cmd=cmd), file=sys.stderr)
+        print(T("cli.help"))
+        return 2
+    wait = "--no-wait" not in argv
+    if cmd == "status":
+        cmd_status(as_json)
+    elif cmd == "quick-scan":
+        return cmd_scan("quick", wait, as_json)
+    elif cmd == "full-scan":
+        return cmd_scan("/", wait, as_json, integrity="--integrity" in argv)
+    elif cmd == "scan":
+        paths = [a for a in argv[1:] if not a.startswith("--")]
+        if not paths:
+            sys.exit(T("cli.scan_path_missing"))
+        return cmd_scan(os.path.abspath(paths[0]), wait, as_json)
+    elif cmd == "update":
+        resp = request("update", timeout=30)
+        if not resp.get("ok"):
+            sys.exit(T("cli.failed", error=resp.get("error")))
+        print(T("cli.update_started"))
+        return wait_job(resp.get("job_id"), "update") if wait and resp.get("job_id") else 0
+    elif cmd in ("isolate", "restore-network"):
+        resp = request("isolate", timeout=120, on=(cmd == "isolate"))
+        if as_json:
+            show_json(resp)
+        elif resp.get("ok"):
+            print(paint(T("msg.isolated", n=len((resp.get("isolated") or {}).get("suspended") or [])) if cmd == "isolate" else T("msg.unisolated"),
+                        "red" if cmd == "isolate" else "green"))
+        else:
+            sys.exit(T("cli.failed", error=T("error." + str(resp.get("error")))))
+    elif cmd == "alerts":
+        n = 20
+        if "-n" in argv:
+            try:
+                n = int(argv[argv.index("-n") + 1])
+            except (IndexError, ValueError):
+                pass
+        cmd_alerts(n, as_json)
+    elif cmd == "checklist":
+        cmd_checklist(as_json)
+    elif cmd == "journal":
+        days = 7
+        if "--days" in argv:
+            try:
+                days = int(argv[argv.index("--days") + 1])
+            except (IndexError, ValueError):
+                pass
+        cmd_journal(days, as_json)
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except KeyboardInterrupt:
+        print()
+        sys.exit(130)

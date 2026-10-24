@@ -1302,7 +1302,7 @@ class ClamAVAntivirusApp:
         if kind == "honeypot":
             self.show_honeypot_alert(alert)
             return
-        if kind in ("ransomware", "privacy", "miner", "certificate", "redirect", "extension", "ssh_key", "suid"):
+        if kind in ("ransomware", "privacy", "miner", "certificate", "redirect", "extension", "ssh_key", "suid", "keylogger", "login", "dev_package", "protected"):
             self.show_guard_alert(alert)
             return
         if kind == "account":
@@ -1470,6 +1470,50 @@ class ClamAVAntivirusApp:
                        buttons=[(T("popup.ssh_key.remove"), "danger", lambda: self.show_section("security", "sshkeys")),
                                 (T("popup.ssh_key.mine"), None, lambda: None)], on_activate=lambda: self.show_section("security", "sshkeys"))
             return
+        if kind == "keylogger":
+            reason = (alert.get("reasons") or ["unknown_reader"])[0]
+            body = T("popup.keylogger.body", program=comm, device=alert.get("detail") or "") + "\n" + T(f"alert.reason.{reason}")
+            isolate = (T("isolate.button"), "danger", lambda: self.show_section("firewall", "isolate"))
+            buttons = ([isolate] if sev == "danger" else []) + [(T("popup.btn.its_me"), None, lambda e=alert.get("exe"), c=comm: self.trust_program(e, c)),
+                                                               (T("popup.btn.details"), None, lambda: self.show_tab("system"))]
+            if sev == "info" and not self.popups_enabled("info"):
+                return
+            self.popup("danger" if sev == "danger" else ("warning" if sev == "warn" else "info"), T("popup.keylogger.title"), body,
+                       meta=meta, timeout=None if sev != "info" else 20, buttons=buttons, on_activate=lambda: self.show_tab("system"))
+            return
+        if kind == "login":
+            reasons = ", ".join(T(f"alert.reason.{r}") for r in (alert.get("reasons") or []))
+            if alert.get("subtype") == "night_local":
+                body = T("popup.login.night_local", user=alert.get("title") or "?", hour=alert.get("hour") or "")
+            else:
+                body = T("popup.login.ssh", user=alert.get("title") or "?", ip=alert.get("ip") or "?", country=alert.get("country") or "?",
+                         hour=alert.get("hour") or "", method=alert.get("method") or "") + "\n" + reasons
+            buttons = [(T("popup.login.mine"), None, lambda: None)]
+            if sev == "danger":
+                buttons = [(T("isolate.button"), "danger", lambda: self.show_section("firewall", "isolate")),
+                           (T("popup.ssh_key.remove"), None, lambda: self.show_section("security", "sshkeys"))] + buttons
+            if sev == "info" and not self.popups_enabled("info"):
+                return
+            self.popup("danger" if sev == "danger" else ("warning" if sev == "warn" else "info"), T("popup.login.title"), body,
+                       timeout=None if sev != "info" else 25, buttons=buttons, on_activate=lambda: self.show_tab("system"))
+            return
+        if kind == "protected":
+            if (alert.get("reasons") or [""])[0] == "protected_selftest_failed":
+                self.popup("warning", T("popup.protected.selftest_title"), T(f"protected.error.{alert.get('detail') or 'internal'}"),
+                           timeout=None, on_activate=lambda: self.show_section("security", "protected"))
+                return
+            self.popup("warning", T("popup.protected.title"), T("popup.protected.body", program=comm, exe=alert.get("detail") or ""),
+                       timeout=30, meta=meta,
+                       buttons=[(T("popup.protected.allow"), "primary", lambda e=alert.get("script") or alert.get("exe"): self.act_protected_allow({"exe": e})),
+                                (T("popup.btn.details"), None, lambda: self.show_section("security", "protected"))],
+                       on_activate=lambda: self.show_section("security", "protected"))
+            return
+        if kind == "dev_package":
+            self.popup("danger", T("popup.dev_package.title"),
+                       T("popup.dev_package.body", name=alert.get("title") or "?", version=alert.get("version") or "", ecosystem=alert.get("ecosystem") or "",
+                         where=alert.get("detail") or "", ids=", ".join(alert.get("ids") or [])), timeout=None,
+                       buttons=[(T("popup.btn.details"), "primary", lambda: self.show_tab("security"))], on_activate=lambda: self.show_tab("security"))
+            return
         if kind == "suid":
             self.popup("danger" if sev == "danger" else "warning", T("popup.suid.title"),
                        T("popup.suid.body", path=alert.get("path") or "?", owner=alert.get("owner") or "?"), timeout=None,
@@ -1485,6 +1529,28 @@ class ClamAVAntivirusApp:
                    buttons=[(T("security.ignore"), None, lambda g=group, k=key: self.act_guard_ack({"group": g, "keys": [k]})),
                             (T("popup.btn.details"), "primary", lambda: self.show_tab("security"))],
                    on_activate=lambda: self.show_tab("security"))
+
+    def act_protected_allow(self, data):
+        """Autoriser un programme à ouvrir les dossiers protégés (mot de passe administrateur), ou retirer l'autorisation."""
+        remove = bool(data.get("remove"))
+        exe = str(data.get("exe") or "").replace(" (deleted)", "")
+
+        def done(resp):
+            self.send_to_js("operationResult", {"status": "success" if resp.get("ok") else "error", "op": "security",
+                                                "message": self.T("msg.protected_removed" if remove else "msg.protected_allowed") if resp.get("ok") else self.daemon_error(resp)})
+            self.send_to_js("securityData", {"type": "protected", "data": resp.get("protected") or {}, "available": bool(resp.get("ok"))})
+            return False
+        self.run_admin("protected_allow", {"exe": exe, "remove": remove}, done)
+
+    def act_protected_folder(self, data):
+        cmd = "protected_folder_remove" if data.get("remove") else "protected_folder_add"
+
+        def done(resp):
+            if not resp.get("ok"):
+                self.send_to_js("operationResult", {"status": "error", "op": "security", "message": self.daemon_error(resp)})
+            self.send_to_js("securityData", {"type": "protected", "data": resp.get("protected") or {}, "available": bool(resp.get("ok"))})
+            return False
+        self.run_admin(cmd, {"path": str(data.get("path") or "")}, done)
 
     def act_ssh_key_remove(self, data):
         params = {"path": str(data.get("path") or ""), "fp": str(data.get("fp") or "")}
@@ -2409,7 +2475,7 @@ class ClamAVAntivirusApp:
     def act_get_trusted(self, _data):
         resp = DaemonClient.request("trusted_programs")
         ok = bool(resp.get("ok"))
-        self.send_to_js("trustedList", dict({k: resp.get(k, []) if ok else [] for k in ("programs", "acknowledged", "usb", "hid", "sudoers", "privacy", "certs", "redirects", "suid")},
+        self.send_to_js("trustedList", dict({k: resp.get(k, []) if ok else [] for k in ("programs", "acknowledged", "usb", "hid", "sudoers", "privacy", "certs", "redirects", "suid", "flatpak")},
                                             available=ok))
 
     def act_acknowledge_vuln(self, data):
@@ -3444,7 +3510,7 @@ class ClamAVAntivirusApp:
                "connections": "connections", "app_update": "check_update", "honeypot": "honeypot", "urlguard": "urlguard",
                "journal": "security_journal", "dns_filter": "dns_filter", "home_encryption": "home_encryption",
                "browser_security": "browser_security", "exposure": "exposure", "incident": "incident",
-               "ssh_keys": "ssh_keys", "suid": "suid", "weekly_summary": "weekly_summary"}.get(kind)
+               "ssh_keys": "ssh_keys", "suid": "suid", "weekly_summary": "weekly_summary", "protected": "protected_status"}.get(kind)
         if not cmd:
             return
         params = {}

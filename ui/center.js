@@ -395,3 +395,36 @@ function onWeeklySummary(d) {
         <div class="weekly-grid">${cells.map(([k, v]) => `<div><span class="text-muted">${escapeHtml(k)}</span><b>${escapeHtml(String(v))}</b></div>`).join('')}</div>
         ${(d.todo || []).length ? `<p class="text-muted">${escapeHtml(t('weekly.todo'))} ${d.todo.map(k => escapeHtml(t('check.' + k + '.title'))).join(', ')}</p>` : ''}</div>`;
 }
+
+// ═══ 2.7.0 : dossiers protégés ═══════════════════════════════════════════════════════════════════════
+function onProtectedData(d) {
+    const box = $('protectedBox'), badge = $('protectedBadge');
+    if (!box) return;
+    d = d || {};
+    const state = d.active ? 'on' : d.enabled ? (d.error ? 'error' : 'starting') : 'off';
+    if (badge) { badge.textContent = t('protected.badge.' + state); badge.className = `badge ${state === 'on' ? 'badge-green' : state === 'error' ? 'badge-red' : 'badge-amber'}`; }
+    const roots = (d.roots || []).map(r => `<li><code>${escapeHtml(r)}</code>${(d.extra || []).includes(r) ? ` <button class="btn btn-secondary btn-sm" onclick="sendToBackend({action:'protected_folder', remove:true, path:'${escapeJs(r)}'})">${escapeHtml(t('settings.trusted.remove'))}</button>` : ''}</li>`).join('');
+    const allowed = (d.allowed || []).map(e => `<li><code>${escapeHtml(e)}</code> <button class="btn btn-secondary btn-sm" onclick="sendToBackend({action:'protected_allow', remove:true, exe:'${escapeJs(e)}'})">${escapeHtml(t('settings.trusted.remove'))}</button></li>`).join('');
+    box.innerHTML = `
+        ${d.error ? `<p class="dns-error">${escapeHtml(t('protected.error.' + d.error) !== 'protected.error.' + d.error ? t('protected.error.' + d.error) : d.error)}</p>` : ''}
+        ${d.active ? `<p class="text-muted">${escapeHtml(t('protected.stats', { n: d.marked || 0, denied: d.denied || 0 }))}</p>` : ''}
+        ${!d.enabled ? `<p><button class="btn btn-primary btn-sm" onclick="confirmProtected()">${escapeHtml(t('protected.enable'))}</button></p>` : ''}
+        <h5>${escapeHtml(t('protected.folders'))}</h5><ul class="protected-list">${roots || `<li class="text-muted">—</li>`}</ul>
+        <div class="backup-add-row"><input type="text" id="protectedAdd" class="input-field input-sm input-wide" placeholder="/home/…/Projets"><button class="btn btn-secondary btn-sm" onclick="addProtectedFolder()">${escapeHtml(t('protected.add'))}</button></div>
+        <h5>${escapeHtml(t('protected.allowed'))}</h5><ul class="protected-list">${allowed || `<li class="text-muted">${escapeHtml(t('protected.allowed_none'))}</li>`}</ul>
+        <p class="text-muted">${escapeHtml(t('protected.note'))}</p>`;
+}
+
+async function confirmProtected() {
+    const ok = await appConfirm({ title: t('protected.confirm_title'), message: t('protected.confirm_msg'), ok: t('protected.enable'), cancel: t('modal.cancel') });
+    if (!ok) return;
+    if ($('setProtectedFolders')) $('setProtectedFolders').checked = true;
+    sendToBackend({ action: 'set_settings', system: { protected_folders: true } });
+    setTimeout(() => sendToBackend({ action: 'get_security_data', type: 'protected' }), 15000);
+}
+
+function addProtectedFolder() {
+    const el = $('protectedAdd');
+    const path = el ? el.value.trim() : '';
+    if (path) sendToBackend({ action: 'protected_folder', path });
+}

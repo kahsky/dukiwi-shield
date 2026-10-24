@@ -1,0 +1,50 @@
+#!/bin/bash
+# ═══════════════════════════════════════════════════════════════════════════
+# Dukiwi Shield — suppression définitive (clic droit › « Supprimer définitivement »)
+# Chaque fichier est écrasé (une passe aléatoire puis des zéros) avant d'être supprimé, sans passer par la corbeille.
+# Limite : sur un SSD (blocs déplacés par le disque) ou un système de fichiers copie-sur-écriture (btrfs), l'ancienne
+# copie peut survivre ailleurs sur le disque ; seul le chiffrement complet du disque protège vraiment.
+# ═══════════════════════════════════════════════════════════════════════════
+
+case "${LANGUAGE:-${LC_ALL:-${LC_MESSAGES:-$LANG}}}" in
+    fr*) T_TITLE="Supprimer définitivement"; T_ASK="Supprimer définitivement %s élément(s) ?\n\n%s\n\nLes fichiers sont écrasés puis supprimés, sans passer par la corbeille. Impossible de les récupérer."; T_SSD="\n\nAttention : ce disque est un SSD ou utilise btrfs ; une ancienne copie peut subsister ailleurs sur le disque. Seul le chiffrement complet du disque protège vraiment."; T_DONE="%s fichier(s) supprimé(s) définitivement."; T_FAIL="Certains fichiers n'ont pas pu être supprimés :\n%s"; T_NONE="Aucun fichier sélectionné." ;;
+    de*) T_TITLE="Endgültig löschen"; T_ASK="%s Element(e) endgültig löschen?\n\n%s\n\nDie Dateien werden überschrieben und gelöscht, ohne Papierkorb. Keine Wiederherstellung möglich."; T_SSD="\n\nAchtung: Diese Festplatte ist eine SSD oder verwendet btrfs; eine alte Kopie kann anderswo auf der Festplatte bleiben. Nur die vollständige Festplattenverschlüsselung schützt wirklich."; T_DONE="%s Datei(en) endgültig gelöscht."; T_FAIL="Einige Dateien konnten nicht gelöscht werden:\n%s"; T_NONE="Keine Datei ausgewählt." ;;
+    it*) T_TITLE="Elimina definitivamente"; T_ASK="Eliminare definitivamente %s elemento/i?\n\n%s\n\nI file vengono sovrascritti e poi eliminati, senza cestino. Impossibile recuperarli."; T_SSD="\n\nAttenzione: questo disco è un SSD o usa btrfs; una vecchia copia può restare altrove sul disco. Solo la cifratura completa del disco protegge davvero."; T_DONE="%s file eliminato/i definitivamente."; T_FAIL="Alcuni file non sono stati eliminati:\n%s"; T_NONE="Nessun file selezionato." ;;
+    *)   T_TITLE="Delete permanently"; T_ASK="Permanently delete %s item(s)?\n\n%s\n\nThe files are overwritten and then deleted, without the trash. They cannot be recovered."; T_SSD="\n\nCareful: this disk is an SSD or uses btrfs; an old copy can survive elsewhere on the disk. Only full disk encryption really protects."; T_DONE="%s file(s) permanently deleted."; T_FAIL="Some files could not be deleted:\n%s"; T_NONE="No file selected." ;;
+esac
+
+say() { zenity --"$1" --title="Dukiwi Shield — $T_TITLE" --text="$2" --width=460 2>/dev/null || echo -e "$2" >&2; }
+
+[ "$#" -gt 0 ] || { say error "$T_NONE"; exit 1; }
+
+# SSD ou btrfs pour le premier élément : avertissement honnête
+WARN=""
+SRC=$(df --output=source "$1" 2>/dev/null | tail -1)
+FST=$(df --output=fstype "$1" 2>/dev/null | tail -1)
+DEV=$(lsblk -no PKNAME "$SRC" 2>/dev/null | head -1); [ -n "$DEV" ] || DEV=$(basename "$SRC")
+if [ "$FST" = "btrfs" ] || [ "$(cat /sys/block/"$DEV"/queue/rotational 2>/dev/null)" = "0" ]; then WARN="$T_SSD"; fi
+
+LIST=$(for f in "$@"; do basename -- "$f"; done | head -8)
+# shellcheck disable=SC2059
+zenity --question --title="Dukiwi Shield — $T_TITLE" --width=460 --ok-label="$T_TITLE" \
+    --text="$(printf "$T_ASK" "$#" "$LIST")$WARN" 2>/dev/null || exit 0
+
+COUNT=0; FAILED=""
+shred_file() {
+    if shred -n 1 -z -u -- "$1" 2>/dev/null; then COUNT=$((COUNT + 1)); else FAILED="$FAILED\n$1"; fi
+}
+for target in "$@"; do
+    if [ -d "$target" ] && [ ! -L "$target" ]; then
+        while IFS= read -r -d '' f; do shred_file "$f"; done < <(find "$target" -type f -print0)
+        find "$target" -depth -type d -empty -delete 2>/dev/null
+        find "$target" -depth -mindepth 0 \( -type l -o -type p -o -type s \) -delete 2>/dev/null
+        rm -rf -- "$target" 2>/dev/null
+    elif [ -f "$target" ] && [ ! -L "$target" ]; then
+        shred_file "$target"
+    else
+        rm -f -- "$target" 2>/dev/null && COUNT=$((COUNT + 1)) || FAILED="$FAILED\n$target"
+    fi
+done
+logger -t dukiwi-shield "secure delete: $COUNT file(s)" 2>/dev/null
+# shellcheck disable=SC2059
+if [ -n "$FAILED" ]; then say warning "$(printf "$T_FAIL" "$FAILED")"; else say info "$(printf "$T_DONE" "$COUNT")"; fi

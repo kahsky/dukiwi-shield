@@ -1,0 +1,13 @@
+[Nemo Action]
+Name=Delete permanently (Dukiwi Shield)
+Name[fr]=Supprimer définitivement (Dukiwi Shield)
+Name[de]=Endgültig löschen (Dukiwi Shield)
+Name[it]=Elimina definitivamente (Dukiwi Shield)
+Comment=Overwrite, then delete without the trash
+Comment[fr]=Écraser puis supprimer, sans corbeille
+Comment[de]=Überschreiben, dann ohne Papierkorb löschen
+Comment[it]=Sovrascrivere, poi eliminare senza cestino
+Exec=/opt/dukiwi-shield/dukiwi-shield-shred %F
+Icon-Name=edit-delete
+Selection=notnone
+Extensions=any;

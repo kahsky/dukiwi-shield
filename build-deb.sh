@@ -8,7 +8,7 @@
 set -e
 
 APP_NAME="dukiwi-shield"
-VERSION="2.5.1"
+VERSION="2.7.0"
 ARCH="all"
 PKG_DIR="${APP_NAME}_${VERSION}_${ARCH}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -59,6 +59,12 @@ cp "${SCRIPT_DIR}/dukiwi-shield-scan-nemo.sh"             "${PKG_DIR}/opt/${APP_
 cp "${SCRIPT_DIR}/dukiwi-shield-sandbox"                  "${PKG_DIR}/opt/${APP_NAME}/"
 cp "${SCRIPT_DIR}/dukiwi_shield_protect.py"               "${PKG_DIR}/opt/${APP_NAME}/"
 cp "${SCRIPT_DIR}/dukiwi_shield_hygiene.py"               "${PKG_DIR}/opt/${APP_NAME}/"
+cp "${SCRIPT_DIR}/dukiwi_shield_audit.py"                 "${PKG_DIR}/opt/${APP_NAME}/"
+cp "${SCRIPT_DIR}/dukiwi_shield_folders.py"               "${PKG_DIR}/opt/${APP_NAME}/"
+cp "${SCRIPT_DIR}/dukiwi-shield-cli"                      "${PKG_DIR}/opt/${APP_NAME}/"
+cp "${SCRIPT_DIR}/dukiwi-shield-shred"                    "${PKG_DIR}/opt/${APP_NAME}/"
+mkdir -p "${PKG_DIR}/usr/bin"
+install -m 755 "${SCRIPT_DIR}/dukiwi-shield-launcher"     "${PKG_DIR}/usr/bin/dukiwi-shield"
 cp "${SCRIPT_DIR}/systemd/"*.service               "${PKG_DIR}/lib/systemd/system/"
 cp "${SCRIPT_DIR}/systemd/"*.timer                 "${PKG_DIR}/lib/systemd/system/"
 cp "${SCRIPT_DIR}/ui/index.html"                    "${PKG_DIR}/opt/${APP_NAME}/ui/"
@@ -76,6 +82,7 @@ cp "${SCRIPT_DIR}/icons/"*.svg                      "${PKG_DIR}/opt/${APP_NAME}/
 cp "${SCRIPT_DIR}/dukiwi-shield.desktop"         "${PKG_DIR}/usr/share/applications/"
 cp "${SCRIPT_DIR}/dukiwi-shield-nemo.nemo_action" "${PKG_DIR}/usr/share/nemo/actions/"
 cp "${SCRIPT_DIR}/dukiwi-shield-sandbox.nemo_action" "${PKG_DIR}/usr/share/nemo/actions/"
+cp "${SCRIPT_DIR}/dukiwi-shield-shred.nemo_action" "${PKG_DIR}/usr/share/nemo/actions/"
 cp "${SCRIPT_DIR}/dukiwi-shield-autostart.desktop" "${PKG_DIR}/etc/xdg/autostart/"
 
 # Normalize permissions (independent of the builder's umask), then mark scripts executable
@@ -86,7 +93,8 @@ chmod +x "${PKG_DIR}/opt/${APP_NAME}/dukiwi-shield-daemon.py"
 chmod +x "${PKG_DIR}/opt/${APP_NAME}/dukiwi-shield-unlock"
 chmod +x "${PKG_DIR}/opt/${APP_NAME}/dukiwi-shield-tray"
 chmod +x "${PKG_DIR}/opt/${APP_NAME}/dukiwi-shield-scan-nemo.sh"
-chmod +x "${PKG_DIR}/opt/${APP_NAME}/dukiwi-shield-sandbox"
+chmod +x "${PKG_DIR}/opt/${APP_NAME}/dukiwi-shield-sandbox" "${PKG_DIR}/opt/${APP_NAME}/dukiwi-shield-shred" "${PKG_DIR}/opt/${APP_NAME}/dukiwi-shield-cli"
+chmod +x "${PKG_DIR}/usr/bin/dukiwi-shield"
 
 # ── Integrity manifest (sha256 of every packaged file), signed with the Dukiwi key if present ──
 echo "[2b/5] Writing integrity manifest..."

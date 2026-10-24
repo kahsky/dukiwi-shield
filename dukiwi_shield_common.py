@@ -13,7 +13,7 @@ import struct
 import subprocess
 from datetime import datetime
 
-VERSION = "2.5.1"
+VERSION = "2.7.0"
 
 # ─── Chemins système (daemon root) ───────────────────────────────────────────
 # Surchargeables par variables d'environnement pour les tests sans root.
@@ -103,6 +103,11 @@ DEFAULT_SETTINGS = {
     "ransomware_decoys": True,
     "privacy_watch": True,
     "miner_watch": True,
+    # Espions du clavier (lecture directe de /dev/input) et connexions inhabituelles (SSH, nuit)
+    "keylogger_watch": True,
+    "login_watch": True,
+    # Dossiers protégés : seuls les programmes approuvés ouvrent Documents, Images, Bureau (désactivé par défaut)
+    "protected_folders": False,
     # DNS filtré (systemd-resolved) : "" (désactivé), "quad9", "cloudflare" ; suspendu sur un réseau Entreprise
     "filtered_dns": "",
     "geoip_lookup": True,

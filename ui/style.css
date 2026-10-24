@@ -3165,3 +3165,4 @@ input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-o
 .weekly-grid b { font-size: 1.1em; }
 #btnQuickScan { display: inline-flex; align-items: center; gap: 8px; }
 #btnQuickScan svg { width: 18px; height: 18px; flex-shrink: 0; }
+.protected-list { margin: 4px 0 12px 20px; line-height: 1.8; }

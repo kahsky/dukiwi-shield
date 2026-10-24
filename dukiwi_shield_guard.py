@@ -29,6 +29,8 @@ import tempfile
 import threading
 import time
 import zipfile
+
+import dukiwi_shield_audit as audit
 from datetime import datetime
 
 DECOY_PREFIX = ".dukiwi-guard-"
@@ -57,6 +59,8 @@ CPU_IGNORE_PARTS = ("/steamapps/", "/Steam/", "/lutris/", "/Heroic/", "/.wine/",
 SLOW_CHECK_SEC = 600                     # certificats, détournement réseau
 WATCH_CHECK_SEC = 60                     # démarrage automatique, tâches planifiées, services, extensions
 SSH_CHECK_SEC = 30                       # clés SSH autorisées
+KEYLOGGER_CHECK_SEC = 15                 # programmes qui lisent le clavier
+LOGIN_CHECK_SEC = 60                     # connexions SSH et ouvertures de session
 PERSISTENCE_DIRS = ("/etc/xdg/autostart", "/etc/cron.d", "/etc/cron.hourly", "/etc/cron.daily", "/etc/cron.weekly", "/etc/cron.monthly",
                     "/var/spool/cron/crontabs", "/var/spool/cron/atjobs", "/var/spool/at", "/etc/systemd/system", "/etc/profile.d",
                     "/etc/rc.local", "/etc/ld.so.preload")
@@ -199,13 +203,16 @@ class SecurityGuard(threading.Thread):
         self._certs = (0.0, None)
         self._redirects = (0.0, None)
         self.persistence_fp = None
+        self.keylogger_alerted = {}      # (exe, appareil) → horodatage
+        self.login_cursor = None
         self.persistence_running = False
         self.active = False
 
     # ── boucle ───────────────────────────────────────────────────────────
     def run(self):
         self.active = True
-        last = {"decoy": 0.0, "privacy": 0.0, "miner": 0.0, "slow": time.time() - SLOW_CHECK_SEC + 90, "watch": 0.0, "ssh": 0.0}
+        last = {"decoy": 0.0, "privacy": 0.0, "miner": 0.0, "slow": time.time() - SLOW_CHECK_SEC + 90, "watch": 0.0, "ssh": 0.0,
+                "keys": 0.0, "logins": 0.0}
         try:
             self.sync_decoys()
         except Exception as e:  # noqa: BLE001
@@ -215,7 +222,8 @@ class SecurityGuard(threading.Thread):
             now = time.time()
             for name, period, fn in (("decoy", DECOY_CHECK_SEC, self.check_decoys), ("privacy", PRIVACY_CHECK_SEC, self.check_privacy),
                                      ("miner", MINER_CHECK_SEC, self.check_miners), ("slow", SLOW_CHECK_SEC, self.check_slow),
-                                     ("watch", WATCH_CHECK_SEC, self.check_persistence), ("ssh", SSH_CHECK_SEC, self.check_ssh_keys)):
+                                     ("watch", WATCH_CHECK_SEC, self.check_persistence), ("ssh", SSH_CHECK_SEC, self.check_ssh_keys),
+                                     ("keys", KEYLOGGER_CHECK_SEC, self.check_keyloggers), ("logins", LOGIN_CHECK_SEC, self.check_logins)):
                 if now - last[name] >= period:
                     last[name] = now
                     try:
@@ -865,6 +873,12 @@ class SecurityGuard(threading.Thread):
         for pw in self.human_users():
             paths += [os.path.join(pw.pw_dir, ".config/autostart"), os.path.join(pw.pw_dir, ".config/systemd/user")]
             paths += glob.glob(os.path.join(pw.pw_dir, ".mozilla/firefox/*/extensions.json"))
+            for _editor, sub in audit.EDITOR_DIRS:
+                d = os.path.join(pw.pw_dir, sub)
+                try:
+                    fp.append((d, tuple(sorted(os.listdir(d)))))
+                except OSError:
+                    pass
             for ext_dir in glob.glob(os.path.join(pw.pw_dir, ".config/*/*/Extensions")) + glob.glob(os.path.join(pw.pw_dir, ".config/*/Default/Extensions")) \
                     + glob.glob(os.path.join(pw.pw_dir, ".config/*/Profile */Extensions")):
                 try:
@@ -1006,3 +1020,93 @@ class SecurityGuard(threading.Thread):
         r = subprocess.run(["nice", "-n", "19"] + cmd, capture_output=True, timeout=timeout)
         paths = [p.decode(errors="replace") for p in (r.stdout or b"").split(b"\0") if p]
         return sorted({p for p in paths if not any(x in p for x in SUID_SKIP)})
+
+    # ═══ 9. Espions du clavier ════════════════════════════════════════════
+    def check_keyloggers(self):
+        if not self.setting("keylogger_watch"):
+            return
+        trusted = self.d.user_trusted()
+        now = time.time()
+        for r in audit.keyboard_readers():
+            exe = r["exe"].replace(" (deleted)", "")
+            key = (exe or r["comm"], r["device"] or "x11")
+            if exe in trusted or now - self.keylogger_alerted.get(key, 0) < 6 * 3600:
+                continue
+            self.keylogger_alerted[key] = now
+            bad_place = exe.startswith(("/tmp/", "/var/tmp/", "/dev/shm/", "/home/", "/run/")) or r["exe"].endswith(" (deleted)")
+            severity = "danger" if bad_place or r["reason"] == "x11_logger" else ("warn" if r["reason"] == "untrusted_reader" else "info")
+            try:
+                user = pwd.getpwuid(r["uid"]).pw_name
+            except (KeyError, TypeError):
+                user = ""
+            self.write_log(f"⚠ {'danger' if severity == 'danger' else 'keyboard'}: keyboard read by {r['comm']} (pid {r['pid']}, {r['exe']}) "
+                           f"{r['device_name'] or r['reason']}")
+            self.alert("keylogger", severity, pid=r["pid"], comm=r["comm"], exe=r["exe"], cmdline=r["cmdline"], user=user,
+                       title=r["comm"], detail=r["device_name"] or r["device"], device=r["device"], reasons=[r["reason"]])
+
+    # ═══ 10. Connexions inhabituelles ═════════════════════════════════════
+    def check_logins(self):
+        if not self.setting("login_watch"):
+            return
+        known = self.d.state.get("login_known")
+        humans = {pw.pw_name for pw in self.human_users() if pw.pw_uid >= 1000} | {"root"}
+        if known is None or self.login_cursor is None:
+            # Référence : les 30 derniers jours (aucune alerte), puis lecture depuis le dernier curseur
+            stored = self.d.state.get("login_cursor") if known is not None else None
+            if known is not None and not stored:
+                stored = audit.journal_cursor()          # référence perdue : on repart de maintenant, sans relire 30 jours
+            events, cursor = audit.journal_logins(cursor=stored)
+            if known is None:
+                known = {}
+                for e in events:
+                    if e["kind"] == "ssh" and e["user"] in humans:
+                        known.setdefault(e["user"], {}).setdefault(e["ip"], {"first": datetime.fromtimestamp(e["t"]).isoformat(timespec="seconds")})
+                cursor = cursor or audit.journal_cursor()
+                self.d.state.update(login_known=known, login_cursor=cursor)
+                self.login_cursor = cursor
+                return
+            self.login_cursor = cursor or self.d.state.get("login_cursor")
+        else:
+            events, cursor = audit.journal_logins(cursor=self.login_cursor)
+            self.login_cursor = cursor or self.login_cursor
+        changed = False
+        for e in events:
+            if e["user"] not in humans:
+                continue
+            when = datetime.fromtimestamp(e["t"])
+            night = when.hour in audit.NIGHT_HOURS
+            if e["kind"] == "local":
+                if night:
+                    self.write_log(f"login: night session for {e['user']} ({e['service']}) at {when:%H:%M}")
+                    self.alert("login", "info", title=e["user"], detail=e["service"], user=e["user"], subtype="night_local",
+                               hour=f"{when:%H:%M}", reasons=["login_night"])
+                continue
+            ip, user = e["ip"], e["user"]
+            mine = known.setdefault(user, {})
+            reasons = []
+            country = ""
+            if is_public(ip):
+                conns = getattr(self.d, "connections", None)
+                if conns is not None:
+                    conns.geolocate([ip])
+                    country = ((getattr(conns, "geo", {}) or {}).get(ip) or {}).get("countryCode", "")
+            if ip not in mine:
+                seen_countries = {v.get("country") for v in mine.values() if v.get("country")}
+                reasons.append("login_new_country" if country and seen_countries and country not in seen_countries else "login_new_ip")
+                mine[ip] = {"first": when.isoformat(timespec="seconds"), "country": country}
+                changed = True
+            if user == "root":
+                reasons.append("login_root")
+            if night:
+                reasons.append("login_night")
+            if e["method"] == "password" and is_public(ip):
+                reasons.append("login_password_internet")
+            if not reasons:
+                continue
+            severity = "danger" if "login_new_country" in reasons or ("login_root" in reasons and is_public(ip)) else \
+                ("warn" if "login_new_ip" in reasons or "login_root" in reasons else "info")
+            self.write_log(f"⚠ login: ssh {user} from {ip} {country} ({e['method']}) — {', '.join(reasons)}")
+            self.alert("login", severity, title=user, detail=f"{ip} {country}".strip(), user=user, ip=ip, country=country,
+                       method=e["method"], subtype="ssh", hour=f"{when:%H:%M}", reasons=reasons)
+        if changed or cursor:
+            self.d.state.update(login_known=known, login_cursor=self.login_cursor)
