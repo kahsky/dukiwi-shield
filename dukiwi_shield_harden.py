@@ -1,30 +1,30 @@
 #!/usr/bin/env python3
 """Dukiwi Shield — durcissement du système : application (et annulation) des recommandations Lynis.
 
-Exécuté par le service (root). Chaque correctif écrit ses propres fichiers (90-clamav-antivirus-*) ou retient la
+Exécuté par le service (root). Chaque correctif écrit ses propres fichiers (90-dukiwi-shield-*) ou retient la
 valeur précédente, pour pouvoir revenir en arrière. Les recommandations qui pourraient gêner un usage courant sont
 marquées « caution » (jamais appliquées automatiquement), celles sans objet sur un poste de travail « skip ».
 
-Tests : CLAMAV_ANTIVIRUS_HARDEN_ROOT=<dossier> préfixe tous les chemins et n'exécute aucune commande."""
+Tests : DUKIWI_SHIELD_HARDEN_ROOT=<dossier> préfixe tous les chemins et n'exécute aucune commande."""
 import os
 import re
 import shutil
 import socket
 import subprocess
 
-import clamav_distro as distro
+import dukiwi_shield_distro as distro
 
-ROOT = os.environ.get("CLAMAV_ANTIVIRUS_HARDEN_ROOT", "/")
+ROOT = os.environ.get("DUKIWI_SHIELD_HARDEN_ROOT", "/")
 DRY = ROOT != "/"
-TAG = "# ClamAV Antivirus GUI"
+TAG = "# Dukiwi Shield"
 
-SYSCTL_FILE = "/etc/sysctl.d/90-clamav-antivirus-hardening.conf"
-LIMITS_FILE = "/etc/security/limits.d/90-clamav-antivirus.conf"
-COREDUMP_FILE = "/etc/systemd/coredump.conf.d/90-clamav-antivirus.conf"
-MODPROBE_FILE = "/etc/modprobe.d/90-clamav-antivirus-protocols.conf"
-FIREWIRE_FILE = "/etc/modprobe.d/90-clamav-antivirus-firewire.conf"
-SSHD_FILE = "/etc/ssh/sshd_config.d/90-clamav-antivirus.conf"
-NEEDRESTART_FILE = "/etc/needrestart/conf.d/90-clamav-antivirus.conf"
+SYSCTL_FILE = "/etc/sysctl.d/90-dukiwi-shield-hardening.conf"
+LIMITS_FILE = "/etc/security/limits.d/90-dukiwi-shield.conf"
+COREDUMP_FILE = "/etc/systemd/coredump.conf.d/90-dukiwi-shield.conf"
+MODPROBE_FILE = "/etc/modprobe.d/90-dukiwi-shield-protocols.conf"
+FIREWIRE_FILE = "/etc/modprobe.d/90-dukiwi-shield-firewire.conf"
+SSHD_FILE = "/etc/ssh/sshd_config.d/90-dukiwi-shield.conf"
+NEEDRESTART_FILE = "/etc/needrestart/conf.d/90-dukiwi-shield.conf"
 LOGIN_DEFS = "/etc/login.defs"
 
 # Profil Lynis (KRNL-6000). Volontairement absents : kernel.modules_disabled (bloquerait tout pilote jusqu'au
@@ -512,7 +512,7 @@ def apply_sshd(_ctx):
         raise RuntimeError("sshd -t : " + (r.stderr or r.stdout or "")[-200:])
     _run(["systemctl", "reload", "ssh"])
     _run(["systemctl", "reload", "sshd"])
-    return "sshd_config.d/90-clamav-antivirus.conf écrit et service rechargé", {}
+    return "sshd_config.d/90-dukiwi-shield.conf écrit et service rechargé", {}
 
 
 def revert_sshd(_prev):

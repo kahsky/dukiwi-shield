@@ -1,11 +1,11 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════════════════════
 # CLAMAV ANTIVIRUS — construction du paquet RPM (Fedora et dérivés), noarch, depuis n'importe quelle distribution.
-# Usage : ./build-rpm.sh   →  clamav-antivirus-<VERSION>-1.noarch.rpm
+# Usage : ./build-rpm.sh   →  dukiwi-shield-<VERSION>-1.noarch.rpm
 # Nécessite rpmbuild (paquet « rpm » sur Debian/Mint). Les fichiers viennent de build-deb.sh --stage-only.
 # ═══════════════════════════════════════════════════════════════════════════
 set -e
-APP_NAME="clamav-antivirus"
+APP_NAME="dukiwi-shield"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 VERSION="$(sed -n 's/^VERSION="\(.*\)"/\1/p' "$SCRIPT_DIR/build-deb.sh" | head -1)"
 command -v rpmbuild >/dev/null 2>&1 || { echo "rpmbuild absent : sudo apt install rpm" >&2; exit 2; }

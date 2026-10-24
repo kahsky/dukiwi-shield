@@ -5,5 +5,5 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/python3 /opt/clamav-antivirus/clamav-antivirus-daemon.py --request update
+ExecStart=/usr/bin/python3 /opt/dukiwi-shield/dukiwi-shield-daemon.py --request update
 TimeoutStartSec=30min

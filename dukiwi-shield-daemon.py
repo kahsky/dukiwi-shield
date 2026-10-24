@@ -10,7 +10,7 @@ sans saisir de mot de passe. Le GUI se rabat sur pkexec si le service est absent
 
 Il exécute aussi :
   - le scan complet automatique après la première installation,
-  - les mises à jour planifiées (clamav-antivirus-update.timer : tous les jours
+  - les mises à jour planifiées (dukiwi-shield-update.timer : tous les jours
     à 07:00 et 5 minutes après le démarrage),
   - la surveillance des rafales d'écritures (fanotify) : un programme qui modifie
     beaucoup de fichiers est signalé (info), ou marqué "danger potentiel" s'il
@@ -22,11 +22,11 @@ Il exécute aussi :
     CVE corrigées par celles-ci (apt).
 
 Usage :
-  clamav-antivirus-daemon.py                 # mode daemon (root)
-  clamav-antivirus-daemon.py --request update      # client : demander une MàJ et attendre
-  clamav-antivirus-daemon.py --request scan [/chemin]
-  clamav-antivirus-daemon.py --request status
-  clamav-antivirus-daemon.py --request system-status
+  dukiwi-shield-daemon.py                 # mode daemon (root)
+  dukiwi-shield-daemon.py --request update      # client : demander une MàJ et attendre
+  dukiwi-shield-daemon.py --request scan [/chemin]
+  dukiwi-shield-daemon.py --request status
+  dukiwi-shield-daemon.py --request system-status
 
 (c) 2026 Dukiwi SA - Estavayer-le-Lac
 """
@@ -65,11 +65,11 @@ from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import clamav_harden as harden  # noqa: E402
-import clamav_distro as distro  # noqa: E402
-import clamav_honeypot  # noqa: E402
-import clamav_urlguard  # noqa: E402
-from clamav_common import (  # noqa: E402
+import dukiwi_shield_harden as harden  # noqa: E402
+import dukiwi_shield_distro as distro  # noqa: E402
+import dukiwi_shield_honeypot  # noqa: E402
+import dukiwi_shield_urlguard  # noqa: E402
+from dukiwi_shield_common import (  # noqa: E402
     VERSION, SYSTEM_STATE_DIR, SYSTEM_LOG_DIR, DAEMON_SOCKET,
     SYSTEM_STATE_FILE, SYSTEM_QUARANTINE_DIR, SYSTEM_PROGRESS_FILE, SYSTEM_SCAN_CACHE_DB, SYSTEM_SECRET_FILE,
     quarantine_index_add, quarantine_enrich, parse_moved_line,
@@ -84,13 +84,13 @@ from clamav_common import (  # noqa: E402
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 KEYRING = os.path.join(APP_DIR, "keys", "dukiwi.gpg")
 INTEGRITY_FILE = os.path.join(APP_DIR, "integrity.json")
-MANIFEST_URL = os.environ.get("CLAMAV_ANTIVIRUS_MANIFEST_URL",
-                              "https://www.dukiwi.com/repo/clamav-antivirus/manifest.json")
+MANIFEST_URL = os.environ.get("DUKIWI_SHIELD_MANIFEST_URL",
+                              "https://www.dukiwi.com/repo/dukiwi-shield/manifest.json")
 UPDATES_DIR = os.path.join(SYSTEM_STATE_DIR, "updates")
-POLICY_DIR = "/etc/clamav-antivirus"
+POLICY_DIR = "/etc/dukiwi-shield"
 POLICY_FILE = os.path.join(POLICY_DIR, "policy.json")          # déployé par dukiwi-kit (root)
-ALLOWLIST_URL = os.environ.get("CLAMAV_ANTIVIRUS_ALLOWLIST_URL", "https://www.dukiwi.com/repo/api/allowlist.json")
-TELEMETRY_URL = os.environ.get("CLAMAV_ANTIVIRUS_TELEMETRY_URL", "https://www.dukiwi.com/repo/api/telemetry.php")
+ALLOWLIST_URL = os.environ.get("DUKIWI_SHIELD_ALLOWLIST_URL", "https://www.dukiwi.com/repo/api/allowlist.json")
+TELEMETRY_URL = os.environ.get("DUKIWI_SHIELD_TELEMETRY_URL", "https://www.dukiwi.com/repo/api/telemetry.php")
 ALLOWLIST_FILE = os.path.join(SYSTEM_STATE_DIR, "allowlist.json")
 BLOCKLIST_FILE = os.path.join(SYSTEM_STATE_DIR, "ip-blocklist.txt")
 BLOCKLIST_URLS = {
@@ -111,19 +111,20 @@ def geoip_url(key):
     return GEOIP_PRO_URL.format(key=urllib.parse.quote(key, safe="")) if key else GEOIP_FREE_URL
 UNLOCK_TTL = 900
 ADMIN_GROUPS = ("sudo", "admin", "wheel")
-USER_AGENT = f"clamav-antivirus/{VERSION}"
+USER_AGENT = f"dukiwi-shield/{VERSION}"
 LOG_MAX_BYTES = 5 * 1024 * 1024
 PROGRESS_INTERVAL = 0.25      # secondes entre deux événements de progression
 PROGRESS_SAVE_INTERVAL = 2.0  # secondes entre deux sauvegardes du fichier de reprise
 CLAMD_CONF = distro.clamd_conf()                       # Debian : /etc/clamav/clamd.conf ; Fedora : /etc/clamd.d/scan.conf
-USB_MANIFEST = ".clamav"       # manifeste caché à la racine d'un support amovible déjà analysé
+USB_MANIFEST = ".dukiwi-shield"   # manifeste caché à la racine d'un support amovible déjà analysé
+USB_MANIFEST_LEGACY = ".clamav"   # nom des versions précédentes : relu, remplacé à la prochaine analyse
 SCAN_BATCH = 100               # fichiers par appel clamdscan (un worker = une connexion clamd)
 SCAN_WORKERS_MAX = 8
 MANIFEST_MAX_FILES = 200000
 HISTORY_MAX = 20
 ALERTS_MAX = 30
 SYSTEM_STATUS_MIN_INTERVAL = 300   # secondes entre deux relevés apt à la demande
-TEST_MODE = os.geteuid() != 0 and "CLAMAV_ANTIVIRUS_SOCKET" in os.environ
+TEST_MODE = os.geteuid() != 0 and "DUKIWI_SHIELD_SOCKET" in os.environ
 
 # Sorties d'outils analysées en anglais quelle que soit la langue du système : systemd donne au service la locale
 # de /etc/default/locale (LANG=fr_CH.UTF-8 → « ufw status » répond « État : actif », « Partout »…) et l'analyse
@@ -403,7 +404,7 @@ def parse_find_line(line):
 
 class ScanCache:
     """Fichiers déjà vérifiés sains : empreinte (taille, mtime, ctime, inode) → pas relus tant qu'ils n'ont pas
-    changé, pendant `days` jours. SQLite dans /var/lib/clamav-antivirus/scan-cache.db (des millions d'entrées)."""
+    changé, pendant `days` jours. SQLite dans /var/lib/dukiwi-shield/scan-cache.db (des millions d'entrées)."""
 
     def __init__(self, path, days):
         self.days = int(days or 0)
@@ -489,6 +490,8 @@ def usb_manifest_read(mountpoint):
     """Manifeste .clamav d'un support déjà analysé ; None s'il manque, s'il est illisible ou s'il n'est pas signé
     par cette installation."""
     path = os.path.join(mountpoint, USB_MANIFEST)
+    if not os.path.exists(path) and os.path.exists(os.path.join(mountpoint, USB_MANIFEST_LEGACY)):
+        path = os.path.join(mountpoint, USB_MANIFEST_LEGACY)
     try:
         if os.path.getsize(path) > 64 * 2 ** 20:
             return None
@@ -513,7 +516,7 @@ def manifest_fresh(manifest, days):
 
 def usb_manifest_write(mountpoint, files, db_version, infected):
     """Écrit .clamav (caché) à la racine : fichiers sains {chemin relatif: [taille, mtime_µs]}, signés."""
-    data = {"format": 1, "app": "clamav-antivirus", "version": VERSION, "scanned_at": now_iso(), "db": db_version,
+    data = {"format": 1, "app": "dukiwi-shield", "version": VERSION, "scanned_at": now_iso(), "db": db_version,
             "files": files, "infected": sorted(infected)[:1000]}
     data["hmac"] = manifest_sign(data)
     path = os.path.join(mountpoint, USB_MANIFEST)
@@ -668,7 +671,7 @@ UNTRUSTED_EXE_PREFIXES = ("/tmp/", "/var/tmp/", "/dev/shm/", "/run/user/", "/hom
 
 
 def load_policy():
-    """Politique d'entreprise (/etc/clamav-antivirus/policy.json) : fichier root, non modifiable par les autres,
+    """Politique d'entreprise (/etc/dukiwi-shield/policy.json) : fichier root, non modifiable par les autres,
     signature détachée facultative (policy.json.sig, clé policy-key.gpg du même dossier ou clé Dukiwi)."""
     try:
         st = os.stat(POLICY_FILE)
@@ -1402,7 +1405,7 @@ VALID_POLICY = ("allow", "deny", "reject")
 NETWORK_SKIP_TYPES = ("loopback", "vpn", "wireguard", "tun", "tap", "bridge", "dummy", "ip-tunnel")
 
 
-TRAY_LAUNCHER = "/opt/clamav-antivirus/clamav-antivirus-tray"
+TRAY_LAUNCHER = "/opt/dukiwi-shield/dukiwi-shield-tray"
 
 
 def graphical_sessions():
@@ -1439,7 +1442,7 @@ def session_age(sid):
         return None
 
 
-TRAY_PROCESS_RE = r"^(/usr/bin/)?python3(\.[0-9]+)? /opt/clamav-antivirus/clamav-antivirus\.py"
+TRAY_PROCESS_RE = r"^(/usr/bin/)?python3(\.[0-9]+)? /opt/dukiwi-shield/dukiwi-shield\.py"
 
 
 def network_identity():
@@ -1509,18 +1512,18 @@ def vpn_active():
 UFW_RULE_COMMANDS = ("allow", "deny", "reject", "limit", "insert", "prepend")
 FEATURES_OPT_IN = ("honeypot",)
 URLGUARD_DIR = os.path.join(SYSTEM_STATE_DIR, "urlguard")          # index des listes de sites malveillants
-MAIL_TMP_PREFIX = "/tmp/clamav-antivirus-mail-"                       # pièces jointes déposées par l'hôte natif (par uid)
+MAIL_TMP_PREFIX = "/tmp/dukiwi-shield-mail-"                       # pièces jointes déposées par l'hôte natif (par uid)
 BROWSER_BINARIES = {"thunderbird": ("thunderbird",), "firefox": ("firefox", "firefox-esr"), "chrome": ("google-chrome", "google-chrome-stable"),
                     "chromium": ("chromium", "chromium-browser"), "edge": ("microsoft-edge", "microsoft-edge-stable"), "brave": ("brave-browser", "brave")}               # protections avancées proposées à l'utilisateur (jamais activées d'office)
 
 
-UFW_INIT = os.environ.get("CLAMAV_ANTIVIRUS_UFW_INIT") or next((p for p in ("/lib/ufw/ufw-init", "/usr/lib/ufw/ufw-init") if os.path.exists(p)), "/lib/ufw/ufw-init")
+UFW_INIT = os.environ.get("DUKIWI_SHIELD_UFW_INIT") or next((p for p in ("/lib/ufw/ufw-init", "/usr/lib/ufw/ufw-init") if os.path.exists(p)), "/lib/ufw/ufw-init")
 
 
 def ufw_chains_loaded():
     """Les chaînes UFW existent dans le noyau (même test que ufw-init : « Firewall already started »),
     indépendant de la langue et de ufw.conf. Root seulement ; False si iptables est absent."""
-    if os.geteuid() != 0 and not os.environ.get("CLAMAV_ANTIVIRUS_UFW_INIT"):
+    if os.geteuid() != 0 and not os.environ.get("DUKIWI_SHIELD_UFW_INIT"):
         return False
     r = run_quiet(["iptables", "-L", "ufw-user-input", "-n"], timeout=15)
     return r.returncode == 0
@@ -1631,7 +1634,7 @@ def firewall_conflicts():
 def firewall_unit_persist(log_fn):
     """ufw.service démasquée, activée et démarrée : les règles sont rechargées au démarrage et
     « systemctl is-active ufw » reflète l'état réel."""
-    if TEST_MODE and not os.environ.get("CLAMAV_ANTIVIRUS_UFW_INIT"):
+    if TEST_MODE and not os.environ.get("DUKIWI_SHIELD_UFW_INIT"):
         return
     r = run_quiet(["systemctl", "is-enabled", "ufw"], timeout=10)
     st = (r.stdout or "").strip()
@@ -2204,14 +2207,14 @@ class UpdateChecker:
                     info["error"] = "manifest:no_rpm"
                     return info
                 info.update({"url": rpm.get("url", ""), "sha256": rpm.get("sha256", ""), "size": int(rpm.get("size") or 0)})
-            if manifest.get("package") != "clamav-antivirus" or not info["version"]:
+            if manifest.get("package") != "dukiwi-shield" or not info["version"]:
                 info["error"] = "manifest:invalid"
                 return info
             if not version_gt(info["version"], VERSION):
                 return info
             info["available"] = True
             pkg_name = (manifest.get("rpm") or {}).get("file") if distro.is_rpm() else manifest.get("deb")
-            deb_path = os.path.join(UPDATES_DIR, os.path.basename(pkg_name or (f"clamav-antivirus-{info['version']}-1.noarch.rpm" if distro.is_rpm() else f"clamav-antivirus_{info['version']}_all.deb")))
+            deb_path = os.path.join(UPDATES_DIR, os.path.basename(pkg_name or (f"dukiwi-shield-{info['version']}-1.noarch.rpm" if distro.is_rpm() else f"dukiwi-shield_{info['version']}_all.deb")))
             if not (os.path.exists(deb_path) and sha256_file(deb_path) == info["sha256"]):
                 try:
                     with open(deb_path + ".part", "wb") as f:
@@ -2238,7 +2241,7 @@ class UpdateChecker:
             return False, "sha256_mismatch"
         if TEST_MODE:
             return True, "test_mode"
-        unit = f"clamav-antivirus-upgrade-{int(time.time())}"
+        unit = f"dukiwi-shield-upgrade-{int(time.time())}"
         shell = f"dnf -y install '{path}'" if distro.is_rpm() else f"apt-get install -y --allow-downgrades '{path}'"
         r = run_quiet(["systemd-run", "--unit", unit, "--collect", "--quiet",
                        "-p", "Environment=DEBIAN_FRONTEND=noninteractive",
@@ -4475,7 +4478,7 @@ MAIL_HOST_RE = re.compile(r"^[A-Za-z0-9.-]{1,253}$")
 
 
 def sendmail_path():
-    return os.environ.get("CLAMAV_ANTIVIRUS_SENDMAIL") or shutil.which("sendmail") or "/usr/sbin/sendmail"
+    return os.environ.get("DUKIWI_SHIELD_SENDMAIL") or shutil.which("sendmail") or "/usr/sbin/sendmail"
 
 
 def mail_transport():
@@ -4521,7 +4524,7 @@ def mail_write_config(cfg, password):
 def mail_build(cfg, subject, body):
     msg = email.message.EmailMessage()
     host = socket.gethostname()
-    msg["From"] = cfg.get("from") or f"clamav-antivirus@{host}"
+    msg["From"] = cfg.get("from") or f"dukiwi-shield@{host}"
     msg["To"] = ", ".join(cfg.get("to") or [])
     msg["Subject"] = f"[Dukiwi Shield · {host}] {subject}"
     msg["Date"] = email.utils.formatdate(localtime=True)
@@ -4618,9 +4621,9 @@ class Daemon:
         self.connections = ConnectionMonitor(self)
         self.updater = UpdateChecker(self)
         self.usb = UsbWatcher(self)
-        self.honeypot = clamav_honeypot.Honeypot(self, {"log": log, "write_log": self.write_log, "ufw": self.ufw,
+        self.honeypot = dukiwi_shield_honeypot.Honeypot(self, {"log": log, "write_log": self.write_log, "ufw": self.ufw,
                                                          "parse_ufw_numbered": parse_ufw_numbered})
-        self.urlguard = clamav_urlguard.UrlGuard(self, URLGUARD_DIR, log=log)
+        self.urlguard = dukiwi_shield_urlguard.UrlGuard(self, URLGUARD_DIR, log=log)
         self.last_urlguard_check = 0.0
         self.unlocked = {}          # uid -> expiry (session administrateur)
         self.suspended = {}         # pid -> info (processus suspendus par la réponse automatique)
@@ -4926,7 +4929,7 @@ class Daemon:
                     continue
                 if job.usb:
                     rel = e[0][len(root):] if e[0].startswith(root) else os.path.relpath(e[0], job.path)
-                    if rel in (USB_MANIFEST, USB_MANIFEST + ".tmp"):
+                    if rel in (USB_MANIFEST, USB_MANIFEST + ".tmp", USB_MANIFEST_LEGACY):
                         continue                                  # le manifeste lui-même
                     m = mf_files.get(rel)
                     if m and len(m) >= 2 and m[0] == e[1] and m[1] == e[2]:
@@ -5049,7 +5052,7 @@ class Daemon:
 
         job.phase = "scanning"
         self.emit_progress(job)
-        use_clamd = shutil.which("clamdscan") is not None and not os.environ.get("CLAMAV_ANTIVIRUS_NO_CLAMD") \
+        use_clamd = shutil.which("clamdscan") is not None and not os.environ.get("DUKIWI_SHIELD_NO_CLAMD") \
             and (clamd_ping() if TEST_MODE else ensure_clamd())
         job.engine = "clamd" if use_clamd else "clamscan"
         self.emit_line("info", f"▶ {job.engine} × {job.total}"
@@ -5998,14 +6001,14 @@ class Daemon:
         if "update_hour" in changed or "update_minute" in changed:
             hour, minute = int(self.settings.get("update_hour")), int(self.settings.get("update_minute"))
             if not TEST_MODE:
-                dropin_dir = "/etc/systemd/system/clamav-antivirus-update.timer.d"
+                dropin_dir = "/etc/systemd/system/dukiwi-shield-update.timer.d"
                 try:
                     os.makedirs(dropin_dir, exist_ok=True)
                     with open(os.path.join(dropin_dir, "override.conf"), "w") as f:
                         f.write("[Timer]\nOnCalendar=\n"
                                 f"OnCalendar=*-*-* {hour:02d}:{minute:02d}:00\nOnBootSec=5min\n")
                     run_quiet(["systemctl", "daemon-reload"], timeout=60)
-                    run_quiet(["systemctl", "restart", "clamav-antivirus-update.timer"], timeout=60)
+                    run_quiet(["systemctl", "restart", "dukiwi-shield-update.timer"], timeout=60)
                     applied.append("update_time")
                 except OSError as e:
                     log(f"Réglage heure de MàJ : {e}")
@@ -7206,7 +7209,7 @@ class Daemon:
             return {"ok": True, "refreshing": True}
 
         if cmd == "url_scan":
-            # Pièce jointe déposée par l'hôte natif dans /tmp/clamav-antivirus-mail-<uid>/ : vérification de l'appartenance, clamd
+            # Pièce jointe déposée par l'hôte natif dans /tmp/dukiwi-shield-mail-<uid>/ : vérification de l'appartenance, clamd
             if self.settings.get("mail_scan_attachments") is False:
                 return {"ok": True, "enabled": False, "infected": False}
             path = os.path.realpath(str(req.get("path") or ""))
@@ -7369,7 +7372,7 @@ class Daemon:
                 return {"ok": False, "error": "forbidden", "forbidden": True}
             if TEST_MODE:
                 return {"ok": True, "detail": "test_mode"}
-            r = run_quiet(["systemd-run", "--unit", f"clamav-antivirus-pkg-{int(time.time())}", "--collect", "--quiet",
+            r = run_quiet(["systemd-run", "--unit", f"dukiwi-shield-pkg-{int(time.time())}", "--collect", "--quiet",
                            "-p", "Environment=DEBIAN_FRONTEND=noninteractive",
                            "/bin/sh", "-c", distro.install_shell([name])], timeout=30)
             return {"ok": r.returncode == 0, "error": "" if r.returncode == 0 else "command_failed",
@@ -7378,7 +7381,7 @@ class Daemon:
         if cmd == "install_tools":
             if TEST_MODE:
                 return {"ok": True, "detail": "test_mode"}
-            r = run_quiet(["systemd-run", "--unit", f"clamav-antivirus-tools-{int(time.time())}", "--collect", "--quiet",
+            r = run_quiet(["systemd-run", "--unit", f"dukiwi-shield-tools-{int(time.time())}", "--collect", "--quiet",
                            "-p", "Environment=DEBIAN_FRONTEND=noninteractive",
                            "/bin/sh", "-c", distro.install_shell(distro.tools_packages())], timeout=30)
             return {"ok": r.returncode == 0, "error": "" if r.returncode == 0 else "command_failed",
@@ -7393,7 +7396,7 @@ class Daemon:
                 if self.system_upgrade_running:
                     return {"ok": False, "error": "busy_upgrade"}
                 self.system_upgrade_running = True
-            unit = None if TEST_MODE else f"clamav-antivirus-sysupgrade-{int(time.time())}"
+            unit = None if TEST_MODE else f"dukiwi-shield-sysupgrade-{int(time.time())}"
             threading.Thread(target=self._system_upgrade_worker, args=(unit,), daemon=True).start()
             self.write_log("system upgrade requested" + (" (test mode)" if TEST_MODE else ""))
             return {"ok": True, "detail": "test_mode" if TEST_MODE else ""}
@@ -7406,7 +7409,7 @@ class Daemon:
             if TEST_MODE:
                 return {"ok": True, "detail": "test_mode"}
             def fw_worker():
-                r = run_quiet(["systemd-run", "--unit", f"clamav-antivirus-fwupd-{int(time.time())}", "--collect", "--quiet", "--wait", "--pipe",
+                r = run_quiet(["systemd-run", "--unit", f"dukiwi-shield-fwupd-{int(time.time())}", "--collect", "--quiet", "--wait", "--pipe",
                                "fwupdmgr", "update", "-y", "--no-reboot-check"], timeout=1800)
                 ok = r.returncode in (0, 2)
                 self.write_log(f"firmware update: rc={r.returncode}")
@@ -7428,7 +7431,7 @@ class Daemon:
                 return {"ok": False, "error": "nothing_phased"}
             if TEST_MODE:
                 return {"ok": True, "detail": "test_mode", "packages": names}
-            r = run_quiet(["systemd-run", "--unit", f"clamav-antivirus-phased-{int(time.time())}", "--collect", "--quiet",
+            r = run_quiet(["systemd-run", "--unit", f"dukiwi-shield-phased-{int(time.time())}", "--collect", "--quiet",
                            "-p", "Environment=DEBIAN_FRONTEND=noninteractive",
                            "/bin/sh", "-c", "apt-get install -y -o APT::Get::Always-Include-Phased-Updates=true " + " ".join(names)], timeout=30)
             self.write_log(f"install phased: {names} → {r.returncode}")
@@ -8275,8 +8278,8 @@ def main():
         print(__doc__)
         return
 
-    if os.geteuid() != 0 and "CLAMAV_ANTIVIRUS_SOCKET" not in os.environ:
-        print("Ce service doit être lancé en root (ou avec CLAMAV_ANTIVIRUS_SOCKET pour les tests).",
+    if os.geteuid() != 0 and "DUKIWI_SHIELD_SOCKET" not in os.environ:
+        print("Ce service doit être lancé en root (ou avec DUKIWI_SHIELD_SOCKET pour les tests).",
               file=sys.stderr)
         sys.exit(1)
 

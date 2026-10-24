@@ -5,7 +5,7 @@
 
 const UG = (() => {
     const api = (typeof browser !== 'undefined' && browser.runtime) ? browser : chrome;
-    const NATIVE = 'clamav_antivirus';
+    const NATIVE = 'dukiwi_shield';
     let port = null, seq = 0;
     const pending = new Map();
     const state = { daemon: null, enabled: true, mailScan: true, version: '', lastError: '' };

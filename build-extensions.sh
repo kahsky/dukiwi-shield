@@ -2,8 +2,8 @@
 # Construit les extensions « Contrôle des liens » (Firefox, Chrome/Chromium/Edge/Brave) et « Protection des courriels »
 # (Thunderbird) dans dist/extensions/ :
 #   urlguard-chromium/  urlguard-firefox/  mailguard-thunderbird/   (dossiers décompressés, installables à la main)
-#   clamav-antivirus-urlguard-firefox.xpi  clamav-antivirus-mailguard.xpi  clamav-antivirus-urlguard-chromium.zip
-#   clamav-antivirus-urlguard-<version>.crx + urlguard-update.xml      (si Google Chrome est installé : empaquetage CRX)
+#   dukiwi-shield-urlguard-firefox.xpi  dukiwi-shield-mailguard.xpi  dukiwi-shield-urlguard-chromium.zip
+#   dukiwi-shield-urlguard-<version>.crx + urlguard-update.xml      (si Google Chrome est installé : empaquetage CRX)
 #   manifest-info.json (identifiant Chrome dérivé de la clé, identifiants Gecko, URL de mise à jour)
 # La clé privée Chrome (chrome-extension.pem) vit dans ../repo/keys/ (jamais dans git) ; générée si absente.
 # Usage : ./build-extensions.sh [--quiet]
@@ -74,12 +74,12 @@ build_dir urlguard-firefox firefox.json browser
 build_dir mailguard-thunderbird thunderbird.json thunderbird
 
 # ── Archives : XPI (Firefox, Thunderbird) et ZIP (Chrome, « charger l'extension non empaquetée » ou boutique) ──
-(cd "$OUT/urlguard-firefox" && zip -qr -X "$OUT/clamav-antivirus-urlguard-firefox.xpi" .)
-(cd "$OUT/mailguard-thunderbird" && zip -qr -X "$OUT/clamav-antivirus-mailguard.xpi" .)
-(cd "$OUT/urlguard-chromium" && zip -qr -X "$OUT/clamav-antivirus-urlguard-chromium.zip" .)
+(cd "$OUT/urlguard-firefox" && zip -qr -X "$OUT/dukiwi-shield-urlguard-firefox.xpi" .)
+(cd "$OUT/mailguard-thunderbird" && zip -qr -X "$OUT/dukiwi-shield-mailguard.xpi" .)
+(cd "$OUT/urlguard-chromium" && zip -qr -X "$OUT/dukiwi-shield-urlguard-chromium.zip" .)
 
 # ── CRX signé avec la clé (empaqueteur CRX3 en Python) et update.xml pour l'installation par politique ──
-CRX_NAME="clamav-antivirus-urlguard-$VERSION.crx"
+CRX_NAME="dukiwi-shield-urlguard-$VERSION.crx"
 CRX_OK=false
 if CRX_ID="$(python3 "$SCRIPT_DIR/crx3-pack.py" "$OUT/urlguard-chromium" "$KEY" "$OUT/$CRX_NAME" 2>/dev/null)" && [ -s "$OUT/$CRX_NAME" ]; then
     if [ "$CRX_ID" = "$CHROME_ID" ]; then CRX_OK=true; else echo "  ⚠ identifiant CRX $CRX_ID ≠ $CHROME_ID" >&2; rm -f "$OUT/$CRX_NAME"; fi
@@ -97,12 +97,12 @@ cat > "$OUT/manifest-info.json" <<EOF
 {
   "version": "$VERSION",
   "chrome_id": "$CHROME_ID",
-  "gecko_ids": ["urlguard@clamav-antivirus.dukiwi.com", "mailguard@clamav-antivirus.dukiwi.com"],
-  "native_host": "clamav_antivirus",
+  "gecko_ids": ["urlguard@dukiwi-shield.dukiwi.com", "mailguard@dukiwi-shield.dukiwi.com"],
+  "native_host": "dukiwi_shield",
   "update_url": "$UPDATE_URL",
   "crx": $([ "$CRX_OK" = true ] && echo "\"$CRX_NAME\"" || echo null),
-  "firefox_xpi_url": "$CRX_BASE/clamav-antivirus-urlguard-firefox.xpi",
-  "thunderbird_xpi": "/opt/clamav-antivirus/extensions/clamav-antivirus-mailguard.xpi"
+  "firefox_xpi_url": "$CRX_BASE/dukiwi-shield-urlguard-firefox.xpi",
+  "thunderbird_xpi": "/opt/dukiwi-shield/extensions/dukiwi-shield-mailguard.xpi"
 }
 EOF
 say "  ✅ Extensions $VERSION : chrome id $CHROME_ID, CRX $([ "$CRX_OK" = true ] && echo oui || echo non) → $OUT"

@@ -3,4 +3,4 @@
 # automatique par udisks est désactivé pour les périphériques de stockage USB :
 # le service monte la clé en privé, l'analyse, puis l'interface la monte pour
 # l'utilisateur. Sans le service, le comportement habituel est conservé.
-ACTION=="add", SUBSYSTEM=="block", ENV{ID_BUS}=="usb", TEST=="/run/clamav-antivirus/daemon.sock", ENV{UDISKS_AUTO}="0"
+ACTION=="add", SUBSYSTEM=="block", ENV{ID_BUS}=="usb", TEST=="/run/dukiwi-shield/daemon.sock", ENV{UDISKS_AUTO}="0"

@@ -48,7 +48,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from clamav_common import (  # noqa: E402
+from dukiwi_shield_common import (  # noqa: E402
     VERSION, DAEMON_ALLOWED_ROOTS, UPDATE_TIMER_UNIT, DAEMON_UNIT, LANGUAGES,
     DEFAULT_SETTINGS, daemon_connect, daemon_request, find_command, is_noise_line,
     classify_line, db_last_update, db_files_info, systemd_next_elapse,
@@ -57,9 +57,9 @@ from clamav_common import (  # noqa: E402
 )
 
 # Réglages propres à l'utilisateur (le reste est géré par le daemon)
-import clamav_backup as backup   # sauvegarde des fichiers de l'utilisateur (droits utilisateur)
-import clamav_extras as extras   # fuites, applications hors dépôts, coffre chiffré, bilan hebdomadaire
-import clamav_distro as distro   # Debian/Mint (apt, ufw) ou Fedora (dnf, firewalld)
+import dukiwi_shield_backup as backup   # sauvegarde des fichiers de l'utilisateur (droits utilisateur)
+import dukiwi_shield_extras as extras   # fuites, applications hors dépôts, coffre chiffré, bilan hebdomadaire
+import dukiwi_shield_distro as distro   # Debian/Mint (apt, ufw) ou Fedora (dnf, firewalld)
 
 USER_DEFAULTS = {
     "view_mode": "simple",
@@ -69,14 +69,14 @@ DISCLAIMER_VERSION = 1
 FEATURES_PROPOSED = ()      # protections proposées par une modale au démarrage (aucune : le pot de miel est actif par défaut)
 SECURITY_COMMANDS = ("firewall_set", "firewall_defaults", "firewall_rule_add", "firewall_rule_delete", "ssh_set", "firewall_profile",
                      "forget_network")
-UNLOCK_HELPER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "clamav-antivirus-unlock")
+UNLOCK_HELPER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dukiwi-shield-unlock")
 OVERALL_ICON = {"green": "shield-green", "yellow": "shield-yellow", "blue": "shield-blue", "red": "shield-red"}
 
 # ─── Paths ───────────────────────────────────────────────────────────────────
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 UI_DIR = os.path.join(APP_DIR, "ui")
 ICONS_DIR = os.path.join(APP_DIR, "icons")
-DATA_DIR           = os.path.expanduser("~/.local/share/clamav-antivirus")
+DATA_DIR           = os.path.expanduser("~/.local/share/dukiwi-shield")
 INSTANCE_SOCKET    = os.path.join(DATA_DIR, "instance.sock")
 LOG_FILE           = os.path.join(DATA_DIR, "scan.log")
 STATE_FILE         = os.path.join(DATA_DIR, "state.json")
@@ -944,7 +944,7 @@ class TrayIcon:
     def __init__(self, app):
         self.app = app
         self.indicator = AppIndicator3.Indicator.new(
-            "clamav-antivirus",
+            "dukiwi-shield",
             os.path.join(ICONS_DIR, "shield-green.svg"),
             AppIndicator3.IndicatorCategory.APPLICATION_STATUS
         )
@@ -1075,7 +1075,7 @@ class ClamAVAntivirusApp:
 
         if start_hidden:
             # Mode bouclier : les enfants sont prêts mais la fenêtre n'est jamais mappée (un show_all() suivi d'un hide()
-            # laissait sur GNOME/Ubuntu une entrée « clamav-antivirus.py » dans le dock sans fenêtre visible)
+            # laissait sur GNOME/Ubuntu une entrée « dukiwi-shield.py » dans le dock sans fenêtre visible)
             self.webview.show_all()
         else:
             self.window.show_all()
@@ -3308,8 +3308,8 @@ class ClamAVAntivirusApp:
         except Exception:  # noqa: BLE001
             pass
         try:
-            if subprocess.run(["systemctl", "--user", "is-active", "--quiet", "clamav-antivirus-tray.service"], timeout=10).returncode == 0:
-                subprocess.Popen(["systemctl", "--user", "stop", "--no-block", "clamav-antivirus-tray.service"])
+            if subprocess.run(["systemctl", "--user", "is-active", "--quiet", "dukiwi-shield-tray.service"], timeout=10).returncode == 0:
+                subprocess.Popen(["systemctl", "--user", "stop", "--no-block", "dukiwi-shield-tray.service"])
         except Exception:  # noqa: BLE001
             pass
         GLib.timeout_add(300, Gtk.main_quit)

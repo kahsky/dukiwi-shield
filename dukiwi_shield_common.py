@@ -13,13 +13,13 @@ import struct
 import subprocess
 from datetime import datetime
 
-VERSION = "1.31.0"
+VERSION = "2.0.0"
 
 # ─── Chemins système (daemon root) ───────────────────────────────────────────
 # Surchargeables par variables d'environnement pour les tests sans root.
-SYSTEM_STATE_DIR = os.environ.get("CLAMAV_ANTIVIRUS_STATE_DIR", "/var/lib/clamav-antivirus")
-SYSTEM_LOG_DIR   = os.environ.get("CLAMAV_ANTIVIRUS_LOG_DIR",   "/var/log/clamav-antivirus")
-DAEMON_SOCKET    = os.environ.get("CLAMAV_ANTIVIRUS_SOCKET",    "/run/clamav-antivirus/daemon.sock")
+SYSTEM_STATE_DIR = os.environ.get("DUKIWI_SHIELD_STATE_DIR", "/var/lib/dukiwi-shield")
+SYSTEM_LOG_DIR   = os.environ.get("DUKIWI_SHIELD_LOG_DIR",   "/var/log/dukiwi-shield")
+DAEMON_SOCKET    = os.environ.get("DUKIWI_SHIELD_SOCKET",    "/run/dukiwi-shield/daemon.sock")
 
 SYSTEM_STATE_FILE      = os.path.join(SYSTEM_STATE_DIR, "state.json")
 SYSTEM_QUARANTINE_DIR  = os.path.join(SYSTEM_STATE_DIR, "quarantine")
@@ -36,7 +36,7 @@ CLAMAV_DB_DIR = "/var/lib/clamav"
 USB_MOUNT_ROOT         = os.path.join(os.path.dirname(DAEMON_SOCKET), "mnt")
 
 # Unités systemd
-UPDATE_TIMER_UNIT  = "clamav-antivirus-update.timer"
+UPDATE_TIMER_UNIT  = "dukiwi-shield-update.timer"
 DAEMON_UNIT        = "dukiwi-shield-daemon.service"
 
 # ─── Détection avancée ───────────────────────────────────────────────────────
@@ -53,13 +53,13 @@ BURST_GLOBAL_COOLDOWN   = 30
 # Écritures ignorées par le moniteur (caches, journaux, fichiers temporaires)
 BURST_IGNORE_PREFIXES = (
     "/proc/", "/sys/", "/dev/", "/run/", "/tmp/", "/var/tmp/", "/var/log/",
-    "/var/cache/", "/var/lib/apt/lists/", "/var/lib/clamav/", "/var/lib/clamav-antivirus/",
+    "/var/cache/", "/var/lib/apt/lists/", "/var/lib/clamav/", "/var/lib/dukiwi-shield/",
     "/var/log/journal/", "/var/lib/systemd/", "/home/.ecryptfs/",
 )
 BURST_IGNORE_PARTS = (
     "/.cache/", "/Cache/", "/cache2/", "/CachedData/", "/.local/share/Trash/",
     "/.thumbnails/", "/node_modules/", "/.git/", "/__pycache__/", "/.npm/", "/.cargo/registry/",
-    "/.local/share/clamav-antivirus/", "/.config/Code/", "/.vscode/", "/.mozilla/firefox/",
+    "/.local/share/dukiwi-shield/", "/.config/Code/", "/.vscode/", "/.mozilla/firefox/",
     "/.config/google-chrome/", "/.config/chromium/", "/.config/BraveSoftware/",
 )
 
@@ -181,7 +181,7 @@ SCAN_EXCLUDE = [
     '/var/cache/apt/*', '/var/cache/debconf/*',        # cache paquets APT
     '/var/cache/man/*',                                # cache man pages
     '/var/lib/clamav/*',                               # bases virales (faux positifs garantis)
-    '/var/lib/clamav-antivirus/quarantine/*',          # quarantaine système
+    '/var/lib/dukiwi-shield/quarantine/*',          # quarantaine système
     '/usr/share/doc/*', '/usr/share/man/*',            # documentation
     '/usr/share/info/*', '/usr/share/locale/*',        # données de locale
     '/usr/share/i18n/*', '/usr/share/fonts/*',         # polices
@@ -189,7 +189,7 @@ SCAN_EXCLUDE = [
     '/usr/share/pixmaps/*', '/usr/share/backgrounds/*',# images décoratives
     '/home/*/.cache/*',                                # caches utilisateurs
     '/home/*/.local/share/Trash/*',                    # corbeilles
-    '/home/*/.local/share/clamav-antivirus/*',         # quarantaine / logs utilisateur
+    '/home/*/.local/share/dukiwi-shield/*',         # quarantaine / logs utilisateur
     '/home/*/.thumbnails/*',                           # miniatures
     '/home/*/.mozilla/*/Cache*/*',                     # cache Firefox
     '/home/*/.config/google-chrome/*/Cache*/*',        # cache Chrome
@@ -420,6 +420,23 @@ def load_i18n():
     except Exception:
         _I18N_CACHE = {}
     return _I18N_CACHE
+
+
+def migrate_user_data():
+    """Dossier de données de l'utilisateur des versions précédentes (sauvegardes, coffre, réglages de l'interface) repris
+    une fois, au premier lancement de Dukiwi Shield."""
+    if os.geteuid() == 0:
+        return
+    new = os.path.expanduser("~/.local/share/dukiwi-shield")
+    old = os.path.expanduser("~/.local/share/" + "clamav" + "-antivirus")
+    try:
+        if os.path.isdir(old) and not os.path.islink(old) and not os.path.exists(new):
+            os.rename(old, new)
+    except OSError:
+        pass
+
+
+migrate_user_data()
 
 
 LOCALE_FILES = ("/etc/default/locale", "/etc/locale.conf")      # locale système (Debian / Ubuntu / Mint, puis Fedora)

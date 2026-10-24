@@ -5,9 +5,9 @@ gi.require_version('Gtk', '3.0'); gi.require_version('Gdk', '3.0')
 from gi.repository import Gtk, Gdk, GLib
 P = __import__('os').path.abspath(__import__('os').path.join(__import__('os').path.dirname(__file__), '..', '..'))
 sys.path.insert(0, P)
-spec = importlib.util.spec_from_file_location("cavgui", P + "/clamav-antivirus.py")
+spec = importlib.util.spec_from_file_location("cavgui", P + "/dukiwi-shield.py")
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
-import clamav_common as c
+import dukiwi_shield_common as c
 T = lambda key, **p: c.t("en", key, **p)
 mgr = m.PopupManager()
 title = T("popup.honeypot.title")

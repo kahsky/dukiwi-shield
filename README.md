@@ -7,7 +7,7 @@ rootkit checks, hardening, link and e-mail checking, honeypot, backups and encry
 Italian (English for any other locale), changeable in Settings. Developed by **Dukiwi SA** —
 Estavayer-le-Lac, Switzerland.
 
-![Dukiwi Shield interface](https://www.dukiwi.com/repo/clamav-antivirus/clamav-antivirus.png?v=1310)
+![Dukiwi Shield interface](https://www.dukiwi.com/repo/dukiwi-shield/dukiwi-shield.png?v=200)
 
 
 ## Installation
@@ -23,10 +23,6 @@ echo "deb [signed-by=/usr/share/keyrings/dukiwi.gpg] https://www.dukiwi.com/repo
 echo "msmtp msmtp/apparmor boolean false" | sudo debconf-set-selections   # answers the only question asked during installation (see below)
 sudo apt update && sudo apt install -y dukiwi-shield
 ```
-
-`dukiwi-shield` is a metapackage: it installs the technical package `clamav-antivirus` (name, paths, services and
-repository unchanged, so existing installations keep updating without any action, and
-`sudo apt install clamav-antivirus` still works) and the `dukiwi-shield` command.
 
 Unattended installation: chkrootkit recommends a mail server and the package picks msmtp, the lightest one; msmtp
 asks on the way whether to enable its AppArmor profile (default answer: no). The `debconf-set-selections` line
@@ -52,36 +48,42 @@ versions itself (popup or Security tab) and can install them on its own when the
 
 ### Direct download
 
-- Mint / Ubuntu: [clamav-antivirus_1.31.0_all.deb](https://www.dukiwi.com/repo/clamav-antivirus/clamav-antivirus_1.31.0_all.deb)
-- Fedora: [clamav-antivirus-1.31.0-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/clamav-antivirus-1.31.0-1.noarch.rpm)
+- Mint / Ubuntu: [dukiwi-shield_2.0.0_all.deb](https://www.dukiwi.com/repo/dukiwi-shield/dukiwi-shield_2.0.0_all.deb)
+- Fedora: [dukiwi-shield-2.0.0-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/dukiwi-shield-2.0.0-1.noarch.rpm)
 - All versions: [www.dukiwi.com/repo](https://www.dukiwi.com/repo)
 
 ### Installing a downloaded package by hand
 
 ```bash
-sudo apt install ./clamav-antivirus_1.31.0_all.deb          # Mint / Ubuntu
-sudo dnf install ./clamav-antivirus-1.31.0-1.noarch.rpm      # Fedora
+sudo apt install ./dukiwi-shield_2.0.0_all.deb          # Mint / Ubuntu
+sudo dnf install ./dukiwi-shield-2.0.0-1.noarch.rpm      # Fedora
 ```
 
 The installation enables the system service and the scheduler, then starts the initial scan:
 
 ```bash
 systemctl status dukiwi-shield-daemon          # service (root)
-systemctl list-timers clamav-antivirus-update # next update check
+systemctl list-timers dukiwi-shield-update # next update check
 journalctl -u dukiwi-shield-daemon -f          # follow the initial scan
 ```
 
 ### Uninstalling
 
 ```bash
-sudo apt remove clamav-antivirus   # Mint / Ubuntu
-sudo dnf remove clamav-antivirus   # Fedora
+sudo apt remove dukiwi-shield   # Mint / Ubuntu
+sudo dnf remove dukiwi-shield   # Fedora
 ```
 
 ---
 
 ## Features
 
+- **Dukiwi Shield 2.0** — the program is now Dukiwi Shield from end to end: package `dukiwi-shield`, files under
+  `/opt/dukiwi-shield`, `/var/lib/dukiwi-shield` and `/var/log/dukiwi-shield`, service `dukiwi-shield-daemon`, modules
+  `dukiwi_shield_*.py`, extensions and command `dukiwi-shield`. Installing it replaces the previous package
+  (Conflicts/Replaces on Debian, Obsoletes on Fedora) and carries over its state, quarantine, scan cache, logs, policy,
+  hardening files, update time, USB manifests and per-user data; old systemd links and the old autostart entry are
+  removed and the old browser extensions are uninstalled by policy.
 - **System service** (`dukiwi-shield-daemon`) — runs permanently as root and performs full scans and updates
   on behalf of a user **without admin rights**, hence **without a password**. If the service is missing, the
   application asks for the administrator password (`pkexec`).
@@ -141,8 +143,8 @@ sudo dnf remove clamav-antivirus   # Fedora
   ask for a password (the service applies the rules), except in family mode.
 - **One-click Lynis hardening** — the "Hardening (Lynis)" card of the Security tab lists every suggestion of the
   audit with a plain-language explanation: risk-free recommendations (sysctl parameters, core dumps, legal banners,
-  unused protocols, audit tools, old kernels, permissions…) apply with one click or all at once (`clamav_harden.py`:
-  `90-clamav-antivirus-*` files, previous values kept for "Undo"), those to read before applying (umask, SSH,
+  unused protocols, audit tools, old kernels, permissions…) apply with one click or all at once (`dukiwi_shield_harden.py`:
+  `90-dukiwi-shield-*` files, previous values kept for "Undo"), those to read before applying (umask, SSH,
   TMPDIR) stay manual, the others are explained (false positives, not relevant on a desktop). Lynis is re-run after
   each application; "apply automatically after each audit" setting in the settings.
 - **Fast scan engine** — the service scans through clamd (signature database in memory, started on demand) with
@@ -180,7 +182,7 @@ sudo dnf remove clamav-antivirus   # Fedora
 - **Vulnerabilities with no possible fix explained** — a built-in base (TunnelVision CVE-2024-3661…) shows under
   the vulnerability what it is (design flaw, Ubuntu's "deferred" status) and whether it concerns you (VPN configured
   or not); the checklist counts distinct CVEs, not once per package.
-- **Permanent shield** — the tray is launched by `clamav-antivirus-tray` in a transient systemd user service
+- **Permanent shield** — the tray is launched by `dukiwi-shield-tray` in a transient systemd user service
   (`Restart=always`): killed, it comes back within a second; the root service also checks every 20 s that each
   active graphical session has its shield and relaunches it otherwise. "Quit" requires administrator authentication
   (pkexec), stops the user service cleanly and tells the root service not to relaunch in this session (a new login
@@ -214,15 +216,6 @@ sudo dnf remove clamav-antivirus   # Fedora
   the flagged /etc/sudoers.d files are approved together with the SHA-256 of their content, so they no longer count in
   the score but are flagged again as soon as the file changes (a rule widened to `NOPASSWD: ALL` reappears). Approved
   rules are listed in Security › Trusted programs with "Remove"; administrator required in family mode.
-- **Dukiwi Shield** — new product name (GitHub repository `kahsky/dukiwi-shield`), used everywhere it is displayed
-  (window, shield, popups, mails, extensions, .desktop files, polkit, packages); the metapackage is `dukiwi-shield` and the
-  command `dukiwi-shield`. The system service is `dukiwi-shield-daemon.service`; on upgrade the units of previous versions
-  are stopped and their activation and alias links removed, `clamav-antivirus-daemon.service` stays an alias. The
-  community credits were removed from the Credits window and the README.
-- **Service renamed** — the system service unit is now `dukiwi-shield-daemon.service`, with
-  `clamav-antivirus-daemon.service` kept as an alias so existing commands, scripts and logs keep working. On upgrade the
-  package stops the old unit and removes its activation link before enabling the new one (Debian postinst; RPM %post
-  while the old file is still present); package name, paths and socket are unchanged, so automatic updates go through.
 - **Credits: every component and data source** — the Credits window lists the 26 tools Dukiwi Shield drives, grouped
   (Antivirus, Integrity and audit, Firewall and network, System, Backups and encryption, Applications and browsers,
   Interface), each with its role, licence and website, and the 10 data sources and online services it consults (Cisco
@@ -294,17 +287,6 @@ sudo dnf remove clamav-antivirus   # Fedora
   classified "not applicable: headers only, kernel not installed" (note and badge) instead of 49 high "unfixed"
   ones, and the "install the HWE kernel" advice only appears when the original kernel is really the running one;
   stored reports are reclassified at service startup. Central allowlist: Claude Code binaries of Claude Desktop.
-- **`dukiwi-shield` metapackage** — `apt install dukiwi-shield` and `dnf install dukiwi-shield` install the technical
-  package `clamav-antivirus` (name, paths, units and repository unchanged: transparent for existing installations,
-  which keep updating) and the `dukiwi-shield` command. Own version (1.0.0), built by `build-meta.sh` and published
-  once; the unversioned dependency always pulls the latest clamav-antivirus.
-- **New project name** — no longer just an interface for ClamAV but a set of protections for Linux. The name changes everywhere it is displayed (window, shield, popups,
-  mails, extensions, .desktop files, services, packages); the package name, paths, systemd units and repository stay
-  `clamav-antivirus` so existing installations update without any action. The interface language follows the
-  system: environment variables, then the locale configured in /etc/default/locale or /etc/locale.conf if the
-  session provides none, English for a language without translation. The repository key, APT list and dnf repo
-  files are named after the repository, `dukiwi.*`, shared with OpenVPN GUI (the former `dukiwi-clamav.*` names remain
-  served for earlier installations).
 - **Process watch: approve or trust from the event** — the alert keeps the full text of the warning: events offer
   "That's normal" (warning approved, even if the process is already gone, without PID) and "Trust" (program), then
   show "approved". Trusted programs are recognised by the watch and by the full audit: by path, and by name when the
@@ -330,7 +312,7 @@ sudo dnf remove clamav-antivirus   # Fedora
   updates, integrity, Lynis descriptions, legal notices) also name firewalld, dnf and rpm -V; the repository hint of
   the Update card becomes the dnf repository's, the service now exposing the distribution family in its status.
 - **No more ghost window after an update (Ubuntu/GNOME)** — the shield relaunched after the package upgrade mapped
-  then hid its window (`show_all()` + `hide()`): GNOME kept a "clamav-antivirus.py" entry in the dock with nothing
+  then hid its window (`show_all()` + `hide()`): GNOME kept a "dukiwi-shield.py" entry in the dock with nothing
   visible. In shield mode the window is never mapped until it is opened; `StartupWMClass` in the launcher gives the
   dock the right name and icon however it is launched. And if the window was open at the time of the update
   (postinst SIGTERM), it reopens by itself once the new version is loaded (`window_open_at` marker, valid 5 min).
@@ -344,7 +326,7 @@ sudo dnf remove clamav-antivirus   # Fedora
   installed" → same analysis as bindshells (program really listening on ports 2001, 2002, 4156, 1978, 1812, 2015:
   package or store application → benign).
 - **Link and e-mail checking: Thunderbird, Firefox, Chrome, Chromium, Edge, Brave extensions** — service module
-  `clamav_urlguard.py`: malicious-site lists downloaded several times a day (OpenPhish and Phishing.Database on
+  `dukiwi_shield_urlguard.py`: malicious-site lists downloaded several times a day (OpenPhish and Phishing.Database on
   GitHub, URLhaus via the urlhaus-filter mirror; conditional ETag requests, compact indexes of sorted fingerprints: 4 MB for
   450,000 entries, 0.4 ms per check) and list-free heuristics: raw IP address, identifier before an "@", punycode,
   imitated brand (replaced characters "paypa1", typo on a neighbouring key, brand as a subdomain, real brand domain
@@ -352,15 +334,15 @@ sudo dnf remove clamav-antivirus   # Fedora
   without following, 3 hops) then checked, unencrypted login page, executable download, link whose displayed text
   is another address (e-mails). Verdict safe / caution / danger; brand imitations alone are "caution", "danger" with
   a login page, a dubious domain or punycode ("stream" is not "steam"). Sites "always allowed" by the user. Native
-  messaging host `clamav-antivirus-native-host` (relay to the service socket, browser recognised by the parent
+  messaging host `dukiwi-shield-native-host` (relay to the service socket, browser recognised by the parent
   process); commands `url_check`, `url_report`, `url_allow`, `url_scan` (attachment dropped in
-  `/tmp/clamav-antivirus-mail-<uid>/`, owner verified, clamd → red popup "Infected attachment"), `urlguard`,
+  `/tmp/dukiwi-shield-mail-<uid>/`, owner verified, clamd → red popup "Infected attachment"), `urlguard`,
   `urlguard_refresh`, `urlguard_hello`. Browser extension (`extensions/browser`, MV3 Chrome/Edge/Brave/Chromium, MV2
   Firefox with blocking request): warning page "Back / Open anyway / Always allow this site", notification for
   "caution", badge, status popup. Thunderbird extension (`extensions/thunderbird`, MV2): banner at the top of each
   message (links checked, dangerous ones framed in red and click intercepted with confirmation in the message),
   attachments scanned by clamd when displayed and when e-mails arrive (notification + service popup). Automatic
-  installation: `clamav-antivirus-browser-setup` (postinst / %post) writes the native manifests
+  installation: `dukiwi-shield-browser-setup` (postinst / %post) writes the native manifests
   (`/usr/lib[64]/mozilla`, `/etc/opt/chrome`, `/etc/chromium`, `/etc/opt/edge`, `/etc/opt/brave`), a
   Chrome/Chromium/Edge/Brave policy (`ExtensionSettings` from
   `https://www.dukiwi.com/repo/extensions/urlguard-update.xml`, CRX3 signed by `crx3-pack.py` with the
@@ -389,16 +371,16 @@ sudo dnf remove clamav-antivirus   # Fedora
   firewall, never the gateway nor oneself), "Ignore" (known device) and "Details"; Security › Network honeypot card
   (sources, intents, latest events, block / unblock / forget), "Local network" row of the simple view, yellow
   overall state as long as a suspicious device is neither blocked nor ignored, e-mail if notifications are enabled.
-  Connections coming from this computer are ignored. Nothing is sent outside (module `clamav_honeypot.py`).
+  Connections coming from this computer are ignored. Nothing is sent outside (module `dukiwi_shield_honeypot.py`).
 - **Fedora: clamd socket enabled** — scan.conf is shipped with LocalSocket commented out: uncommented by the package
   and by the service, otherwise no clamd engine. RPM package built, signed, installed and verified in a Fedora 44
   container from the signed dnf repository.
-- **Fedora and derivatives** — distribution layer `clamav_distro.py`: dnf (updates, security advisories and CVEs
+- **Fedora and derivatives** — distribution layer `dukiwi_shield_distro.py`: dnf (updates, security advisories and CVEs
   through `dnf updateinfo`, reboot through `needs-restarting`, dnf-automatic), rpm (file ownership, `rpm -V` instead
   of debsums with classification of configuration files), firewalld (home / public / work zones as profiles,
   services, ports, rich rules, activation), SELinux in the checklist, `clamd@scan` and `/etc/clamd.d/scan.conf`,
   application update through dnf (`rpm` entry of the manifest), direct msmtp. Noarch RPM package (`build-rpm.sh`,
-  `clamav-antivirus.spec`), signed dnf repository (`rpm/fedora`) and `.repo` file shipped by the package; count of
+  `dukiwi-shield.spec`), signed dnf repository (`rpm/fedora`) and `.repo` file shipped by the package; count of
   RPM downloads and dnf index reads.
 - **Popups on Ubuntu (Wayland)** — a Wayland client cannot place its windows and GNOME centred the notifications in
   the middle of the screen; the shield uses GTK's X11 backend through XWayland when a Wayland session offers it, and
@@ -519,7 +501,7 @@ sudo dnf remove clamav-antivirus   # Fedora
   programs and entries (anonymised paths), without personal identifier. Received by `repo/api/telemetry.php`
   (`api/data/*.jsonl` files, summary with `api/summarize.py`) to feed the **signed central allowlist**
   (`api/allowlist.json` + `.sig`, verified with the Dukiwi key, downloaded daily).
-- **Enterprise policy** — `/etc/clamav-antivirus/policy.json` deployed by dukiwi-kit (root-owned file, optional
+- **Enterprise policy** — `/etc/dukiwi-shield/policy.json` deployed by dukiwi-kit (root-owned file, optional
   detached signature): enforced and locked settings, firewall profile, trusted programs; see
   `policy.example.json`. Locked settings appear greyed out.
 - **Inactive kernels** — vulnerabilities of installed but not running kernels (for example the 6.8 GA when the
@@ -613,9 +595,9 @@ sudo dnf install clamav clamd clamav-update python3-gobject python3-pyudev webki
 ## Quick start (without the .deb)
 
 ```bash
-cd clamav-antivirus/
-chmod +x clamav-antivirus.py
-python3 clamav-antivirus.py
+cd dukiwi-shield/
+chmod +x dukiwi-shield.py
+python3 dukiwi-shield.py
 ```
 
 ---
@@ -623,9 +605,8 @@ python3 clamav-antivirus.py
 ## Building the packages
 
 ```bash
-./build-deb.sh        # clamav-antivirus_1.31.0_all.deb   (Mint / Ubuntu)
-./build-rpm.sh        # clamav-antivirus-1.31.0-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
-./build-meta.sh       # dukiwi-shield_1.0.0_all.deb + dukiwi-shield-1.0.0-1.noarch.rpm (metapackage, published once)
+./build-deb.sh        # dukiwi-shield_2.0.0_all.deb   (Mint / Ubuntu)
+./build-rpm.sh        # dukiwi-shield-2.0.0-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
 ```
 
 Both packages share the same file tree (`build-deb.sh --stage-only`) and the same signed integrity manifest.
@@ -636,9 +617,9 @@ Both packages share the same file tree (`build-deb.sh --stage-only`) and the sam
 
 | systemd unit                       | Role                                                                  |
 |------------------------------------|-----------------------------------------------------------------------|
-| `dukiwi-shield-daemon.service`      | Root daemon, socket `/run/clamav-antivirus/daemon.sock` (mode 0666); alias `clamav-antivirus-daemon.service` |
-| `clamav-antivirus-update.timer`    | `OnCalendar=07:00` + `OnBootSec=5min` + `Persistent=true`             |
-| `clamav-antivirus-update.service`  | Oneshot: asks the daemon for the update (`--request update`)          |
+| `dukiwi-shield-daemon.service`      | Root daemon, socket `/run/dukiwi-shield/daemon.sock` (mode 0666) |
+| `dukiwi-shield-update.timer`    | `OnCalendar=07:00` + `OnBootSec=5min` + `Persistent=true`             |
+| `dukiwi-shield-update.service`  | Oneshot: asks the daemon for the update (`--request update`)          |
 
 The daemon accepts, from any local user, a scan of `/` and of the system directories (`/home`, `/etc`, `/var`,
 `/opt`, `/usr`, `/tmp`, `/boot`, `/root`, `/srv`), of media mounted under `/media` and `/mnt`, and of any folder
@@ -647,15 +628,15 @@ with the user's rights.
 
 | File                                     | Role                                                              |
 |------------------------------------------|-------------------------------------------------------------------|
-| `/lib/udev/rules.d/80-clamav-antivirus-usb.rules` | Disables udisks automatic mounting of USB devices **only** when the service socket exists |
+| `/lib/udev/rules.d/80-dukiwi-shield-usb.rules` | Disables udisks automatic mounting of USB devices **only** when the service socket exists |
 | `ui/i18n.js`                             | FR/EN/DE/IT translations (JSON) shared by the page and Python     |
 | `ui/awareness.js`                        | FR/EN/DE/IT awareness lessons ("tip of the day" popup and Good practices page) |
-| `clamav_backup.py`                       | User backup engine (incremental rsync, rclone cloud, media detection) |
-| `clamav_extras.py`                       | Data breaches (HIBP), applications outside repositories, gocryptfs vault, weekly digest |
+| `dukiwi_shield_backup.py`                       | User backup engine (incremental rsync, rclone cloud, media detection) |
+| `dukiwi_shield_extras.py`                       | Data breaches (HIBP), applications outside repositories, gocryptfs vault, weekly digest |
 | `policy.example.json`                    | Example enterprise policy for dukiwi-kit |
 
-System settings (Settings page, `/var/lib/clamav-antivirus/settings.json` file, defaults in `DEFAULT_SETTINGS`
-of `clamav_common.py`): Internet upload threshold and window (5 GB / 1 h), burst thresholds (50 files info,
+System settings (Settings page, `/var/lib/dukiwi-shield/settings.json` file, defaults in `DEFAULT_SETTINGS`
+of `dukiwi_shield_common.py`): Internet upload threshold and window (5 GB / 1 h), burst thresholds (50 files info,
 25 home files for an untrusted program, 15 s window), automatic USB scan and size limit (128 GiB), update check
 time (07:00, applied through a systemd drop-in), weekly scan.
 
@@ -663,15 +644,15 @@ The firewall/SSH commands of the socket (`firewall_set`, `firewall_defaults`, `f
 `firewall_rule_delete`, `ssh_set`) are accepted from any real local user (uid ≥ 1000): this is intended ("without
 root"), but worth knowing on a multi-user machine.
 
-Service files: state and quarantine in `/var/lib/clamav-antivirus/`, log in `/var/log/clamav-antivirus/scan.log`.
+Service files: state and quarantine in `/var/lib/dukiwi-shield/`, log in `/var/log/dukiwi-shield/scan.log`.
 
 Command-line client (diagnostics):
 
 ```bash
-/opt/clamav-antivirus/clamav-antivirus-daemon.py --request status
-/opt/clamav-antivirus/clamav-antivirus-daemon.py --request scan /home
-/opt/clamav-antivirus/clamav-antivirus-daemon.py --request update
-/opt/clamav-antivirus/clamav-antivirus-daemon.py --request system-status
+/opt/dukiwi-shield/dukiwi-shield-daemon.py --request status
+/opt/dukiwi-shield/dukiwi-shield-daemon.py --request scan /home
+/opt/dukiwi-shield/dukiwi-shield-daemon.py --request update
+/opt/dukiwi-shield/dukiwi-shield-daemon.py --request system-status
 ```
 
 ---
@@ -705,20 +686,20 @@ The interface is **HTML + CSS + JavaScript** in the `ui/` folder:
 ## Architecture
 
 ```
-clamav-antivirus/
-├── clamav-antivirus.py              # Python app (GTK3 + WebKit2 + AppIndicator)
-├── clamav-antivirus-daemon.py       # Root system service (Unix socket) + --request client
-├── clamav_common.py                 # Shared paths, exclusions, protocol
+dukiwi-shield/
+├── dukiwi-shield.py              # Python app (GTK3 + WebKit2 + AppIndicator)
+├── dukiwi-shield-daemon.py       # Root system service (Unix socket) + --request client
+├── dukiwi_shield_common.py                 # Shared paths, exclusions, protocol
 ├── systemd/
-│   ├── dukiwi-shield-daemon.service  # alias clamav-antivirus-daemon.service
-│   ├── clamav-antivirus-update.service
-│   └── clamav-antivirus-update.timer # 07:00 daily + 5 min after boot
-├── udev/80-clamav-antivirus-usb.rules # USB stick scan before mounting
-├── clamav-antivirus-unlock          # pkexec helper: administrator session for the daemon
-├── polkit/com.dukiwi.clamav-antivirus.policy
+│   ├── dukiwi-shield-daemon.service
+│   ├── dukiwi-shield-update.service
+│   └── dukiwi-shield-update.timer # 07:00 daily + 5 min after boot
+├── udev/80-dukiwi-shield-usb.rules # USB stick scan before mounting
+├── dukiwi-shield-unlock          # pkexec helper: administrator session for the daemon
+├── polkit/com.dukiwi.dukiwi-shield.policy
 ├── keys/dukiwi.gpg            # Public key verifying updates
 ├── dukiwi.repo                      # dnf repository file shipped by the RPM (shared Dukiwi repository)
-├── build-meta.sh, dukiwi-shield.spec # dukiwi-shield metapackage (deb + rpm)
+├── dukiwi-shield.spec               # RPM package (Fedora)
 ├── ui/
 │   ├── index.html                   # HTML interface
 │   ├── style.css                    # CSS theme (editable variables)
@@ -731,8 +712,8 @@ clamav-antivirus/
 │   ├── shield-yellow.svg            # Tray: non-critical updates, reboot, SSH active
 │   ├── shield-blue.svg              # Tray: old signatures, unfixed vulnerabilities
 │   └── shield-red.svg               # Tray: firewall inactive, security updates, danger
-├── clamav-antivirus.desktop         # Application menu entry
-├── clamav-antivirus-autostart.desktop
+├── dukiwi-shield.desktop         # Application menu entry
+├── dukiwi-shield-autostart.desktop
 ├── build-deb.sh                     # .deb build script
 └── README.md
 ```

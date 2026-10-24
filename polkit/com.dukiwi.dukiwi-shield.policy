@@ -4,7 +4,7 @@
 <policyconfig>
   <vendor>Dukiwi SA</vendor>
   <vendor_url>https://dukiwi.com</vendor_url>
-  <action id="com.dukiwi.clamav-antivirus.unlock">
+  <action id="com.dukiwi.dukiwi-shield.unlock">
     <description>Déverrouiller les réglages de sécurité de Dukiwi Shield</description>
     <description xml:lang="en">Unlock Dukiwi Shield security settings</description>
     <description xml:lang="de">Sicherheitseinstellungen von Dukiwi Shield entsperren</description>
@@ -18,6 +18,6 @@
       <allow_inactive>auth_admin</allow_inactive>
       <allow_active>auth_admin</allow_active>
     </defaults>
-    <annotate key="org.freedesktop.policykit.exec.path">/opt/clamav-antivirus/clamav-antivirus-unlock</annotate>
+    <annotate key="org.freedesktop.policykit.exec.path">/opt/dukiwi-shield/dukiwi-shield-unlock</annotate>
   </action>
 </policyconfig>

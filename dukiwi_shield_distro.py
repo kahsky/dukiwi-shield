@@ -3,14 +3,14 @@
 Dukiwi Shield — couche de distribution.
 Debian / Ubuntu / Linux Mint : apt, dpkg, ufw. Fedora / RHEL et dérivés : dnf, rpm, firewalld, SELinux.
 Tout ce qui dépend de la distribution passe par ici ; le reste du programme ne parle ni apt ni dnf.
-Test : CLAMAV_ANTIVIRUS_OS_RELEASE=<fichier> simule une autre distribution.
+Test : DUKIWI_SHIELD_OS_RELEASE=<fichier> simule une autre distribution.
 """
 import os
 import re
 import shutil
 import subprocess
 
-OS_RELEASE = os.environ.get("CLAMAV_ANTIVIRUS_OS_RELEASE") or "/etc/os-release"
+OS_RELEASE = os.environ.get("DUKIWI_SHIELD_OS_RELEASE") or "/etc/os-release"
 RPM_IDS = ("fedora", "rhel", "centos", "rocky", "almalinux", "nobara", "ultramarine", "bazzite", "ol", "amzn")
 
 
@@ -43,8 +43,8 @@ def is_rpm():
 
 
 # ── Ubuntu sous-jacente (Linux Mint, Pop!_OS, Zorin… reposent sur une version d'Ubuntu) ──────────────
-UPSTREAM_RELEASE = os.environ.get("CLAMAV_ANTIVIRUS_UPSTREAM_RELEASE") or \
-    ("" if os.environ.get("CLAMAV_ANTIVIRUS_OS_RELEASE") else "/etc/upstream-release/lsb-release")
+UPSTREAM_RELEASE = os.environ.get("DUKIWI_SHIELD_UPSTREAM_RELEASE") or \
+    ("" if os.environ.get("DUKIWI_SHIELD_OS_RELEASE") else "/etc/upstream-release/lsb-release")
 UBUNTU_CODENAMES = {"focal": "20.04", "jammy": "22.04", "noble": "24.04", "oracular": "24.10",
                     "plucky": "25.04", "questing": "25.10", "resolute": "26.04"}
 _UBUNTU_VERSION_RE = re.compile(r"^\d\d\.\d\d$")
@@ -330,7 +330,7 @@ def firewall_backend():
 # ── Courrier ─────────────────────────────────────────────────────────────────
 def sendmail_cmd():
     """Commande d'envoi : sendmail du système, sinon msmtp directement (Fedora ne l'enregistre pas comme sendmail)."""
-    p = os.environ.get("CLAMAV_ANTIVIRUS_SENDMAIL") or shutil.which("sendmail") or ("/usr/sbin/sendmail" if os.path.exists("/usr/sbin/sendmail") else "")
+    p = os.environ.get("DUKIWI_SHIELD_SENDMAIL") or shutil.which("sendmail") or ("/usr/sbin/sendmail" if os.path.exists("/usr/sbin/sendmail") else "")
     if not p and shutil.which("msmtp"):
         return [shutil.which("msmtp"), "-t"]
     return [p or "/usr/sbin/sendmail", "-t", "-i"]

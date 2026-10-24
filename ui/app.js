@@ -2634,7 +2634,7 @@ function simulateBackend(data) {
                 { name: 'main.cvd', size: '89072577', date: '2026-03-21 07:58' }] });
             break;
         case 'get_quarantine':
-            reply('quarantineList', { files: [{ name: 'eicar.com', path: '/var/lib/clamav-antivirus/quarantine/eicar.com', size: 68, date: '2026-09-27 22:40', scope: 'system', signature: 'Win.Test.EICAR_HDB-1', origin: '/home/user/Téléchargements/eicar.com' }, { name: 'setup.exe', path: '/var/lib/clamav-antivirus/quarantine/setup.exe', size: 1048576, date: '2026-09-26 10:12', scope: 'system' }] });
+            reply('quarantineList', { files: [{ name: 'eicar.com', path: '/var/lib/dukiwi-shield/quarantine/eicar.com', size: 68, date: '2026-09-27 22:40', scope: 'system', signature: 'Win.Test.EICAR_HDB-1', origin: '/home/user/Téléchargements/eicar.com' }, { name: 'setup.exe', path: '/var/lib/dukiwi-shield/quarantine/setup.exe', size: 1048576, date: '2026-09-26 10:12', scope: 'system' }] });
             break;
         case 'get_log':
             reply('logContent', { scope: data.scope, available: true, lines: ['[2026-09-27T22:40:16] ▶ scan /home', '[2026-09-27T22:40:35] /home/user/eicar.com: Eicar-Test-Signature FOUND', '[2026-09-27T22:40:35] ■ done: 1 infected / 3 files'] });

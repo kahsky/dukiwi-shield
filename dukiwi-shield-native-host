@@ -20,7 +20,7 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from clamav_common import VERSION, daemon_request  # noqa: E402
+from dukiwi_shield_common import VERSION, daemon_request  # noqa: E402
 
 APPS = {"thunderbird": "thunderbird", "firefox": "firefox", "firefox-esr": "firefox", "firefox-bin": "firefox", "chrome": "chrome",
         "google-chrome": "chrome", "chromium": "chromium", "chromium-browser": "chromium", "msedge": "edge", "microsoft-edge": "edge",
@@ -44,7 +44,7 @@ def detect_app():
     for arg in sys.argv[1:]:
         if arg.startswith("chrome-extension://"):
             return "chrome"
-        if "@clamav-antivirus" in arg:
+        if "@dukiwi-shield" in arg:
             return "firefox"
     return "other"
 
@@ -70,7 +70,7 @@ def send_message(obj):
 
 
 def mail_tmp_dir():
-    path = f"/tmp/clamav-antivirus-mail-{os.getuid()}"
+    path = f"/tmp/dukiwi-shield-mail-{os.getuid()}"
     os.makedirs(path, mode=0o700, exist_ok=True)
     os.chmod(path, 0o700)
     return path

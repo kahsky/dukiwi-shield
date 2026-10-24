@@ -2,19 +2,19 @@
 Description=Dukiwi Shield - service système (scans complets et mises à jour sans mot de passe)
 Documentation=https://github.com/kahsky/dukiwi-shield
 After=network.target
-Wants=clamav-antivirus-update.timer
+Wants=dukiwi-shield-update.timer
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 /opt/clamav-antivirus/clamav-antivirus-daemon.py
+ExecStart=/usr/bin/python3 /opt/dukiwi-shield/dukiwi-shield-daemon.py
 Restart=on-failure
 RestartSec=5
-# /run/clamav-antivirus (socket), /var/lib/clamav-antivirus (état, quarantaine), /var/log/clamav-antivirus
-RuntimeDirectory=clamav-antivirus
+# /run/dukiwi-shield (socket), /var/lib/dukiwi-shield (état, quarantaine), /var/log/dukiwi-shield
+RuntimeDirectory=dukiwi-shield
 RuntimeDirectoryMode=0755
-StateDirectory=clamav-antivirus
+StateDirectory=dukiwi-shield
 StateDirectoryMode=0755
-LogsDirectory=clamav-antivirus
+LogsDirectory=dukiwi-shield
 LogsDirectoryMode=0755
 UMask=0022
 # Laisser au daemon le temps de sauvegarder la progression du scan pour la reprise
@@ -23,5 +23,3 @@ TimeoutStopSec=20
 
 [Install]
 WantedBy=multi-user.target
-# Ancien nom (≤ 1.30.4) : « systemctl status clamav-antivirus-daemon » et « journalctl -u … » restent valables
-Alias=clamav-antivirus-daemon.service

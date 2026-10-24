@@ -1,8 +1,8 @@
 [Desktop Entry]
 Name=Dukiwi Shield (tray)
 Comment=Bouclier Dukiwi Shield dans la barre des tâches
-Exec=/opt/clamav-antivirus/clamav-antivirus-tray
-Icon=/opt/clamav-antivirus/icons/logo.svg
+Exec=/opt/dukiwi-shield/dukiwi-shield-tray
+Icon=/opt/dukiwi-shield/icons/logo.svg
 Terminal=false
 Type=Application
 X-GNOME-Autostart-enabled=true

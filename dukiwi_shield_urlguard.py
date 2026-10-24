@@ -732,7 +732,7 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-if __name__ == "__main__":      # test en ligne de commande : python3 clamav_urlguard.py <url> [texte affiché]
+if __name__ == "__main__":      # test en ligne de commande : python3 dukiwi_shield_urlguard.py <url> [texte affiché]
     import sys
 
     class _S:

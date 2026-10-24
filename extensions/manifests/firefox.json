@@ -9,5 +9,5 @@
   "background": { "scripts": [ "client.js", "background.js" ] },
   "browser_action": { "default_icon": { "16": "icons/16.png", "32": "icons/32.png" }, "default_title": "__MSG_ext_name__", "default_popup": "popup.html" },
   "permissions": [ "nativeMessaging", "webNavigation", "tabs", "notifications", "storage", "webRequest", "webRequestBlocking", "http://*/*", "https://*/*" ],
-  "browser_specific_settings": { "gecko": { "id": "urlguard@clamav-antivirus.dukiwi.com", "strict_min_version": "115.0" } }
+  "browser_specific_settings": { "gecko": { "id": "urlguard@dukiwi-shield.dukiwi.com", "strict_min_version": "115.0" } }
 }

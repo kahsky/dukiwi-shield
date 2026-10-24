@@ -8,7 +8,7 @@ OnCalendar=*-*-* 07:00:00
 OnBootSec=5min
 # Rattraper une exécution de 07:00 manquée (ordinateur éteint)
 Persistent=true
-Unit=clamav-antivirus-update.service
+Unit=dukiwi-shield-update.service
 
 [Install]
 WantedBy=timers.target

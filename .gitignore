@@ -7,8 +7,6 @@ keys/gnupg/
 *.secring
 # Artefacts de build
 build/
-__pycache__/*.pyc
-!__pycache__/clamav-antivirus.cpython-312.pyc
 dist/
 __pycache__/
 *.pyc

@@ -7,8 +7,8 @@ Tourne avec les droits de l'utilisateur (aucun root nécessaire) :
   avec la rétention choisie) ; sur FAT32/exFAT/NTFS, miroir simple (pas de liens durs) ;
 - cloud : rclone (S3 compatible, Infomaniak Swiss Backup S3 ou Swift, kDrive WebDAV, ou un remote
   rclone déjà configuré), synchronisation avec archivage des fichiers remplacés (--backup-dir).
-L'état (destinations, contenu, planification, historique) vit dans ~/.local/share/clamav-antivirus/backup.json.
-Les instantanés système restent l'affaire de Timeshift (lu par le service, voir clamav-antivirus-daemon.py).
+L'état (destinations, contenu, planification, historique) vit dans ~/.local/share/dukiwi-shield/backup.json.
+Les instantanés système restent l'affaire de Timeshift (lu par le service, voir dukiwi-shield-daemon.py).
 """
 
 import json
@@ -23,7 +23,7 @@ import time
 import uuid
 from datetime import datetime
 
-DATA_DIR = os.path.expanduser("~/.local/share/clamav-antivirus")
+DATA_DIR = os.path.expanduser("~/.local/share/dukiwi-shield")
 BACKUP_FILE = os.path.join(DATA_DIR, "backup.json")
 BACKUP_DIRNAME = "ClamAV-Backup"
 SNAPSHOT_RE = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$")

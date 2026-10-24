@@ -2,13 +2,13 @@
 # ═══════════════════════════════════════════════════════════════════════════
 # CLAMAV ANTIVIRUS — Build .deb package
 # Usage: ./build-deb.sh
-# Output: clamav-antivirus_<VERSION>_all.deb
+# Output: dukiwi-shield_<VERSION>_all.deb
 # ═══════════════════════════════════════════════════════════════════════════
 
 set -e
 
-APP_NAME="clamav-antivirus"
-VERSION="1.31.0"
+APP_NAME="dukiwi-shield"
+VERSION="2.0.0"
 ARCH="all"
 PKG_DIR="${APP_NAME}_${VERSION}_${ARCH}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -38,23 +38,23 @@ mkdir -p "${PKG_DIR}/usr/share/polkit-1/actions"
 
 # ── Copy application files ──
 echo "[2/5] Copying application files..."
-cp "${SCRIPT_DIR}/clamav-antivirus.py"             "${PKG_DIR}/opt/${APP_NAME}/"
-cp "${SCRIPT_DIR}/clamav-antivirus-daemon.py"      "${PKG_DIR}/opt/${APP_NAME}/"
-cp "${SCRIPT_DIR}/clamav_common.py"                "${PKG_DIR}/opt/${APP_NAME}/"
-cp "${SCRIPT_DIR}/clamav_backup.py"                "${PKG_DIR}/opt/${APP_NAME}/"
-cp "${SCRIPT_DIR}/clamav_extras.py"                "${PKG_DIR}/opt/${APP_NAME}/"
-cp "${SCRIPT_DIR}/clamav_harden.py"                "${PKG_DIR}/opt/${APP_NAME}/"
-cp "${SCRIPT_DIR}/clamav_distro.py"                "${PKG_DIR}/opt/${APP_NAME}/"
-cp "${SCRIPT_DIR}/clamav_honeypot.py"              "${PKG_DIR}/opt/${APP_NAME}/"
-cp "${SCRIPT_DIR}/clamav_urlguard.py"              "${PKG_DIR}/opt/${APP_NAME}/"
-cp "${SCRIPT_DIR}/clamav-antivirus-native-host"    "${PKG_DIR}/opt/${APP_NAME}/"
-cp "${SCRIPT_DIR}/clamav-antivirus-browser-setup"  "${PKG_DIR}/opt/${APP_NAME}/"
+cp "${SCRIPT_DIR}/dukiwi-shield.py"             "${PKG_DIR}/opt/${APP_NAME}/"
+cp "${SCRIPT_DIR}/dukiwi-shield-daemon.py"      "${PKG_DIR}/opt/${APP_NAME}/"
+cp "${SCRIPT_DIR}/dukiwi_shield_common.py"                "${PKG_DIR}/opt/${APP_NAME}/"
+cp "${SCRIPT_DIR}/dukiwi_shield_backup.py"                "${PKG_DIR}/opt/${APP_NAME}/"
+cp "${SCRIPT_DIR}/dukiwi_shield_extras.py"                "${PKG_DIR}/opt/${APP_NAME}/"
+cp "${SCRIPT_DIR}/dukiwi_shield_harden.py"                "${PKG_DIR}/opt/${APP_NAME}/"
+cp "${SCRIPT_DIR}/dukiwi_shield_distro.py"                "${PKG_DIR}/opt/${APP_NAME}/"
+cp "${SCRIPT_DIR}/dukiwi_shield_honeypot.py"              "${PKG_DIR}/opt/${APP_NAME}/"
+cp "${SCRIPT_DIR}/dukiwi_shield_urlguard.py"              "${PKG_DIR}/opt/${APP_NAME}/"
+cp "${SCRIPT_DIR}/dukiwi-shield-native-host"    "${PKG_DIR}/opt/${APP_NAME}/"
+cp "${SCRIPT_DIR}/dukiwi-shield-browser-setup"  "${PKG_DIR}/opt/${APP_NAME}/"
 # Extensions Thunderbird / navigateurs (XPI, CRX, dossiers décompressés, update.xml, identifiants)
 "${SCRIPT_DIR}/build-extensions.sh" --quiet
 mkdir -p "${PKG_DIR}/opt/${APP_NAME}/extensions"
 cp -r "${SCRIPT_DIR}/dist/extensions/." "${PKG_DIR}/opt/${APP_NAME}/extensions/"
-cp "${SCRIPT_DIR}/clamav-antivirus-tray"           "${PKG_DIR}/opt/${APP_NAME}/"
-cp "${SCRIPT_DIR}/clamav-scan-nemo.sh"             "${PKG_DIR}/opt/${APP_NAME}/"
+cp "${SCRIPT_DIR}/dukiwi-shield-tray"           "${PKG_DIR}/opt/${APP_NAME}/"
+cp "${SCRIPT_DIR}/dukiwi-shield-scan-nemo.sh"             "${PKG_DIR}/opt/${APP_NAME}/"
 cp "${SCRIPT_DIR}/systemd/"*.service               "${PKG_DIR}/lib/systemd/system/"
 cp "${SCRIPT_DIR}/systemd/"*.timer                 "${PKG_DIR}/lib/systemd/system/"
 cp "${SCRIPT_DIR}/ui/index.html"                    "${PKG_DIR}/opt/${APP_NAME}/ui/"
@@ -63,23 +63,23 @@ cp "${SCRIPT_DIR}/ui/app.js"                        "${PKG_DIR}/opt/${APP_NAME}/
 cp "${SCRIPT_DIR}/ui/i18n.js"                       "${PKG_DIR}/opt/${APP_NAME}/ui/"
 cp "${SCRIPT_DIR}/ui/awareness.js"                  "${PKG_DIR}/opt/${APP_NAME}/ui/"
 cp "${SCRIPT_DIR}/udev/"*.rules                     "${PKG_DIR}/lib/udev/rules.d/"
-cp "${SCRIPT_DIR}/clamav-antivirus-unlock"          "${PKG_DIR}/opt/${APP_NAME}/"
+cp "${SCRIPT_DIR}/dukiwi-shield-unlock"          "${PKG_DIR}/opt/${APP_NAME}/"
 cp "${SCRIPT_DIR}/keys/dukiwi.gpg"            "${PKG_DIR}/opt/${APP_NAME}/keys/"
 cp "${SCRIPT_DIR}/keys/dukiwi.asc"            "${PKG_DIR}/opt/${APP_NAME}/keys/"
 cp "${SCRIPT_DIR}/polkit/"*.policy                  "${PKG_DIR}/usr/share/polkit-1/actions/"
 cp "${SCRIPT_DIR}/icons/"*.svg                      "${PKG_DIR}/opt/${APP_NAME}/icons/"
-cp "${SCRIPT_DIR}/clamav-antivirus.desktop"         "${PKG_DIR}/usr/share/applications/"
-cp "${SCRIPT_DIR}/clamav-antivirus-nemo.nemo_action" "${PKG_DIR}/usr/share/nemo/actions/"
-cp "${SCRIPT_DIR}/clamav-antivirus-autostart.desktop" "${PKG_DIR}/etc/xdg/autostart/"
+cp "${SCRIPT_DIR}/dukiwi-shield.desktop"         "${PKG_DIR}/usr/share/applications/"
+cp "${SCRIPT_DIR}/dukiwi-shield-nemo.nemo_action" "${PKG_DIR}/usr/share/nemo/actions/"
+cp "${SCRIPT_DIR}/dukiwi-shield-autostart.desktop" "${PKG_DIR}/etc/xdg/autostart/"
 
 # Normalize permissions (independent of the builder's umask), then mark scripts executable
 find "${PKG_DIR}" -type d -exec chmod 755 {} +
 find "${PKG_DIR}" -type f -exec chmod 644 {} +
-chmod +x "${PKG_DIR}/opt/${APP_NAME}/clamav-antivirus.py"
-chmod +x "${PKG_DIR}/opt/${APP_NAME}/clamav-antivirus-daemon.py"
-chmod +x "${PKG_DIR}/opt/${APP_NAME}/clamav-antivirus-unlock"
-chmod +x "${PKG_DIR}/opt/${APP_NAME}/clamav-antivirus-tray"
-chmod +x "${PKG_DIR}/opt/${APP_NAME}/clamav-scan-nemo.sh"
+chmod +x "${PKG_DIR}/opt/${APP_NAME}/dukiwi-shield.py"
+chmod +x "${PKG_DIR}/opt/${APP_NAME}/dukiwi-shield-daemon.py"
+chmod +x "${PKG_DIR}/opt/${APP_NAME}/dukiwi-shield-unlock"
+chmod +x "${PKG_DIR}/opt/${APP_NAME}/dukiwi-shield-tray"
+chmod +x "${PKG_DIR}/opt/${APP_NAME}/dukiwi-shield-scan-nemo.sh"
 
 # ── Integrity manifest (sha256 of every packaged file), signed with the Dukiwi key if present ──
 echo "[2b/5] Writing integrity manifest..."
@@ -94,13 +94,13 @@ for dp, _, fns in os.walk(root):
     for fn in fns:
         full = os.path.join(dp, fn)
         rel = os.path.relpath(full, root)
-        if os.path.islink(full) or rel in ("opt/clamav-antivirus/integrity.json", "opt/clamav-antivirus/integrity.json.sig"):
+        if os.path.islink(full) or rel in ("opt/dukiwi-shield/integrity.json", "opt/dukiwi-shield/integrity.json.sig"):
             continue
         h = hashlib.sha256()
         with open(full, "rb") as f:
             h.update(f.read())
         files[rel] = h.hexdigest()
-with open(os.path.join(root, "opt/clamav-antivirus/integrity.json"), "w") as f:
+with open(os.path.join(root, "opt/dukiwi-shield/integrity.json"), "w") as f:
     json.dump({"version": version, "date": datetime.datetime.now().isoformat(timespec="seconds"),
                "files": dict(sorted(files.items()))}, f, indent=2)
 print(f"  {len(files)} fichiers")
@@ -127,6 +127,9 @@ Version: ${VERSION}
 Section: utils
 Priority: optional
 Architecture: ${ARCH}
+Conflicts: clamav-antivirus
+Replaces: clamav-antivirus
+Breaks: clamav-antivirus
 Depends: python3 (>= 3.8), python3-gi, python3-pyudev, python3-apt, gir1.2-webkit2-4.1, gir1.2-ayatanaappindicator3-0.1 | gir1.2-appindicator3-0.1, gir1.2-gtk-3.0, pkexec | policykit-1, clamav, clamav-daemon, clamav-freshclam, lynis, unhide, chkrootkit, debsums, msmtp-mta | mail-transport-agent, zenity, systemd, udev, udisks2
 Recommends: libnotify-bin, mintupdate | update-manager, timeshift, rclone, rsync, gocryptfs, flatpak
 Maintainer: Dukiwi SA <info@dukiwi.ch>
@@ -156,7 +159,51 @@ cat > "${PKG_DIR}/DEBIAN/postinst" << 'EOF'
 #!/bin/bash
 set -e
 
-STATE_DIR=/var/lib/clamav-antivirus
+# ── Reprise d'une installation des versions précédentes (paquet « OLD », ≤ 1.31.1) ─────────────────────────────
+# Le paquet précédent vient d'être retiré (Conflicts/Replaces) : état, quarantaine, cache, journaux, politique, fichiers
+# de durcissement et réglage de l'heure des mises à jour passent sous le nouveau nom ; liens systemd orphelins supprimés.
+OLD=clamav-antivirus
+migrate_dir() {
+    if [ -d "$1" ] && [ ! -L "$1" ]; then
+        set +e
+        if [ ! -e "$2" ] || [ -z "$(ls -A "$2" 2>/dev/null)" ]; then
+            rmdir "$2" 2>/dev/null || true
+            mv "$1" "$2"
+        else
+            cp -an "$1/." "$2/" && rm -rf "$1"
+        fi
+        set -e
+    fi
+    return 0
+}
+systemctl stop $OLD-daemon.service linux-shield-daemon.service 2>/dev/null || true
+migrate_dir /var/lib/$OLD /var/lib/dukiwi-shield
+migrate_dir /var/log/$OLD /var/log/dukiwi-shield
+migrate_dir /etc/$OLD /etc/dukiwi-shield
+migrate_dir /etc/systemd/system/$OLD-update.timer.d /etc/systemd/system/dukiwi-shield-update.timer.d
+for f in /etc/sysctl.d/90-$OLD* /etc/security/limits.d/90-$OLD* /etc/systemd/coredump.conf.d/90-$OLD* \
+         /etc/modprobe.d/90-$OLD* /etc/ssh/sshd_config.d/90-$OLD* /etc/needrestart/conf.d/90-$OLD*; do
+    [ -e "$f" ] && { mv -f "$f" "${f//$OLD/dukiwi-shield}" || true; }
+done
+for f in /etc/hosts /etc/login.defs /etc/sysctl.d/90-dukiwi-shield* /etc/security/limits.d/90-dukiwi-shield* \
+         /etc/systemd/coredump.conf.d/90-dukiwi-shield* /etc/modprobe.d/90-dukiwi-shield* /etc/ssh/sshd_config.d/90-dukiwi-shield* \
+         /etc/needrestart/conf.d/90-dukiwi-shield*; do
+    # réécrit sur place (même inode : /etc/hosts peut être un montage), jamais bloquant
+    if [ -f "$f" ] && grep -q '# ClamAV Antivirus GUI' "$f" 2>/dev/null; then
+        sed 's/# ClamAV Antivirus GUI/# Dukiwi Shield/' "$f" > "$f.dukiwi-tmp" && cat "$f.dukiwi-tmp" > "$f" || true
+        rm -f "$f.dukiwi-tmp"
+    fi
+done
+rm -f /etc/xdg/autostart/$OLD-autostart.desktop
+for l in /etc/systemd/system/multi-user.target.wants/$OLD-daemon.service /etc/systemd/system/multi-user.target.wants/linux-shield-daemon.service \
+         /etc/systemd/system/$OLD-daemon.service /etc/systemd/system/timers.target.wants/$OLD-update.timer; do
+    [ -L "$l" ] && rm -f "$l"
+done
+# Restes non suivis par l'ancien paquet (caches Python) une fois celui-ci retiré
+[ -d /opt/$OLD ] && [ ! -e /opt/$OLD/$OLD.py ] && rm -rf /opt/$OLD
+true
+
+STATE_DIR=/var/lib/dukiwi-shield
 
 # Enable and start freshclam service
 systemctl enable clamav-freshclam 2>/dev/null || true
@@ -171,29 +218,18 @@ if [ "$1" = "configure" ] && [ ! -f "$STATE_DIR/state.json" ]; then
     FIRST_INSTALL=1
 fi
 
-# Service renommé (1.31.0) : dukiwi-shield-daemon.service, alias clamav-antivirus-daemon.service. Les unités des versions
-# précédentes tournent encore (dpkg vient de retirer leur fichier) : arrêt, puis liens d'activation et d'alias orphelins supprimés.
-for old in clamav-antivirus-daemon linux-shield-daemon; do
-    if [ -L /etc/systemd/system/multi-user.target.wants/$old.service ]; then
-        systemctl stop $old.service 2>/dev/null || true
-        rm -f /etc/systemd/system/multi-user.target.wants/$old.service
-    fi
-done
-if [ -L /etc/systemd/system/clamav-antivirus-daemon.service ] && [ ! -e /etc/systemd/system/clamav-antivirus-daemon.service ]; then
-    rm -f /etc/systemd/system/clamav-antivirus-daemon.service       # alias de la 1.30.x vers un fichier disparu
-fi
 systemctl daemon-reload 2>/dev/null || true
 udevadm control --reload-rules 2>/dev/null || true
 # Extensions : hôte natif et politiques pour Thunderbird, Firefox, Chrome, Chromium, Edge, Brave
-/opt/clamav-antivirus/clamav-antivirus-browser-setup install 2>/dev/null || true
+/opt/dukiwi-shield/dukiwi-shield-browser-setup install 2>/dev/null || true
 systemctl enable dukiwi-shield-daemon.service 2>/dev/null || true
-systemctl enable clamav-antivirus-update.timer 2>/dev/null || true
+systemctl enable dukiwi-shield-update.timer 2>/dev/null || true
 systemctl restart dukiwi-shield-daemon.service 2>/dev/null || true
-systemctl start clamav-antivirus-update.timer 2>/dev/null || true
+systemctl start dukiwi-shield-update.timer 2>/dev/null || true
 
 # Relancer les GUI ouvertes pour charger la nouvelle version : le service utilisateur (Restart=always) ou la
 # surveillance du service root relancent le bouclier dans chaque session graphique active
-pkill -f "/opt/clamav-antivirus/clamav-antivirus.py" 2>/dev/null || true
+pkill -f "/opt/dukiwi-shield/dukiwi-shield.py" 2>/dev/null || true
 
 # Update desktop database
 if command -v update-desktop-database &> /dev/null; then
@@ -205,7 +241,7 @@ echo "════════════════════════�
 echo "  ✅ Dukiwi Shield installé avec succès !"
 echo ""
 echo "  Lancez-le depuis le menu Applications > Système"
-echo "  ou via: /opt/clamav-antivirus/clamav-antivirus.py"
+echo "  ou via: /opt/dukiwi-shield/dukiwi-shield.py"
 echo ""
 echo "  Service système : dukiwi-shield-daemon (actif)"
 echo "  Mises à jour    : tous les jours à 07:00 et"
@@ -229,11 +265,11 @@ cat > "${PKG_DIR}/DEBIAN/prerm" << 'EOF'
 #!/bin/bash
 set -e
 # Kill running instances
-pkill -f "/opt/clamav-antivirus/clamav-antivirus.py" 2>/dev/null || true
+pkill -f "/opt/dukiwi-shield/dukiwi-shield.py" 2>/dev/null || true
 if [ "$1" = "remove" ]; then
-    /opt/clamav-antivirus/clamav-antivirus-browser-setup remove 2>/dev/null || true
-    systemctl stop clamav-antivirus-update.timer 2>/dev/null || true
-    systemctl disable clamav-antivirus-update.timer 2>/dev/null || true
+    /opt/dukiwi-shield/dukiwi-shield-browser-setup remove 2>/dev/null || true
+    systemctl stop dukiwi-shield-update.timer 2>/dev/null || true
+    systemctl disable dukiwi-shield-update.timer 2>/dev/null || true
     systemctl stop dukiwi-shield-daemon.service 2>/dev/null || true
     systemctl disable dukiwi-shield-daemon.service 2>/dev/null || true
 fi
@@ -248,7 +284,7 @@ set -e
 systemctl daemon-reload 2>/dev/null || true
 udevadm control --reload-rules 2>/dev/null || true
 if [ "$1" = "purge" ]; then
-    rm -rf /var/lib/clamav-antivirus /var/log/clamav-antivirus /run/clamav-antivirus
+    rm -rf /var/lib/dukiwi-shield /var/log/dukiwi-shield /run/dukiwi-shield
 fi
 exit 0
 EOF

@@ -4,8 +4,8 @@
 # Scans selected file(s)/folder(s) and shows results in a dialog
 # ═══════════════════════════════════════════════════════════════════════════
 
-QUARANTINE_DIR="$HOME/.local/share/clamav-antivirus/quarantine"
-LOG_FILE="$HOME/.local/share/clamav-antivirus/scan.log"
+QUARANTINE_DIR="$HOME/.local/share/dukiwi-shield/quarantine"
+LOG_FILE="$HOME/.local/share/dukiwi-shield/scan.log"
 TARGET="$1"
 
 # Ensure directories exist

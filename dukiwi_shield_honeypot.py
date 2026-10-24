@@ -29,7 +29,7 @@ import threading
 import time
 from datetime import datetime
 
-import clamav_distro as distro
+import dukiwi_shield_distro as distro
 
 TAG = "cav-honeypot"                      # commentaire des règles de pare-feu gérées ici
 DECOY_PORTS = (23, 2323)                  # telnet : jamais utilisé sur un poste de travail, toujours balayé
@@ -412,7 +412,7 @@ class Honeypot(threading.Thread):
                 conn.close()
             except OSError:
                 pass
-        if (ip in self.own_ips() or ip.startswith("127.") or ip == "::1") and not os.environ.get("CLAMAV_ANTIVIRUS_HONEYPOT_SELF"):
+        if (ip in self.own_ips() or ip.startswith("127.") or ip == "::1") and not os.environ.get("DUKIWI_SHIELD_HONEYPOT_SELF"):
             return                                        # test depuis cet ordinateur : pas une menace (sauf en test)
         self._record(ip, port, intent, detail)
 
@@ -542,7 +542,7 @@ class Honeypot(threading.Thread):
 
     # ── Journal du pare-feu ──────────────────────────────────────────────
     def _fw_log_cmd(self):
-        path = os.environ.get("CLAMAV_ANTIVIRUS_FW_LOG")
+        path = os.environ.get("DUKIWI_SHIELD_FW_LOG")
         if path:
             return ["tail", "-F", "-n", "0", path]
         if os.geteuid() != 0:
@@ -626,7 +626,7 @@ class Honeypot(threading.Thread):
 
     # ── Pare-feu : ouverture des leurres, blocage d'une source ──────────
     def _fw_managed(self):
-        if os.environ.get("CLAMAV_ANTIVIRUS_HONEYPOT_FW") == "1":
+        if os.environ.get("DUKIWI_SHIELD_HONEYPOT_FW") == "1":
             return True
         if os.geteuid() != 0:
             return False
