@@ -1,0 +1,60 @@
+#!/bin/bash
+# ═══════════════════════════════════════════════════════════════════════════
+# Dukiwi Shield — ouvrir un fichier dans un bac à sable (firejail)
+# Le fichier est copié dans un dossier temporaire qui devient le dossier personnel du programme :
+# pas de réseau, pas d'accès à vos fichiers, ni au bus de session, ni aux autres programmes (/tmp privé).
+# Les modifications faites dans le bac à sable sont perdues à la fermeture.
+# ═══════════════════════════════════════════════════════════════════════════
+
+case "${LANGUAGE:-${LC_ALL:-${LC_MESSAGES:-$LANG}}}" in
+    fr*) T_TITLE="Bac à sable"; T_MISSING="firejail n'est pas installé.\n\nInstallez-le depuis Dukiwi Shield (Paramètres › Temps réel › Bac à sable) ou avec :\nsudo apt install firejail   (Fedora : sudo dnf install firejail)"; T_NONE="Aucun fichier sélectionné."; T_DIR="Un dossier ne peut pas être ouvert dans le bac à sable."; T_FAIL="Le bac à sable n'a pas pu être créé (firejail ne peut pas isoler le programme ici, par exemple dans un conteneur ou une autre application isolée).\n\nLe fichier n'a pas été ouvert." ;;
+    de*) T_TITLE="Sandbox"; T_MISSING="firejail ist nicht installiert.\n\nInstallieren Sie es in Dukiwi Shield (Einstellungen › Echtzeit › Sandbox) oder mit:\nsudo apt install firejail   (Fedora: sudo dnf install firejail)"; T_NONE="Keine Datei ausgewählt."; T_DIR="Ein Ordner kann nicht in der Sandbox geöffnet werden."; T_FAIL="Die Sandbox konnte nicht erstellt werden (firejail kann das Programm hier nicht isolieren, z. B. in einem Container oder einer anderen isolierten Anwendung).\n\nDie Datei wurde nicht geöffnet." ;;
+    it*) T_TITLE="Sandbox"; T_MISSING="firejail non è installato.\n\nInstallalo da Dukiwi Shield (Impostazioni › Tempo reale › Sandbox) o con:\nsudo apt install firejail   (Fedora: sudo dnf install firejail)"; T_NONE="Nessun file selezionato."; T_DIR="Una cartella non può essere aperta nella sandbox."; T_FAIL="Impossibile creare la sandbox (firejail non può isolare il programma qui, ad esempio in un container o in un'altra applicazione isolata).\n\nIl file non è stato aperto." ;;
+    *)   T_TITLE="Sandbox"; T_MISSING="firejail is not installed.\n\nInstall it from Dukiwi Shield (Settings › Real-time › Sandbox) or with:\nsudo apt install firejail   (Fedora: sudo dnf install firejail)"; T_NONE="No file selected."; T_DIR="A folder cannot be opened in the sandbox."; T_FAIL="The sandbox could not be created (firejail cannot isolate the program here, for example inside a container or another sandboxed application).\n\nThe file was not opened." ;;
+esac
+
+say() { zenity --"$1" --title="Dukiwi Shield — $T_TITLE" --text="$2" --width=420 2>/dev/null || echo -e "$2" >&2; }
+
+FILE="$1"
+[ -n "$FILE" ] || { say error "$T_NONE"; exit 1; }
+[ -d "$FILE" ] && { say error "$T_DIR"; exit 1; }
+command -v firejail >/dev/null 2>&1 || { say warning "$T_MISSING"; exit 2; }
+
+# Programme par défaut pour ce type de fichier (ligne Exec du fichier .desktop), sinon xdg-open
+MIME=$(xdg-mime query filetype "$FILE" 2>/dev/null)
+DESKTOP=$(xdg-mime query default "$MIME" 2>/dev/null)
+EXEC=""
+if [ -n "$DESKTOP" ]; then
+    for dir in "$HOME/.local/share/applications" /usr/local/share/applications /usr/share/applications; do
+        if [ -f "$dir/$DESKTOP" ]; then
+            EXEC=$(grep -m1 '^Exec=' "$dir/$DESKTOP" | cut -d= -f2- | sed -E 's/ *%[fFuUdDnNickvm]//g')
+            break
+        fi
+    done
+fi
+case "$EXEC" in flatpak*|*snap\ run*|/snap/*) EXEC="" ;; esac      # Flatpak et snap ont leur propre bac à sable
+[ -n "$EXEC" ] || EXEC="xdg-open"
+
+BOX=$(mktemp -d /tmp/dukiwi-sandbox-XXXXXX) || exit 1
+trap 'rm -rf "$BOX"' EXIT
+NAME=$(basename "$FILE")
+cp -- "$FILE" "$BOX/$NAME" || exit 1
+
+JAIL=(firejail --quiet --net=none --private="$BOX" --private-tmp --dbus-user=none --dbus-system=none --nogroups --noroot
+      --caps.drop=all --seccomp --nonewprivs)
+
+# Vérification avant d'ouvrir : si firejail n'isole pas vraiment (il se contente d'un avertissement quand il détecte un
+# autre bac à sable), le vrai dossier personnel ou une interface réseau seraient visibles → on refuse d'ouvrir.
+PROBE=".dukiwi-sandbox-probe-$$"
+touch "$HOME/$PROBE"
+"${JAIL[@]}" -- sh -c '[ ! -e "$HOME/$1" ] && [ -z "$(ls /sys/class/net | grep -vx lo)" ]' _ "$PROBE" 2>/dev/null
+ISOLATED=$?
+rm -f "$HOME/$PROBE"
+if [ "$ISOLATED" -ne 0 ]; then
+    logger -t dukiwi-shield "sandbox: refused to open $NAME, firejail could not isolate it" 2>/dev/null
+    say error "$T_FAIL"
+    exit 3
+fi
+
+logger -t dukiwi-shield "sandbox: $NAME opened with ${EXEC%% *}" 2>/dev/null
+"${JAIL[@]}" -- bash -c "$EXEC \"\$1\"" _ "$HOME/$NAME"

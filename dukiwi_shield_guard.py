@@ -55,6 +55,16 @@ CPU_SUSTAINED_SEC = 900
 CPU_IGNORE_PARTS = ("/steamapps/", "/Steam/", "/lutris/", "/Heroic/", "/.wine/", "/Games/")
 
 SLOW_CHECK_SEC = 600                     # certificats, détournement réseau
+WATCH_CHECK_SEC = 60                     # démarrage automatique, tâches planifiées, services, extensions
+SSH_CHECK_SEC = 30                       # clés SSH autorisées
+PERSISTENCE_DIRS = ("/etc/xdg/autostart", "/etc/cron.d", "/etc/cron.hourly", "/etc/cron.daily", "/etc/cron.weekly", "/etc/cron.monthly",
+                    "/var/spool/cron/crontabs", "/var/spool/cron/atjobs", "/var/spool/at", "/etc/systemd/system", "/etc/profile.d",
+                    "/etc/rc.local", "/etc/ld.so.preload")
+SSH_KEY_TYPES = ("ssh-rsa", "ssh-dss", "ssh-ed25519", "ecdsa-sha2-nistp256", "ecdsa-sha2-nistp384", "ecdsa-sha2-nistp521",
+                 "sk-ssh-ed25519@openssh.com", "sk-ecdsa-sha2-nistp256@openssh.com")
+SUID_SKIP = ("/var/lib/docker/", "/var/lib/containers/", "/containers/storage/", "/var/lib/lxc/", "/var/lib/lxd/", "/var/lib/flatpak/",
+             "/var/lib/snapd/", "/snap/", "/var/lib/waydroid/", "/var/lib/machines/", "/.local/share/flatpak/",
+             "/.ecryptfs/")                      # copie chiffrée d'eCryptfs : la vue déchiffrée (type ecryptfs) est analysée
 CERT_ANCHOR_DIRS = ("/usr/local/share/ca-certificates", "/etc/pki/ca-trust/source/anchors", "/etc/ca-certificates/trust-source/anchors")
 TRUSTED_RESOLVERS = {"1.1.1.1", "1.0.0.1", "1.1.1.2", "1.0.0.2", "1.1.1.3", "1.0.0.3", "8.8.8.8", "8.8.4.4", "9.9.9.9", "149.112.112.112",
                      "9.9.9.10", "149.112.112.10", "9.9.9.11", "149.112.112.11", "208.67.222.222", "208.67.220.220", "208.67.222.123",
@@ -188,12 +198,14 @@ class SecurityGuard(threading.Thread):
         self.clk = os.sysconf("SC_CLK_TCK") if hasattr(os, "sysconf") else 100
         self._certs = (0.0, None)
         self._redirects = (0.0, None)
+        self.persistence_fp = None
+        self.persistence_running = False
         self.active = False
 
     # ── boucle ───────────────────────────────────────────────────────────
     def run(self):
         self.active = True
-        last = {"decoy": 0.0, "privacy": 0.0, "miner": 0.0, "slow": time.time() - SLOW_CHECK_SEC + 90}
+        last = {"decoy": 0.0, "privacy": 0.0, "miner": 0.0, "slow": time.time() - SLOW_CHECK_SEC + 90, "watch": 0.0, "ssh": 0.0}
         try:
             self.sync_decoys()
         except Exception as e:  # noqa: BLE001
@@ -202,7 +214,8 @@ class SecurityGuard(threading.Thread):
         while not self.d.shutdown.wait(1):
             now = time.time()
             for name, period, fn in (("decoy", DECOY_CHECK_SEC, self.check_decoys), ("privacy", PRIVACY_CHECK_SEC, self.check_privacy),
-                                     ("miner", MINER_CHECK_SEC, self.check_miners), ("slow", SLOW_CHECK_SEC, self.check_slow)):
+                                     ("miner", MINER_CHECK_SEC, self.check_miners), ("slow", SLOW_CHECK_SEC, self.check_slow),
+                                     ("watch", WATCH_CHECK_SEC, self.check_persistence), ("ssh", SSH_CHECK_SEC, self.check_ssh_keys)):
                 if now - last[name] >= period:
                     last[name] = now
                     try:
@@ -842,3 +855,154 @@ class SecurityGuard(threading.Thread):
                     self.alert("redirect", "warn", title=f["value"], detail=f["where"], key=f["key"], subtype=f["type"], reasons=[f"redirect_{f['type']}"])
         if known_r is None or keys != sorted(known_r):
             self.d.state.update(known_redirects=keys)
+
+    # ═══ 6. Démarrage automatique, tâches planifiées, extensions (veille) ═════
+    def persistence_fingerprint(self):
+        """Empreinte bon marché des dossiers où s'installe un programme qui veut revenir à chaque démarrage, et des
+        extensions des navigateurs (identifiants et versions) : relevé complet seulement quand elle change."""
+        fp = []
+        paths = list(PERSISTENCE_DIRS)
+        for pw in self.human_users():
+            paths += [os.path.join(pw.pw_dir, ".config/autostart"), os.path.join(pw.pw_dir, ".config/systemd/user")]
+            paths += glob.glob(os.path.join(pw.pw_dir, ".mozilla/firefox/*/extensions.json"))
+            for ext_dir in glob.glob(os.path.join(pw.pw_dir, ".config/*/*/Extensions")) + glob.glob(os.path.join(pw.pw_dir, ".config/*/Default/Extensions")) \
+                    + glob.glob(os.path.join(pw.pw_dir, ".config/*/Profile */Extensions")):
+                try:
+                    fp.append((ext_dir, tuple(sorted((e, tuple(sorted(os.listdir(os.path.join(ext_dir, e)))))
+                                                      for e in os.listdir(ext_dir) if os.path.isdir(os.path.join(ext_dir, e))))))
+                except OSError:
+                    continue
+        for p in paths:
+            try:
+                st = os.stat(p)
+                fp.append((p, st.st_mtime_ns, st.st_size))
+            except OSError:
+                continue
+        return hash(tuple(fp))
+
+    def check_persistence(self):
+        fp = self.persistence_fingerprint()
+        if self.persistence_fp is None:
+            self.persistence_fp = fp                       # référence au démarrage (le relevé quotidien fait le reste)
+            return
+        if fp == self.persistence_fp or self.persistence_running:
+            return
+        self.persistence_fp = fp
+        refresh = getattr(self.d, "refresh_persistence", None)
+        if not refresh:
+            return
+
+        def run_refresh():
+            self.persistence_running = True
+            try:
+                time.sleep(3)                              # laisser l'installation finir d'écrire (extension, paquet)
+                refresh(reason="watch")
+                self.persistence_fp = self.persistence_fingerprint()
+            except Exception as e:  # noqa: BLE001
+                self.log(f"Veille de la persistance : {e}")
+            finally:
+                self.persistence_running = False
+        threading.Thread(target=run_refresh, daemon=True, name="persistence-watch").start()
+
+    # ═══ 7. Clés SSH autorisées ═══════════════════════════════════════════
+    @staticmethod
+    def parse_authorized_keys(path):
+        """[{fp, type, comment, options, line}] d'un fichier authorized_keys (empreinte SHA256 comme ssh-keygen -l)."""
+        import base64
+        out = []
+        try:
+            with open(path, errors="replace") as f:
+                lines = f.read().splitlines()
+        except OSError:
+            return out
+        for n, ln in enumerate(lines):
+            if not ln.strip() or ln.lstrip().startswith("#"):
+                continue
+            parts = ln.split()
+            idx = next((i for i, x in enumerate(parts) if x in SSH_KEY_TYPES), None)
+            if idx is None or idx + 1 >= len(parts):
+                continue
+            try:
+                blob = base64.b64decode(parts[idx + 1] + "==")
+            except ValueError:
+                continue
+            fp = "SHA256:" + base64.b64encode(hashlib.sha256(blob).digest()).decode().rstrip("=")
+            out.append({"fp": fp, "type": parts[idx], "comment": " ".join(parts[idx + 2:])[:120], "options": " ".join(parts[:idx])[:200], "line": n})
+        return out
+
+    def ssh_key_files(self):
+        users = [pw for pw in self.human_users() if pw.pw_uid >= 1000]
+        try:
+            users.append(pwd.getpwnam("root"))
+        except KeyError:
+            pass
+        out = []
+        for pw in users:
+            for name in ("authorized_keys", "authorized_keys2"):
+                p = os.path.join(pw.pw_dir, ".ssh", name)
+                if os.path.isfile(p):
+                    out.append((pw.pw_name, p))
+        return out
+
+    def ssh_keys(self):
+        return [dict(k, user=user, path=path) for user, path in self.ssh_key_files() for k in self.parse_authorized_keys(path)]
+
+    def check_ssh_keys(self):
+        keys = self.ssh_keys()
+        known = self.d.state.get("ssh_keys_known")
+        current = sorted({f"{k['path']}|{k['fp']}" for k in keys})
+        if known is None:
+            self.d.state.update(ssh_keys_known=current)    # référence silencieuse au premier passage
+            return
+        new = [k for k in keys if f"{k['path']}|{k['fp']}" not in known]
+        if not new and len(current) == len(known):
+            return
+        sshd = bool(((getattr(self.d, "security", None) or {}).get("ssh") or {}).get("active"))
+        for k in new:
+            self.write_log(f"⚠ ssh key added for {k['user']}: {k['type']} {k['fp']} {k['comment']} ({k['path']})")
+            self.alert("ssh_key", "danger" if sshd else "warn", title=k["user"], detail=k["comment"] or k["type"], path=k["path"],
+                       fp=k["fp"], keytype=k["type"], user=k["user"], reasons=["ssh_key_added" + ("_sshd" if sshd else "")])
+        self.d.state.update(ssh_keys_known=current)
+
+    def remove_ssh_key(self, path, fp):
+        """Retire la ou les lignes de cette empreinte (fichier réécrit en place : propriétaire et droits conservés)."""
+        keys = [k for k in self.parse_authorized_keys(path) if k["fp"] == fp]
+        if not keys:
+            return False
+        drop = {k["line"] for k in keys}
+        with open(path, errors="replace") as f:
+            lines = f.read().splitlines()
+        kept = [ln for i, ln in enumerate(lines) if i not in drop]
+        st = os.stat(path)
+        tmp = path + ".dukiwi-tmp"
+        with open(tmp, "w") as f:
+            f.write("\n".join(kept) + ("\n" if kept else ""))
+        os.chown(tmp, st.st_uid, st.st_gid)
+        os.chmod(tmp, st.st_mode & 0o777)
+        os.replace(tmp, path)
+        known = [x for x in (self.d.state.get("ssh_keys_known") or []) if x != f"{path}|{fp}"]
+        self.d.state.update(ssh_keys_known=known)
+        return True
+
+    # ═══ 8. Fichiers SUID / SGID hors paquets ═════════════════════════════
+    @staticmethod
+    def suid_scan(timeout=1800):
+        """Fichiers SUID ou SGID (exécutés avec les droits de leur propriétaire, souvent root) sur les systèmes de fichiers
+        locaux et les dossiers temporaires ; conteneurs, Flatpak et snap laissés de côté."""
+        r = run_quiet(["findmnt", "-rno", "TARGET", "-t", "ext4,ext3,ext2,btrfs,xfs,f2fs,jfs,zfs,tmpfs,ecryptfs"], timeout=20)
+        targets = []
+        for t in (r.stdout or "").splitlines():
+            t = t.replace("\\x20", " ")
+            if t.startswith(("/proc", "/sys", "/run/user", "/snap")) or (t.startswith("/run") and t not in ("/run/shm",)):
+                continue
+            if t.startswith("/dev") and t != "/dev/shm":
+                continue
+            targets.append(t)
+        if not targets:
+            targets = ["/"]
+        cmd = ["find"] + sorted(set(targets)) + ["-xdev", "-type", "f", "(", "-perm", "-4000", "-o", "-perm", "-2000", ")", "-print0"]
+        if shutil.which("ionice"):
+            cmd = ["ionice", "-c3"] + cmd
+        r = subprocess.run(["nice", "-n", "19"] + cmd, capture_output=True, timeout=timeout)
+        paths = [p.decode(errors="replace") for p in (r.stdout or b"").split(b"\0") if p]
+        return sorted({p for p in paths if not any(x in p for x in SUID_SKIP)})

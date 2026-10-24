@@ -70,6 +70,8 @@ import dukiwi_shield_distro as distro  # noqa: E402
 import dukiwi_shield_honeypot  # noqa: E402
 import dukiwi_shield_urlguard  # noqa: E402
 import dukiwi_shield_guard  # noqa: E402
+import dukiwi_shield_protect as protect  # noqa: E402
+import dukiwi_shield_hygiene as hygiene  # noqa: E402
 from dukiwi_shield_common import (  # noqa: E402
     VERSION, SYSTEM_STATE_DIR, SYSTEM_LOG_DIR, DAEMON_SOCKET,
     SYSTEM_STATE_FILE, SYSTEM_QUARANTINE_DIR, SYSTEM_PROGRESS_FILE, SYSTEM_SCAN_CACHE_DB, SYSTEM_SECRET_FILE,
@@ -1252,6 +1254,65 @@ def timeshift_free_bytes(cfg=None):
         return st.f_bavail * st.f_frsize, path
     except OSError:
         return None, path
+
+
+def timeshift_restore_test(sample=20):
+    """Test mensuel : quelques fichiers système du dernier instantané Timeshift (rsync) relus en entier et comparés au
+    système quand ils n'ont pas changé depuis (même taille, même date). En btrfs, les instantanés ne sont montés que par
+    Timeshift lui-même : test ignoré."""
+    import random
+    res = {"date": now_iso(), "ok": False, "checked": 0, "restored": 0, "compared": 0, "identical": 0, "failed": [], "error": ""}
+    try:
+        with open(TIMESHIFT_CONF, encoding="utf-8") as f:
+            cfg = json.load(f)
+    except (OSError, ValueError):
+        res["error"] = "not_configured"
+        return res
+    if str(cfg.get("btrfs_mode", "")).lower() == "true":
+        res["error"] = "btrfs"
+        return res
+    _free, path = timeshift_free_bytes(cfg)
+    base = os.path.join(path, "timeshift", "snapshots") if path else ""
+    names = sorted(n for n in os.listdir(base) if re.match(r"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$", n)) if base and os.path.isdir(base) else []
+    if not names:
+        res["error"] = "device_unmounted" if not path else "no_snapshot"
+        return res
+    root = os.path.join(base, names[-1], "localhost")
+    files = []
+    for top in ("etc", "usr/bin", "usr/sbin", "usr/lib/python3"):
+        for dirpath, dirs, fnames in os.walk(os.path.join(root, top)):
+            for n in fnames:
+                p = os.path.join(dirpath, n)
+                if os.path.isfile(p) and not os.path.islink(p):
+                    files.append(p)
+            if len(files) > 6000:
+                break
+    if not files:
+        res["error"] = "no_files"
+        return res
+    for snap_file in random.sample(files, min(sample, len(files))):
+        res["checked"] += 1
+        rel = os.path.relpath(snap_file, root)
+        try:
+            digest = sha256_file(snap_file)
+            res["restored"] += 1
+        except OSError as e:
+            res["failed"].append({"path": "/" + rel, "error": str(e)[:120]})
+            continue
+        live = "/" + rel
+        try:
+            st_s, st_l = os.stat(snap_file), os.stat(live)
+        except OSError:
+            continue
+        if st_s.st_size == st_l.st_size and int(st_s.st_mtime) == int(st_l.st_mtime):
+            res["compared"] += 1
+            if sha256_file(live) == digest:
+                res["identical"] += 1
+            else:
+                res["failed"].append({"path": live, "error": "content_differs"})
+    res["ok"] = res["restored"] > 0 and not res["failed"]
+    res["snapshot"] = names[-1]
+    return res
 
 
 def collect_timeshift_status(list_snapshots=True):
@@ -2927,6 +2988,7 @@ def firmware_updates():
 # Catégories du journal de sécurité (lignes du journal du service, par mots-clés)
 JOURNAL_RULES = [
     ("privacy", ("privacy:",)), ("network", ("⚠ certificate", "⚠ redirect")),
+    ("integrity", ("⚠ extension", "⚠ ssh key", "⚠ suid", "ssh key", "suid")),
     ("behaviour", ("⚠ info:", "⚠ danger:", "burst")), ("network", ("⚠ connection", "connection ")),
     ("firewall", ("firewall", "ufw", "firewalld", "port ", "profile ", "--force ")), ("approvals", ("admin unlock", "admin lock")),
     ("scan", ("■ interrupted", "■ clean", "■ infected", "▶ scan")), ("network", ("network", "gateway", "wi-fi", "wifi")),
@@ -2939,7 +3001,8 @@ JOURNAL_NOISE = ("tray relaunched", "duplicate tray", "honeypot: listening", "ho
 ALERT_CATEGORY = {"burst": "behaviour", "connection": "network", "download": "scan", "integrity": "integrity", "persistence": "integrity",
                   "usb_keyboard": "usb", "network": "network", "account": "accounts", "honeypot": "honeypot", "mail": "mail",
                   "update": "updates", "upload": "network", "timeshift": "backup", "ransomware": "behaviour",
-                  "miner": "behaviour", "privacy": "privacy", "certificate": "network", "redirect": "network"}
+                  "miner": "behaviour", "privacy": "privacy", "certificate": "network", "redirect": "network",
+                  "extension": "integrity", "ssh_key": "integrity", "suid": "integrity"}
 
 
 def journal_category(text):
@@ -3181,6 +3244,49 @@ def collect_checklist(daemon):
                 daemon.publish_alert({"kind": "account", "severity": "warn", "time": now_iso(), "title": n, "detail": "",
                                       "pid": 0, "comm": "", "exe": "", "count": 0, "top_dir": "", "reasons": ["new_account"], "sample": []})
         daemon.state.update(known_users=names)
+    # Qualité des nouveaux mots de passe (pam_pwquality)
+    pol = daemon.cached("password_policy", 600, hygiene.password_policy)
+    add("password_policy", "ok" if pol["ok"] else "warn", 2, f"{pol['module'] or '—'} · minlen {pol['minlen']}", params={"minlen": hygiene.PWQ_MINLEN})
+    # Réglages de sécurité des navigateurs
+    browsers = daemon.cached("browser_security", 600, lambda: hygiene.browser_security(users))
+    issues = [b for b in browsers if b["issues"]]
+    add("browser_security", "na" if not browsers else ("warn" if issues else "ok"), 3,
+        ", ".join(f"{b['browser']} ({b['user']}): " + "/".join(b["issues"]) for b in issues[:4]),
+        params={"browsers": [{k: b[k] for k in ("browser", "user", "profile", "issues")} for b in issues[:10]]})
+    # Exposition sur Internet (test sur demande) et UPnP (ports ouverts par le routeur vers cet ordinateur)
+    expo = daemon.state.get("exposure") or {}
+    upnp = daemon.state.get("upnp") or {}
+    mine = [m for m in (upnp.get("mappings") or []) if m.get("this_host") and m.get("enabled")]
+    open_ports = expo.get("open") or [] if expo.get("ok") else []
+    sensitive = [p_ for p_ in open_ports if p_ in (22, 23, 139, 445, 3389, 5900, 5901, 3306, 5432, 6379, 27017)]
+    add("internet_exposure", "fail" if sensitive else ("warn" if open_ports or mine else ("ok" if expo.get("ok") else "unknown")), 4,
+        ", ".join([f"{p_}/tcp" for p_ in open_ports[:8]] + [f"UPnP {m['external']}/{m['protocol']} → {m['internal']}" for m in mine[:4]]),
+        params={"open": open_ports, "upnp": mine[:8], "tested_at": expo.get("at")})
+    # Test de restauration : instantanés Timeshift (service) et sauvegardes de fichiers (application de chaque utilisateur)
+    tests = [t for t in [daemon.state.get("timeshift_test")] + list((daemon.state.get("backup_tests") or {}).values())
+             if t and t.get("error") not in ("btrfs", "not_configured", "device_unmounted")]
+
+    def test_age(t_):
+        try:
+            return (time.time() - datetime.fromisoformat(t_.get("date", "")).timestamp()) / 86400
+        except ValueError:
+            return 999
+    bad = [t_ for t_ in tests if not t_.get("ok")]
+    stale = [t_ for t_ in tests if test_age(t_) > 40]
+    has_backups = bool((daemon.state.get("timeshift") or {}).get("snapshots"))
+    add("restore_test", ("warn" if bad or stale else "ok") if tests else ("unknown" if has_backups else "na"), 3,
+        ", ".join(t_.get("dest_label") or "Timeshift" for t_ in bad) if bad else "")
+    # DNS filtré (domaines malveillants bloqués avant la connexion)
+    dns = protect.dns_status()
+    dns_state = daemon.state.get("dns_filter") or {}
+    add("filtered_dns", "na" if not dns["usable"] and not dns["active"] else ("ok" if dns["active"] or dns_state.get("suspended") else "warn"), 2,
+        dns["provider"] or ("enterprise" if dns_state.get("suspended") else ""))
+    # Fichiers SUID / SGID qu'aucun paquet ne livre (porte dérobée classique pour redevenir root)
+    suid = daemon.suid_status()
+    unowned = [u for u in suid.get("unowned") or [] if not u.get("acknowledged")]
+    bad_place = [u for u in unowned if u["path"].startswith(("/tmp/", "/var/tmp/", "/dev/shm/", "/home/", "/run/"))]
+    add("suid_files", "unknown" if not suid.get("checked_at") else ("fail" if bad_place else ("warn" if unowned else "ok")), 4,
+        ", ".join(u["path"] for u in unowned[:6]), params={"files": [{k: u.get(k) for k in ("path", "owner", "suid", "sgid", "mtime")} for u in unowned[:12]]})
     # Certificats racine ajoutés (interception HTTPS possible) et détournement réseau (hosts, proxy, DNS)
     certs = [c for c in daemon.guard.root_cas() if not c["acknowledged"]]
     add("root_ca", "warn" if certs else "ok", 4, ", ".join(c["name"] for c in certs[:6]),
@@ -3413,6 +3519,20 @@ def dpkg_owners(paths):
     return owners
 
 
+RISKY_EXT_PERMS = ("nativeMessaging", "debugger", "proxy", "management", "webRequestBlocking", "cookies", "history",
+                   "clipboardRead", "downloads", "privacy", "browsingData", "declarativeNetRequestWithHostAccess")
+ALL_SITES = ("<all_urls>", "*://*/*", "http://*/*", "https://*/*", "*://*/", "http://*/", "https://*/")
+
+
+def extension_risks(perms):
+    """Permissions sensibles d'une extension : « all_sites » (lire et modifier toutes les pages) et la liste des
+    permissions puissantes (messages vers un programme de l'ordinateur, débogage, proxy, cookies…)."""
+    out = {p_ for p_ in perms if p_ in RISKY_EXT_PERMS}
+    if any(p_ in ALL_SITES for p_ in perms):
+        out.add("all_sites")
+    return sorted(out)
+
+
 def desktop_exec(path):
     try:
         with open(path, errors="replace") as f:
@@ -3452,6 +3572,8 @@ def collect_persistence():
             add("autostart", str(p), p.stem, desktop_exec(str(p)), user, trusted=False)
         for p in safe_glob(Path(home, ".config/systemd/user"), "*.service"):
             add("user_unit", str(p), p.stem, "", user, trusted=False)
+        for p in safe_glob(Path(home, ".config/systemd/user"), "*.timer"):
+            add("user_timer", str(p), p.stem, "", user, trusted=False)
         cron = Path("/var/spool/cron/crontabs", user)
         try:
             lines = [ln for ln in cron.read_text(errors="replace").splitlines() if ln.strip() and not ln.startswith("#")] if cron.exists() else []
@@ -3466,6 +3588,20 @@ def collect_persistence():
     for p in safe_glob("/etc/systemd/system", "*.service"):
         if p.is_file() and not p.is_symlink():
             add("system_unit", str(p), p.stem)
+    for p in safe_glob("/etc/systemd/system", "*.timer"):
+        if p.is_file() and not p.is_symlink():
+            add("system_timer", str(p), p.stem)
+    # Tâches « at » en attente (exécution unique différée)
+    for d in ("/var/spool/cron/atjobs", "/var/spool/at"):
+        for p in safe_glob(d, "*"):
+            if p.is_file() and not p.name.startswith("."):
+                cmd = ""
+                try:
+                    lines = [ln for ln in p.read_text(errors="replace").splitlines() if ln.strip() and not ln.startswith(("#", "umask", "cd ", "export ", "OLDPWD", "SHELL="))]
+                    cmd = lines[-1] if lines else ""
+                except OSError:
+                    pass
+                add("at_job", str(p), p.name, cmd, trusted=False)
     for p in safe_glob("/etc/profile.d", "*.sh"):
         add("profile", str(p), p.name)
     for path in ("/etc/rc.local", "/etc/ld.so.preload"):
@@ -3503,7 +3639,7 @@ def collect_persistence():
                     if not versions:
                         continue
                     manifest_path = versions[-1] / "manifest.json"
-                    name, version = ext_dir.name, versions[-1].name
+                    name, version, man = ext_dir.name, versions[-1].name, {}
                     try:
                         with open(manifest_path, errors="replace") as f:
                             man = json.load(f)
@@ -3525,7 +3661,9 @@ def collect_persistence():
                     except Exception:  # noqa: BLE001
                         pass
                     pref = prefs.get(ext_dir.name) or {}
-                    extensions.append({"browser": browser, "user": user, "profile": profile.name, "id": ext_dir.name,
+                    scripts = [m_ for cs in (man.get("content_scripts") or []) if isinstance(cs, dict) for m_ in (cs.get("matches") or [])]
+                    perms = extension_risks([str(x) for x in list(man.get("permissions") or []) + list(man.get("host_permissions") or []) + scripts])
+                    extensions.append({"browser": browser, "user": user, "profile": profile.name, "id": ext_dir.name, "perms": perms,
                                        "name": str(name)[:80], "version": str(version), "from_store": bool(pref.get("from_webstore", True)),
                                        "enabled": pref.get("state", 1) == 1, "key": f"{browser}:{user}:{ext_dir.name}"})
         for ext_json in safe_glob(Path(home, ".mozilla/firefox"), "*/extensions.json"):
@@ -3537,7 +3675,9 @@ def collect_persistence():
             for a in addons:
                 if a.get("type") != "extension" or a.get("location") == "app-builtin":
                     continue
+                up = a.get("userPermissions") or {}
                 extensions.append({"browser": "firefox", "user": user, "profile": ext_json.parent.name, "id": a.get("id", ""),
+                                   "perms": extension_risks(list(up.get("permissions") or []) + list(up.get("origins") or [])),
                                    "name": str(a.get("defaultLocale", {}).get("name") or a.get("id", ""))[:80],
                                    "version": str(a.get("version", "")), "from_store": a.get("signedState", 0) not in (0, None) or a.get("location") == "app-system-defaults",
                                    "enabled": bool(a.get("active")), "key": f"firefox:{user}:{a.get('id', '')}"})
@@ -4698,6 +4838,8 @@ class Daemon:
         self.last_urlguard_check = 0.0
         self.unlocked = {}          # uid -> expiry (session administrateur)
         self.suspended = {}         # pid -> info (processus suspendus par la réponse automatique)
+        self._dns_lock = threading.Lock()
+        self._persistence_lock = threading.Lock()
         self._trusted_set = {t.get("exe") for t in (self.state.get("trusted_programs") or []) if t.get("exe")}
         self.policy = {}
         self.locked_settings = set()
@@ -4808,7 +4950,7 @@ class Daemon:
             self.write_log(f"⚠ {alert.get('kind')}: {alert.get('title', '')} {alert.get('detail', '')}")
         elif alert.get("kind") in ("mail", "url"):
             self.write_log(f"⚠ {alert.get('kind')} {alert.get('severity')}: {alert.get('title', '')} — {alert.get('detail', '')} ({alert.get('source', '')})")
-        elif alert.get("kind") in ("ransomware", "privacy", "miner", "certificate", "redirect"):
+        elif alert.get("kind") in ("ransomware", "privacy", "miner", "certificate", "redirect", "extension", "ssh_key", "suid"):
             pass                                        # journalisé par le centre de sécurité (dukiwi_shield_guard)
         elif alert.get("kind") == "honeypot":
             self.write_log(f"⚠ honeypot {alert.get('severity')}: {alert.get('ip')} ({alert.get('host') or '?'}) "
@@ -5940,6 +6082,8 @@ class Daemon:
         if changed or new or force:
             self.refresh_security(force=True)
             self.refresh_overall()
+            if self.settings.get("filtered_dns"):
+                threading.Thread(target=self.sync_filtered_dns, daemon=True, name="dns-filter").start()   # Entreprise : suspendu
         self.broadcast({"event": "network_changed", "network": net, "profile": profile, "new": new, "changed": changed})
         for subtype, extra in traps:
             self.network_trap(subtype, net, extra)
@@ -6114,7 +6258,244 @@ class Daemon:
             applied.append("upload_window")
         if "honeypot" in changed:
             applied.append("honeypot")                  # le fil du pot de miel suit le réglage (≤ 2 s)
+        if "filtered_dns" in changed:
+            threading.Thread(target=self.sync_filtered_dns, daemon=True, name="dns-filter").start()
+            applied.append("filtered_dns")
         return applied
+
+    # ── Démarrage automatique, tâches planifiées, extensions ──────────────
+    def refresh_persistence(self, reason="daily"):
+        """Relevé de la persistance (démarrage automatique, cron, timers, at, services, extensions) ; tout nouvel élément,
+        et toute extension qui obtient de nouvelles permissions sensibles, déclenche une alerte. Appelé chaque jour et par
+        la veille du centre de sécurité dès qu'un des dossiers surveillés change."""
+        with self._persistence_lock:
+            prev = self.state.get("persistence") or {}
+            prev_keys = {it["key"] for it in prev.get("items", [])}
+            prev_ext = {e["key"]: e for e in prev.get("extensions", [])}
+            pers = self.apply_acknowledged(collect_persistence())
+            self.state.update(persistence=pers)
+            if prev.get("items") is not None and (prev_keys or prev_ext):
+                for it in pers["items"]:
+                    if it["key"] not in prev_keys:
+                        self.publish_alert({"kind": "persistence", "severity": "warn" if not it["trusted"] else "info",
+                                            "time": now_iso(), "title": it["name"], "detail": it["path"],
+                                            "item": it, "pid": 0, "comm": it["name"], "exe": it["path"], "count": 0,
+                                            "top_dir": os.path.dirname(it["path"]), "reasons": [it.get("kind", "")], "sample": []})
+                for e in pers["extensions"]:
+                    old = prev_ext.get(e["key"])
+                    if old is None:
+                        severity = "warn" if (not e["from_store"] or "all_sites" in (e.get("perms") or []) or "nativeMessaging" in (e.get("perms") or [])) else "info"
+                        self.write_log(f"⚠ extension: new {e['browser']} extension {e['name']} ({e['user']}) perms {','.join(e.get('perms') or []) or '-'}")
+                        self.publish_alert({"kind": "extension", "subtype": "new", "severity": severity, "time": now_iso(), "title": e["name"],
+                                            "detail": f"{e['browser']} · {e['user']}", "extension": e, "perms": e.get("perms") or [],
+                                            "pid": 0, "comm": "", "exe": "", "count": 0, "top_dir": "", "reasons": ["ext_new"], "sample": []})
+                        continue
+                    added = sorted(set(e.get("perms") or []) - set(old.get("perms") or []))
+                    if added and "perms" in old:
+                        self.write_log(f"⚠ extension: {e['browser']} extension {e['name']} ({e['user']}) gained {','.join(added)} (v{old.get('version')} → v{e.get('version')})")
+                        self.publish_alert({"kind": "extension", "subtype": "permissions", "severity": "warn", "time": now_iso(), "title": e["name"],
+                                            "detail": f"{e['browser']} · {e['user']}", "extension": e, "perms": added,
+                                            "old_version": old.get("version"), "pid": 0, "comm": "", "exe": "", "count": 0,
+                                            "top_dir": "", "reasons": ["ext_permissions"], "sample": []})
+            self.broadcast({"event": "persistence", "persistence": pers})
+            return pers
+
+    # ── Fichiers SUID / SGID hors paquets ────────────────────────────────
+    def refresh_suid(self):
+        """Relevé des fichiers SUID/SGID ; ceux qu'aucun paquet ne livre sont gardés (empreinte, propriétaire, droits).
+        Un nouveau fichier de ce genre déclenche une alerte (danger dans un dossier temporaire ou personnel)."""
+        paths = self.guard.suid_scan()
+        owners = dpkg_owners(paths)
+        missing = [p_ for p_ in paths if p_ not in owners]
+        if missing and not distro.is_rpm():
+            # /usr fusionné : dpkg peut connaître /bin/su pour /usr/bin/su (et l'inverse)
+            alt = {(p_[4:] if p_.startswith("/usr/") else "/usr" + p_): p_ for p_ in missing}
+            for a, orig in alt.items():
+                if a in dpkg_owners(list(alt)):
+                    owners[orig] = "usrmerge"
+        unowned = []
+        for p_ in paths:
+            if p_ in owners:
+                continue
+            try:
+                st = os.lstat(p_)
+                unowned.append({"path": p_, "suid": bool(st.st_mode & 0o4000), "sgid": bool(st.st_mode & 0o2000),
+                                "owner": pwd.getpwuid(st.st_uid).pw_name if st.st_uid in {u.pw_uid for u in pwd.getpwall()} else str(st.st_uid),
+                                "size": st.st_size, "mtime": datetime.fromtimestamp(st.st_mtime).isoformat(timespec="seconds"),
+                                "sha256": sha256_file(p_) if st.st_size < 200 * 1024 * 1024 else ""})
+            except OSError:
+                continue
+        prev = self.state.get("suid")
+        info = {"checked_at": now_iso(), "total": len(paths), "unowned": unowned}
+        self.state.update(suid=info)
+        if prev is not None:
+            known = {u["path"]: u.get("sha256") for u in prev.get("unowned") or []}
+            acks = self.state.get("acknowledged_suid") or {}
+            for u in unowned:
+                if known.get(u["path"]) == u["sha256"] or acks.get(u["path"], {}).get("sha256") == u["sha256"]:
+                    continue
+                bad_place = u["path"].startswith(("/tmp/", "/var/tmp/", "/dev/shm/", "/home/", "/run/"))
+                self.write_log(f"⚠ suid file outside packages: {u['path']} ({'suid' if u['suid'] else 'sgid'} {u['owner']})")
+                self.publish_alert({"kind": "suid", "severity": "danger" if bad_place else "warn", "time": now_iso(), "title": os.path.basename(u["path"]),
+                                    "detail": u["path"], "path": u["path"], "owner": u["owner"], "suid": u["suid"], "pid": 0, "comm": "",
+                                    "exe": u["path"], "count": 0, "top_dir": os.path.dirname(u["path"]), "reasons": ["suid_unowned"], "sample": []})
+        log(f"SUID/SGID : {len(paths)} fichier(s), {len(unowned)} hors paquets")
+        return info
+
+    def suid_status(self):
+        info = dict(self.state.get("suid") or {})
+        acks = self.state.get("acknowledged_suid") or {}
+        info["unowned"] = [dict(u, acknowledged=acks.get(u["path"], {}).get("sha256") == u.get("sha256")) for u in info.get("unowned") or []]
+        return info
+
+    # ── Résumé de la semaine ─────────────────────────────────────────────
+    def weekly_summary(self, days=7):
+        """Bilan des 7 derniers jours : score et son évolution, analyses, menaces, ce qui a été bloqué ou suspendu,
+        événements par catégorie, points à corriger."""
+        cutoff = time.time() - days * 86400
+
+        def recent(iso):
+            try:
+                return datetime.fromisoformat(str(iso)[:19]).timestamp() >= cutoff
+            except ValueError:
+                return False
+        alerts = [a for a in (self.state.get("alerts") or []) if recent(a.get("time"))]
+        scans = [h for h in (self.state.get("history") or []) if recent(h.get("date"))]
+        events = security_journal(self, days)
+        by_cat = {}
+        for e in events:
+            if e["sev"] in ("warn", "danger"):
+                by_cat[e["cat"]] = by_cat.get(e["cat"], 0) + 1
+        hist = [h for h in (self.state.get("score_history") or []) if isinstance(h, dict)]
+        ck = self.state.get("checklist") or {}
+        before = next((h for h in reversed(hist) if h.get("d", "") <= datetime.fromtimestamp(cutoff).strftime("%Y-%m-%d")), hist[0] if hist else None)
+        url_events = list(getattr(self.urlguard, "events", []) or [])
+        kinds = lambda *k: sum(1 for a in alerts if a.get("kind") in k)
+        blocked = {"threats": sum(int(h.get("infected") or 0) for h in scans) + kinds("download", "mail"),
+                   "suspended": sum(1 for a in alerts if a.get("suspended")),
+                   "links": sum(1 for e in url_events if e.get("action") == "blocked" and recent(e.get("t"))),
+                   "network": kinds("honeypot", "network", "connection"), "usb_keyboards": sum(1 for a in alerts if a.get("kind") == "usb_keyboard" and a.get("blocked")),
+                   "ransomware": kinds("ransomware"), "miners": kinds("miner"), "changes": kinds("persistence", "extension", "ssh_key", "suid", "certificate", "redirect")}
+        todo = sorted((it for it in ck.get("items") or [] if it.get("status") in ("fail", "warn")), key=lambda it: (it["status"] != "fail", -it.get("weight", 0)))
+        return {"date": now_iso(), "days": days, "score": ck.get("score"), "grade": ck.get("grade"),
+                "score_before": (before or {}).get("s"), "scans": len(scans), "files": sum(int(h.get("files") or 0) for h in scans),
+                "alerts": len(alerts), "danger": sum(1 for a in alerts if a.get("severity") == "danger"), "blocked": blocked,
+                "by_cat": by_cat, "todo": [it["key"] for it in todo[:5]], "isolated": bool(self.state.get("isolated"))}
+
+    def check_weekly_summary(self):
+        """Le lundi dès 8 h (ou au premier démarrage qui suit) : résumé enregistré, diffusé à l'application, envoyé par
+        courriel si les notifications sont configurées."""
+        now = datetime.now()
+        last = self.state.get("weekly_summary_at") or ""
+        try:
+            age = (now - datetime.fromisoformat(last)).days if last else 99
+        except ValueError:
+            age = 99
+        if age < 6 or (now.weekday() != 0 and age < 8) or now.hour < 8:
+            return
+        summary = self.weekly_summary()
+        keep = ([summary] + list(self.state.get("weekly_summaries") or []))[:8]
+        self.state.update(weekly_summaries=keep, weekly_summary_at=now.isoformat(timespec="seconds"))
+        self.write_log(f"weekly summary: score {summary['score']} (was {summary['score_before']}), {summary['alerts']} alert(s), "
+                       f"{summary['blocked']['threats']} threat(s), {summary['blocked']['links']} link(s) blocked")
+        self.broadcast({"event": "weekly_summary", "weekly_summary": summary})
+        cfg = self.mail_cfg()
+        if cfg.get("enabled") and cfg.get("weekly_summary", True) is not False:
+            lang = cfg.get("lang") or "fr"
+            self.mail_deliver(t(lang, "mail.weekly.subject", score=summary["score"] if summary["score"] is not None else "—"),
+                              self.weekly_summary_text(summary, lang), kind="weekly")
+
+    def weekly_summary_text(self, s_, lang):
+        b = s_["blocked"]
+        delta = ""
+        if s_.get("score") is not None and s_.get("score_before") is not None and s_["score"] != s_["score_before"]:
+            delta = f" ({'+' if s_['score'] > s_['score_before'] else ''}{s_['score'] - s_['score_before']})"
+        lines = [t(lang, "mail.weekly.title"), "",
+                 f"- {t(lang, 'mail.summary.score')} : {s_.get('score', '—')} ({s_.get('grade') or '—'}){delta}",
+                 f"- {t(lang, 'mail.weekly.scans', n=s_['scans'], files=s_['files'])}",
+                 f"- {t(lang, 'mail.weekly.alerts', n=s_['alerts'], danger=s_['danger'])}",
+                 f"- {t(lang, 'mail.weekly.blocked', threats=b['threats'], links=b['links'], suspended=b['suspended'], network=b['network'])}"]
+        if b.get("changes"):
+            lines.append(f"- {t(lang, 'mail.weekly.changes', n=b['changes'])}")
+        if s_.get("todo"):
+            lines += ["", t(lang, "mail.weekly.todo")] + [f"- {t(lang, f'check.{k}.title')}" for k in s_["todo"]]
+        return "\n".join(lines)
+
+    # ── DNS filtré (systemd-resolved) ────────────────────────────────────
+    def sync_filtered_dns(self):
+        """Applique le DNS filtré choisi, ou le retire ; suspendu sur un réseau au profil Entreprise (DNS interne)."""
+        if os.geteuid() != 0 or TEST_MODE:
+            return
+        with self._dns_lock:
+            provider = self.settings.get("filtered_dns") or ""
+            enterprise = (self.settings.get("firewall_profile") or "") == "enterprise"
+            info = {"provider": provider, "suspended": bool(provider and enterprise), "error": "", "at": now_iso()}
+            if not provider or enterprise:
+                if protect.dns_remove():
+                    self.write_log("filtered DNS removed" + (" (enterprise network)" if enterprise and provider else ""))
+            else:
+                ok, err = protect.dns_apply(provider)
+                info["error"] = err
+                self.write_log(f"filtered DNS {provider}: " + ("applied" if ok else f"failed ({err})"))
+            self.state.update(dns_filter=info)
+            self.broadcast({"event": "dns_filter", "dns_filter": self.dns_filter_status()})
+
+    def dns_filter_status(self):
+        return dict(protect.dns_status(), **{k: v for k, v in (self.state.get("dns_filter") or {}).items() if k in ("suspended", "error", "at")},
+                    setting=self.settings.get("filtered_dns") or "")
+
+    # ── Isoler l'ordinateur ──────────────────────────────────────────────
+    def isolate(self, uid):
+        """Urgence : réseau coupé, programmes suspects suspendus, analyse complète. Sans mot de passe."""
+        if self.state.get("isolated"):
+            return {"ok": True, "already": True, "isolated": self.state.get("isolated")}
+        if os.geteuid() != 0 or TEST_MODE:
+            return {"ok": False, "error": "root_required"}
+        method, prev = protect.network_cut()
+        if not method:
+            return {"ok": False, "error": "isolate_failed"}
+        cutoff = time.time() - 86400
+        alert_pids = set()
+        for a in (self.state.get("alerts") or [])[:50]:
+            try:
+                if a.get("severity") == "danger" and a.get("pid") and datetime.fromisoformat(a.get("time", "")).timestamp() > cutoff:
+                    alert_pids.add(int(a["pid"]))
+            except (ValueError, TypeError):
+                pass
+        stopped = []
+        for p in protect.suspicious_processes(alert_pids, self.user_trusted()):
+            try:
+                os.kill(p["pid"], signal.SIGSTOP)
+            except OSError:
+                continue
+            self.suspended[p["pid"]] = {"pid": p["pid"], "comm": p["comm"], "exe": p["exe"], "time": now_iso(), "kind": "isolate"}
+            stopped.append(p)
+        scan = False
+        with self.queue_lock:
+            busy = self.current is not None or bool(self.queue)
+        if not busy:
+            self.enqueue(Job("scan", path="/", requested_by=uid))
+            scan = True
+        info = {"at": now_iso(), "method": method, "prev": prev, "suspended": stopped[:40], "scan": scan, "by": uid}
+        self.state.update(isolated=info)
+        self.write_log(f"⚠ danger: computer ISOLATED by uid {uid} ({method}), {len(stopped)} process(es) suspended"
+                       + (", full scan started" if scan else ""))
+        self.broadcast({"event": "isolated", "isolated": info})
+        self.refresh_overall()
+        return {"ok": True, "isolated": info}
+
+    def unisolate(self, uid):
+        info = self.state.get("isolated")
+        if not info:
+            return {"ok": False, "error": "not_isolated"}
+        ok = protect.network_restore(info.get("method"), info.get("prev"))
+        if not ok:
+            return {"ok": False, "error": "restore_failed"}
+        self.state.update(isolated=None)
+        self.write_log(f"network restored by uid {uid} (isolation ended)")
+        self.broadcast({"event": "isolated", "isolated": None})
+        self.refresh_overall()
+        return {"ok": True}
 
     def check_weekly_scan(self):
         if not self.settings.get("weekly_scan"):
@@ -6149,6 +6530,24 @@ class Daemon:
                 self.refresh_backup(force=True)
             except Exception as e:  # noqa: BLE001
                 log(f"Timeshift : {e}")
+            # Routeur UPnP : ports ouverts tout seuls vers cet ordinateur (réseau local uniquement)
+            try:
+                self.state.update(upnp=hygiene.upnp_mappings())
+            except Exception as e:  # noqa: BLE001
+                log(f"UPnP : {e}")
+            # Test de restauration mensuel des instantanés Timeshift
+            try:
+                last_test = (self.state.get("timeshift_test") or {}).get("date") or ""
+                ts = self.state.get("timeshift") or {}
+                if ts.get("configured") and ts.get("snapshots") and os.geteuid() == 0 and \
+                        (not last_test or time.time() - datetime.fromisoformat(last_test).timestamp() > 30 * 86400):
+                    res = timeshift_restore_test()
+                    if res.get("error") not in ("device_unmounted",):
+                        self.state.update(timeshift_test=res)
+                        self.write_log(f"restore test timeshift {res.get('snapshot', '')}: " + ("ok" if res["ok"] else
+                                       f"⚠ {res.get('error') or str(len(res['failed'])) + ' failed'}") + f" ({res['restored']}/{res['checked']} read, {res['identical']}/{res['compared']} identical)")
+            except Exception as e:  # noqa: BLE001
+                log(f"Test de restauration Timeshift : {e}")
             if shutil.which("timeshift") and not TEST_MODE:
                 try:
                     self.refresh_system_size()
@@ -6168,24 +6567,13 @@ class Daemon:
             except Exception as e:  # noqa: BLE001
                 log(f"Firmware : {e}")
             # Persistance & extensions
-            prev = self.state.get("persistence") or {}
-            prev_keys = {it["key"] for it in prev.get("items", [])} | {e["key"] for e in prev.get("extensions", [])}
-            pers = self.apply_acknowledged(collect_persistence())
-            self.state.update(persistence=pers)
-            if prev_keys:
-                for it in pers["items"]:
-                    if it["key"] not in prev_keys:
-                        self.publish_alert({"kind": "persistence", "severity": "warn" if not it["trusted"] else "info",
-                                            "time": now_iso(), "title": it["name"], "detail": it["path"],
-                                            "item": it, "pid": 0, "comm": it["name"], "exe": it["path"], "count": 0,
-                                            "top_dir": os.path.dirname(it["path"]), "reasons": [], "sample": []})
-                for e in pers["extensions"]:
-                    if e["key"] not in prev_keys:
-                        self.publish_alert({"kind": "persistence", "severity": "warn" if not e["from_store"] else "info",
-                                            "time": now_iso(), "title": e["name"], "detail": f"{e['browser']} · {e['id']}",
-                                            "extension": e, "pid": 0, "comm": e["name"], "exe": "", "count": 0,
-                                            "top_dir": "", "reasons": [], "sample": []})
-            self.broadcast({"event": "persistence", "persistence": pers})
+            self.refresh_persistence()
+            # Fichiers SUID / SGID hors paquets
+            if os.geteuid() == 0 and not TEST_MODE:
+                try:
+                    self.refresh_suid()
+                except Exception as e:  # noqa: BLE001
+                    log(f"SUID : {e}")
             # Listes d'IP malveillantes
             try:
                 self.connections.load_blocklist(refresh=True)
@@ -6966,6 +7354,8 @@ class Daemon:
             raise_to("yellow", "network_scan")           # un appareil balaie cet ordinateur : bloquer ou ignorer
         if self.suspended:
             raise_to("red", "suspended_process")
+        if self.state.get("isolated"):
+            raise_to("red", "isolated")
         integ = self.state.get("integrity") or {}
         app = integ.get("app") or {}
         rootkit_warns = sum(len(t.get("warnings") or []) for name, t in (integ.get("tools") or {}).items() if name != "lynis") \
@@ -7035,11 +7425,19 @@ class Daemon:
             feature = str(req.get("feature") or "")
             return bool(self.settings.get("family_mode")) and not req.get("enabled") and bool(self.settings.get(feature))
         if cmd in ("firewall_defaults", "firewall_rule_add", "firewall_rule_delete", "install_update", "install_tools",
-                   "install_phased", "install_package", "firmware_update"):
+                   "install_phased", "install_package", "firmware_update", "password_policy_apply"):
             return True
         # « Ignorer » une faille sans correctif ou un port ouvert voulu, monter une clé USB sans analyse ou lui faire
         # confiance : jamais de mot de passe, même en mode famille (acknowledge_vuln, acknowledge_port, ignore_check,
         # usb_skip, untrust_usb ne figurent pas ici). Le choix est journalisé ; on fait confiance à l'utilisateur.
+        if (cmd == "isolate" and req.get("on", True) is False) or cmd == "browser_harden":
+            return bool(self.settings.get("family_mode"))
+        if cmd == "ssh_key_remove":
+            # Sa propre clé : sans mot de passe ; celle d'un autre compte : administrateur
+            try:
+                return os.stat(str(req.get("path") or "")).st_uid != uid
+            except OSError:
+                return True
         if cmd in ("set_settings", "trust_program", "untrust_program", "acknowledge_persistence", "acknowledge_integrity", "acknowledge_sudoers", "hid_allow", "hid_forget", "network_gateway_accept",
                    "system_upgrade", "harden_apply", "forget_network"):
             return bool(self.settings.get("family_mode"))
@@ -7087,6 +7485,7 @@ class Daemon:
                 if time.time() - self.last_daily > 86400 and not self.daily_running:
                     threading.Thread(target=self.daily_tasks, daemon=True).start()
                 self.check_weekly_integrity()
+                self.check_weekly_summary()
                 if time.time() - self.last_urlguard_check > 900 and self.settings.get("url_guard") is not False \
                         and self.urlguard.feeds_stale() and not self.urlguard.refreshing:
                     self.last_urlguard_check = time.time()
@@ -7118,6 +7517,7 @@ class Daemon:
             "distro": {"family": distro.FAMILY, "id": distro.DISTRO["id"], "pretty": distro.DISTRO["pretty"]},
             "hostname": socket.gethostname(), "kernel": os.uname().release,
             "onaccess": dict(self.onaccess.stats, enabled=self.settings.get("on_access_scan") is not False),
+            "isolated": self.state.get("isolated"),
             "state": {k: v for k, v in state.items() if k not in ("system_status", "alerts", "vulns", "checklist", "integrity", "persistence", "app_update", "trusted_programs", "acknowledged_persistence")},
             "resumable": resumable,
             "first_scan_pending": os.path.exists(FIRST_SCAN_FLAG),
@@ -7471,7 +7871,7 @@ class Daemon:
 
         if cmd == "install_package":
             name = str(req.get("name") or "")
-            if name not in ("rclone", "timeshift", "gocryptfs"):
+            if name not in ("rclone", "timeshift", "gocryptfs", "firejail", "fscrypt", "libpam-fscrypt"):
                 return {"ok": False, "error": "forbidden", "forbidden": True}
             if TEST_MODE:
                 return {"ok": True, "detail": "test_mode"}
@@ -7787,7 +8187,141 @@ class Daemon:
                     "sudoers": [dict(v, path=k) for k, v in (self.state.get("acknowledged_sudoers") or {}).items()],
                     "privacy": [dict(v, exe=k) for k, v in (self.state.get("privacy_allowed") or {}).items()],
                     "certs": [dict(v, fp=k) for k, v in (self.state.get("acknowledged_certs") or {}).items()],
-                    "redirects": [dict(v, key=k) for k, v in (self.state.get("acknowledged_redirects") or {}).items()]}
+                    "redirects": [dict(v, key=k) for k, v in (self.state.get("acknowledged_redirects") or {}).items()],
+                    "suid": [dict(v, path=k) for k, v in (self.state.get("acknowledged_suid") or {}).items()]}
+
+        if cmd == "ssh_keys":
+            return {"ok": True, "ssh_keys": self.guard.ssh_keys()}
+
+        if cmd == "ssh_key_remove":
+            path, fp = str(req.get("path") or ""), str(req.get("fp") or "")
+            if path not in {p_ for _u, p_ in self.guard.ssh_key_files()}:
+                return {"ok": False, "error": "not_found"}
+            if not self.guard.remove_ssh_key(path, fp):
+                return {"ok": False, "error": "not_found"}
+            self.write_log(f"ssh key removed by uid {uid}: {fp} from {path}")
+            return {"ok": True, "ssh_keys": self.guard.ssh_keys()}
+
+        if cmd == "suid":
+            if req.get("refresh") and os.geteuid() == 0:
+                threading.Thread(target=self.refresh_suid, daemon=True, name="suid-scan").start()
+                return {"ok": True, "suid": self.suid_status(), "running": True}
+            return {"ok": True, "suid": self.suid_status()}
+
+        if cmd == "weekly_summary":
+            if req.get("now"):
+                return {"ok": True, "weekly_summary": self.weekly_summary()}
+            return {"ok": True, "weekly_summary": (self.state.get("weekly_summaries") or [None])[0] or self.weekly_summary(),
+                    "weekly_summaries": self.state.get("weekly_summaries") or []}
+
+        if cmd == "password_policy":
+            return {"ok": True, "password_policy": hygiene.password_policy()}
+
+        if cmd == "password_policy_apply":
+            if os.geteuid() != 0 or TEST_MODE:
+                return {"ok": False, "error": "root_required"}
+            ok, err = hygiene.password_policy_apply()
+            self.write_log(f"password policy (minlen {hygiene.PWQ_MINLEN}) by uid {uid}: " + ("applied" if ok else f"failed ({err})"))
+            return {"ok": ok, "error": err, "password_policy": hygiene.password_policy(), "checklist": self.refresh_checklist()}
+
+        if cmd == "browser_security":
+            if req.get("refresh"):
+                self._check_cache.pop("browser_security", None)
+            return {"ok": True, "browser_security": self.cached("browser_security", 600, lambda: hygiene.browser_security(human_users()))}
+
+        if cmd == "browser_harden":
+            # Firefox : user.js des profils de l'utilisateur qui le demande ; Chrome, Chromium, Brave, Edge : règles recommandées
+            try:
+                pw = pwd.getpwuid(uid)
+            except KeyError:
+                return {"ok": False, "error": "forbidden"}
+            profiles = hygiene.browser_security([pw])
+            fx = [p_ for p_ in profiles if p_["browser"] == "firefox"]
+            for p_ in fx:
+                if req.get("remove"):
+                    hygiene.firefox_unharden(p_["path"])
+                else:
+                    hygiene.firefox_harden(p_["path"], pw)
+            dirs = [] if req.get("remove") else hygiene.chrome_harden([p_["browser"] for p_ in profiles if p_["browser"] != "firefox"])
+            if req.get("remove"):
+                for d in hygiene.CHROME_POLICY_DIRS:
+                    try:
+                        os.unlink(os.path.join(d, hygiene.CHROME_POLICY_FILE))
+                    except OSError:
+                        pass
+            self._check_cache.pop("browser_security", None)
+            self.write_log(f"browser security settings {'removed' if req.get('remove') else 'applied'} by uid {uid}: {len(fx)} Firefox profile(s), {len(dirs)} policy dir(s)")
+            return {"ok": True, "firefox": len(fx), "policies": len(dirs), "checklist": self.refresh_checklist()}
+
+        if cmd == "exposure_test":
+            # Test depuis Internet : uniquement sur demande explicite (consentement dans l'application, à chaque test)
+            if req.get("consent") is not True:
+                return {"ok": False, "error": "consent_required"}
+            ports = [p_["port"] for p_ in ((self.state.get("checklist") or {}).get("ports") or []) if p_.get("exposed") and p_.get("proto") == "tcp"]
+            res = hygiene.exposure_test(ports)
+            res["at"] = now_iso()
+            upnp = hygiene.upnp_mappings()
+            self.state.update(exposure=res, upnp=upnp)
+            self.write_log(f"internet exposure test by uid {uid}: " + (f"{len(res.get('open') or [])} open port(s) {res.get('open')}" if res.get("ok") else f"failed ({res.get('error')})")
+                           + f", UPnP router {upnp.get('router') or 'none'} ({len(upnp.get('mappings') or [])} mapping(s))")
+            return {"ok": bool(res.get("ok")), "error": res.get("error", ""), "exposure": res, "upnp": upnp, "checklist": self.refresh_checklist()}
+
+        if cmd == "exposure":
+            return {"ok": True, "exposure": {"test": self.state.get("exposure"), "upnp": self.state.get("upnp")}}
+
+        if cmd == "incident_step":
+            # Page « Après une attaque » : étapes cochées (partagées par tous les utilisateurs de l'ordinateur)
+            inc = dict(self.state.get("incident") or {})
+            if req.get("reset"):
+                inc = {}
+            else:
+                key = re.sub(r"[^a-z_]", "", str(req.get("key") or ""))[:40]
+                steps = dict(inc.get("steps") or {})
+                if req.get("done", True):
+                    steps[key] = now_iso()
+                else:
+                    steps.pop(key, None)
+                inc = {"started_at": inc.get("started_at") or now_iso(), "steps": steps}
+            self.state.update(incident=inc)
+            return {"ok": True, "incident": inc}
+
+        if cmd == "incident":
+            return {"ok": True, "incident": self.state.get("incident") or {}}
+
+        if cmd == "backup_test_report":
+            # Test de restauration des sauvegardes de fichiers, fait par l'application de l'utilisateur (ses droits)
+            r = req.get("result") or {}
+            tests = dict(self.state.get("backup_tests") or {})
+            tests[str(uid)] = {"date": str(r.get("date") or now_iso())[:19], "ok": bool(r.get("ok")), "dest_label": str(r.get("dest_label") or "")[:80],
+                               "checked": int(r.get("checked") or 0), "restored": int(r.get("restored") or 0),
+                               "failed": int(len(r.get("failed") or [])), "error": str(r.get("error") or "")[:60]}
+            self.state.update(backup_tests=tests)
+            self.write_log(f"restore test files uid {uid} ({tests[str(uid)]['dest_label']}): " + ("ok" if r.get("ok") else f"⚠ {r.get('error') or 'failed'}"))
+            self.refresh_checklist_async()
+            return {"ok": True}
+
+        if cmd == "timeshift_restore_test":
+            if os.geteuid() != 0:
+                return {"ok": False, "error": "root_required"}
+            res = timeshift_restore_test()
+            self.state.update(timeshift_test=res)
+            self.refresh_checklist_async()
+            return {"ok": True, "timeshift_test": res}
+
+        if cmd == "dns_filter":
+            return {"ok": True, "dns_filter": self.dns_filter_status()}
+
+        if cmd == "isolate":
+            # Isoler : jamais de mot de passe (urgence). Rétablir le réseau : administrateur en mode famille.
+            return self.isolate(uid) if req.get("on", True) is not False else self.unisolate(uid)
+
+        if cmd == "home_encryption":
+            def check():
+                uids = {s["uid"] for s in graphical_sessions()}
+                return protect.home_encryption_check(human_users(), uids)
+            if req.get("refresh"):
+                self._check_cache.pop("home_encryption", None)
+            return {"ok": True, "home_encryption": self.cached("home_encryption", 600, check)}
 
         if cmd == "privacy_allow":
             # « Toujours autoriser » un programme sur la caméra / le micro (ou le retirer) : choix personnel, sans mot de passe
@@ -7804,25 +8338,29 @@ class Daemon:
             return {"ok": True}
 
         if cmd == "guard_ack":
-            # « Ignorer » un certificat racine (empreinte) ou un détournement réseau voulu (proxy d'entreprise, hosts…)
+            # « Ignorer » un certificat racine (empreinte), un détournement réseau voulu (proxy d'entreprise, hosts…) ou un
+            # fichier SUID installé à la main (chemin + empreinte)
             group = req.get("group")
-            if group not in ("certs", "redirects"):
+            if group not in ("certs", "redirects", "suid"):
                 return {"ok": False, "error": "invalid_group"}
-            state_key = "acknowledged_certs" if group == "certs" else "acknowledged_redirects"
+            state_key = {"certs": "acknowledged_certs", "redirects": "acknowledged_redirects", "suid": "acknowledged_suid"}[group]
             acks = dict(self.state.get(state_key) or {})
             if req.get("remove"):
                 keys = [str(k) for k in (req.get("keys") or [])][:50]
                 for k in keys:
                     acks.pop(k, None)
             else:
-                current = self.guard.root_cas() if group == "certs" else self.guard.redirects()
+                current = {"certs": self.guard.root_cas, "redirects": self.guard.redirects,
+                           "suid": lambda: self.suid_status().get("unowned") or []}[group]()
                 wanted = set(str(k) for k in (req.get("keys") or []))
-                field = "fp" if group == "certs" else "key"
+                field = {"certs": "fp", "redirects": "key", "suid": "path"}[group]
                 items = [c for c in current if not c["acknowledged"] and (not wanted or c[field] in wanted)]
                 if not items:
                     return {"ok": False, "error": "nothing_to_ignore"}
                 for c in items:
-                    acks[c[field]] = {"name": c.get("name") or c.get("value") or "", "at": now_iso()}
+                    acks[c[field]] = {"name": c.get("name") or c.get("value") or c.get("path") or "", "at": now_iso()}
+                    if group == "suid":
+                        acks[c[field]]["sha256"] = c.get("sha256")          # réapparaît si le fichier change
                 keys = [c[field] for c in items]
             self.state.update(**{state_key: acks})
             self.guard.invalidate()
@@ -8300,6 +8838,10 @@ class Daemon:
         os.makedirs(UPDATES_DIR, exist_ok=True)
 
         def warmup():
+            try:
+                self.sync_filtered_dns()
+            except Exception as e:  # noqa: BLE001
+                log(f"DNS filtré : {e}")
             self.refresh_security(force=True, broadcast=False)
             self.refresh_overall()
             if self.settings.get("url_guard") is not False and self.urlguard.feeds_stale():

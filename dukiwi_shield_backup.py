@@ -555,3 +555,101 @@ class RestoreRunner(threading.Thread):
                           "snapshot": self.snapshot, "folder": self.folder})
         except Exception as e:  # noqa: BLE001
             self.on_done({"ok": False, "error": f"internal: {e}"[:200]})
+
+
+# ─── Test de restauration (mensuel) ─────────────────────────────────────────
+RESTORE_TEST_DAYS = 30
+RESTORE_TEST_FILES = 12
+
+
+def _sha256(path):
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def restore_test(dest, sources, sample=RESTORE_TEST_FILES):
+    """Restaure quelques fichiers tirés au sort du dernier instantané dans un dossier temporaire, vérifie qu'ils se lisent
+    entièrement et, quand le fichier d'origine n'a pas changé depuis (même taille, même date), qu'il est identique.
+    Une sauvegarde qu'on n'a jamais essayé de restaurer n'est pas une sauvegarde."""
+    import random
+    import tempfile
+    started = time.time()
+    res = {"date": datetime.now().isoformat(timespec="seconds"), "dest_id": dest.get("id"), "dest_label": dest.get("label", ""),
+           "ok": False, "checked": 0, "restored": 0, "compared": 0, "identical": 0, "failed": [], "error": ""}
+    snaps, err = list_snapshots(dest)
+    if err or not snaps:
+        res["error"] = err or "no_backup"
+        return res
+    snap = snaps[0]
+    cloud = dest.get("type") == "cloud"
+    files = []                                       # chemins relatifs à l'instantané : <dossier>/<chemin>
+    if cloud:
+        r = _run(["rclone", "lsjson", "-R", "--files-only", "--no-mimetype", "--max-depth", "6", snap["path"]], timeout=300)
+        try:
+            files = [(e["Path"], int(e.get("Size") or 0)) for e in json.loads(r.stdout or "[]")]
+        except ValueError:
+            files = []
+    else:
+        for root, dirs, names in os.walk(snap["path"]):
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
+            for n in names:
+                p = os.path.join(root, n)
+                if os.path.isfile(p) and not os.path.islink(p):
+                    files.append((os.path.relpath(p, snap["path"]), os.path.getsize(p)))
+            if len(files) > 20000:
+                break
+    files = [f for f in files if f[1] <= 200 * 1024 * 1024]   # gros fichiers (images disque) laissés de côté
+    if not files:
+        res["error"] = "no_files"
+        return res
+    picked = random.sample(files, min(sample, len(files)))
+    by_name = {os.path.basename(os.path.expanduser(s).rstrip("/")) or "home": os.path.expanduser(s).rstrip("/") for s in sources}
+    with tempfile.TemporaryDirectory(prefix="dukiwi-restore-test-") as tmp:
+        for i, (rel, _size) in enumerate(picked):
+            res["checked"] += 1
+            out = os.path.join(tmp, str(i))
+            try:
+                if cloud:
+                    r = _run(["rclone", "copyto", f"{snap['path']}/{rel}", out], timeout=600)
+                    if r.returncode != 0:
+                        raise OSError((r.stderr or "rclone")[-120:])
+                    remote_mtime = None
+                else:
+                    src = os.path.join(snap["path"], rel)
+                    shutil.copy2(src, out)
+                    remote_mtime = os.path.getmtime(src)
+                digest = _sha256(out)
+                res["restored"] += 1
+            except OSError as e:
+                res["failed"].append({"path": rel, "error": str(e)[:120]})
+                continue
+            top, _, sub = rel.partition("/")
+            live = os.path.join(by_name[top], sub) if top in by_name and sub else ""
+            if live and os.path.isfile(live) and os.path.getsize(live) == os.path.getsize(out) \
+                    and (remote_mtime is None or abs(os.path.getmtime(live) - remote_mtime) <= 2):
+                res["compared"] += 1
+                try:
+                    if _sha256(live) == digest:
+                        res["identical"] += 1
+                    elif remote_mtime is not None:
+                        res["failed"].append({"path": rel, "error": "content_differs"})   # même date, contenu différent : corrompu
+                except OSError:
+                    pass
+    res["ok"] = res["restored"] > 0 and not res["failed"]
+    res["duration"] = round(time.time() - started)
+    res["snapshot"] = snap["name"]
+    return res
+
+
+def restore_test_due(st, now=None):
+    last = (st.get("restore_test") or {}).get("date")
+    if not st.get("destinations"):
+        return False
+    try:
+        return not last or ((now or time.time()) - datetime.fromisoformat(last).timestamp()) / 86400 >= RESTORE_TEST_DAYS
+    except ValueError:
+        return True

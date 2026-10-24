@@ -36,6 +36,7 @@ Recommends:     rclone
 Recommends:     gocryptfs
 Recommends:     flatpak
 Recommends:     dnf-automatic
+Recommends:     firejail
 %{?systemd_requires}
 
 %description
@@ -156,6 +157,7 @@ udevadm control --reload-rules >/dev/null 2>&1 || true
 %{_udevrulesdir}/*.rules
 %{_datadir}/applications/dukiwi-shield.desktop
 %{_datadir}/nemo/actions/dukiwi-shield-nemo.nemo_action
+%{_datadir}/nemo/actions/dukiwi-shield-sandbox.nemo_action
 %{_datadir}/polkit-1/actions/com.dukiwi.dukiwi-shield.policy
 %config(noreplace) %{_sysconfdir}/xdg/autostart/dukiwi-shield-autostart.desktop
 %config(noreplace) %{_sysconfdir}/yum.repos.d/dukiwi.repo

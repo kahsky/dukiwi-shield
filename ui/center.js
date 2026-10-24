@@ -165,3 +165,233 @@ function onJournalData(data) {
         else sendToBackend({ action: 'save_text', filename: `dukiwi-shield-rapport-${stamp}.html`, content: html });
     }
 }
+
+// ═══ 2.3.0 : DNS filtré, isoler l'ordinateur, chiffrement du dossier personnel, bac à sable ═══════════
+let dnsData = null;
+let encData = null;
+
+/** Appelé à chaque statut : bandeau d'isolement, page Isoler, état du bac à sable. */
+function onCenterStatus(st) {
+    renderIsolation((st && st.isolated) || null);
+    const b = $('sandboxBadge'), btn = $('btnSandboxInstall');
+    if (b) { b.textContent = t(st && st.firejail ? 'settings.sandbox.ready' : 'settings.sandbox.missing'); b.className = `badge ${st && st.firejail ? 'badge-green' : 'badge-amber'}`; }
+    if (btn) btn.hidden = !!(st && st.firejail);
+}
+
+function renderIsolation(info) {
+    const banner = $('isolatedBanner'), box = $('isolateBox');
+    if (banner) {
+        banner.hidden = !info;
+        if (info) $('isolatedText').textContent = t('isolate.banner', { time: formatDateTime(info.at), n: (info.suspended || []).length });
+    }
+    if (!box) return;
+    if (!info) {
+        box.innerHTML = `<button class="btn btn-danger" onclick="confirmIsolate(true)">${escapeHtml(t('isolate.button'))}</button>`;
+        return;
+    }
+    const procs = (info.suspended || []).map(p => `<li><b>${escapeHtml(p.comm)}</b> (pid ${p.pid}) — ${escapeHtml(p.exe)} · ${escapeHtml(t('isolate.reason.' + p.reason))}</li>`).join('');
+    box.innerHTML = `<p class="isolate-on">${escapeHtml(t('isolate.active', { time: formatDateTime(info.at), method: t('isolate.method.' + info.method) }))}</p>
+        ${procs ? `<p>${escapeHtml(t('isolate.suspended_list'))}</p><ul class="isolate-procs">${procs}</ul>` : `<p class="text-muted">${escapeHtml(t('isolate.none_suspended'))}</p>`}
+        ${info.scan ? `<p class="text-muted">${escapeHtml(t('isolate.scan_started'))}</p>` : ''}
+        <button class="btn btn-primary" onclick="confirmIsolate(false)">${escapeHtml(t('isolate.restore'))}</button>`;
+}
+
+async function confirmIsolate(on) {
+    const ok = await appConfirm(on
+        ? { title: t('isolate.confirm_title'), message: t('isolate.confirm_msg'), ok: t('isolate.button'), cancel: t('modal.cancel'), danger: true }
+        : { title: t('isolate.restore_title'), message: t('isolate.restore_msg'), ok: t('isolate.restore'), cancel: t('modal.cancel') });
+    if (ok) sendToBackend({ action: 'isolate', on });
+}
+
+function loadDnsFilter() { sendToBackend({ action: 'get_security_data', type: 'dns_filter' }); }
+
+function onDnsFilterData(d) {
+    dnsData = d || {};
+    const badge = $('dnsBadge'), box = $('dnsBox');
+    if (!box) return;
+    const on = dnsData.active, susp = dnsData.suspended && dnsData.setting;
+    badge.textContent = t(on ? 'dns.badge.on' : susp ? 'dns.badge.suspended' : 'dns.badge.off');
+    badge.className = `badge ${on ? 'badge-green' : susp ? 'badge-blue' : 'badge-amber'}`;
+    const opt = (v, k) => `<option value="${v}"${(dnsData.setting || '') === v ? ' selected' : ''}>${escapeHtml(t(k))}</option>`;
+    const err = dnsData.error ? `<p class="dns-error">${escapeHtml(t('dns.error.' + dnsData.error))}</p>` : '';
+    box.innerHTML = !dnsData.usable && !on
+        ? `<p class="text-muted">${escapeHtml(t('dns.error.' + (dnsData.reason || 'resolved_missing')))}</p>`
+        : `<label class="setting-row"><span>${escapeHtml(t('dns.provider'))}</span><select id="dnsProvider" class="lang-select">${opt('', 'dns.provider.off')}${opt('quad9', 'dns.provider.quad9')}${opt('cloudflare', 'dns.provider.cloudflare')}</select></label>
+           ${err}${susp ? `<p class="text-muted">${escapeHtml(t('dns.suspended_note'))}</p>` : ''}
+           <p class="text-muted">${escapeHtml(t('dns.note'))}</p>`;
+    const sel = $('dnsProvider');
+    if (sel) sel.onchange = e => { sendToBackend({ action: 'set_settings', system: { filtered_dns: e.target.value } }); setTimeout(loadDnsFilter, 6000); };
+}
+
+function loadEncryption(refresh = false) { sendToBackend({ action: 'get_security_data', type: 'home_encryption', refresh }); }
+
+/** Assistant fscrypt : état, vérifications, puis étapes à suivre (commandes à copier). Rien n'est fait automatiquement. */
+function onEncryptionData(d) {
+    encData = d || {};
+    const box = $('encryptionBox');
+    if (!box) return;
+    if (encData.disk_encrypted) { box.innerHTML = `<p class="enc-ok">✓ ${escapeHtml(t('encryption.disk_done'))}</p>`; return; }
+    const users = encData.users || [];
+    const ecr = users.some(u => u.method === 'ecryptfs') ? `<p class="text-muted">${escapeHtml(t('encryption.ecryptfs_note'))}</p>` : '';
+    if (users.length && users.every(u => u.encrypted)) { box.innerHTML = `<p class="enc-ok">✓ ${escapeHtml(t('encryption.all_done'))}</p>${ecr}`; return; }
+    const row = (ok, key, params = {}) => `<li class="${ok === true ? 'ok' : ok === false ? 'bad' : 'na'}">${ok === true ? '✓' : ok === false ? '✗' : '–'} ${escapeHtml(t(key, params))}</li>`;
+    const checks = [
+        row(encData.fs_supported, 'encryption.check.fs', { fs: encData.fs || '?' }),
+        encData.fs === 'ext4' ? row(encData.encrypt_feature, 'encryption.check.feature') : '',
+        row(encData.fscrypt, 'encryption.check.fscrypt'), row(encData.pam, 'encryption.check.pam'),
+        encData.ecryptfs && !users.some(u => u.method === 'ecryptfs') ? row(false, 'encryption.check.ecryptfs') : '',
+        ...users.map(u => row(u.encrypted ? true : (u.space_ok ? null : false), u.encrypted ? 'encryption.check.user_done' : u.space_ok ? 'encryption.check.user_todo' : 'encryption.check.user_space',
+            { user: u.user, size: formatSize(u.size), free: formatSize(encData.free) })),
+    ].join('');
+    if (!encData.fs_supported) { box.innerHTML = `<ul class="enc-checks">${checks}</ul><p class="text-muted">${escapeHtml(t('encryption.unsupported'))}</p>`; return; }
+    const todo = users.find(u => !u.encrypted) || { user: 'USER', home: '/home/USER' };
+    const pkg = (lastStatus && lastStatus.distro && lastStatus.distro.family === 'rpm') ? 'sudo dnf install fscrypt' : 'sudo apt install fscrypt libpam-fscrypt';
+    const steps = [
+        ['encryption.step.backup', ''],
+        encData.fscrypt && encData.pam ? null : ['encryption.step.install', pkg],
+        encData.fs === 'ext4' && !encData.encrypt_feature ? ['encryption.step.feature' + (encData.boot_same_fs ? '_boot' : ''), `sudo tune2fs -O encrypt ${encData.device || '/dev/…'}`] : null,
+        ['encryption.step.setup', 'sudo fscrypt setup\nsudo fscrypt setup /home'],
+        ['encryption.step.logout', ''],
+        ['encryption.step.migrate', `sudo mv ${todo.home} ${todo.home}.old\nsudo mkdir ${todo.home}\nsudo chown ${todo.user}: ${todo.home}\nsudo fscrypt encrypt ${todo.home} --user=${todo.user} --source=pam_passphrase\nsudo cp -a -T ${todo.home}.old ${todo.home}`],
+        ['encryption.step.check', `fscrypt status ${todo.home}`],
+        ['encryption.step.cleanup', `sudo rm -rf ${todo.home}.old`],
+    ].filter(Boolean);
+    box.innerHTML = `<ul class="enc-checks">${checks}</ul>
+        <h5>${escapeHtml(t('encryption.steps_title'))}</h5>
+        <ol class="enc-steps">${steps.map(([k, cmd]) => `<li>${escapeHtml(t(k, { user: todo.user }))}${cmd ? `<pre>${escapeHtml(cmd)}</pre>` : ''}</li>`).join('')}</ol>
+        <p class="text-muted">${escapeHtml(t('encryption.warning'))}</p>`;
+}
+
+// ═══ 2.4.0 : test de restauration des sauvegardes ═════════════════════════════════════════════════════
+function restoreTestLine(r, label) {
+    if (!r) return `<div class="ts-line"><span class="ts-dot warn"></span><span>${escapeHtml(t('backup.restore_test.never', { what: label }))}</span></div>`;
+    const err = r.error ? t(`backup.restore_test.error.${r.error}`) : '';
+    const text = r.ok
+        ? t('backup.restore_test.ok', { what: label, date: fmtDay(String(r.date || '').slice(0, 10)), n: r.restored, identical: r.identical, compared: r.compared })
+        : t('backup.restore_test.bad', { what: label, date: fmtDay(String(r.date || '').slice(0, 10)), n: (r.failed || []).length, error: err });
+    const files = (r.failed || []).slice(0, 4).map(f => `${f.path} (${t('backup.restore_test.fail.' + f.error) !== 'backup.restore_test.fail.' + f.error ? t('backup.restore_test.fail.' + f.error) : f.error})`).join(', ');
+    return `<div class="ts-line"><span class="ts-dot ${r.ok ? 'ok' : 'danger'}"></span><span>${escapeHtml(text)}${files ? `<br><small class="text-muted">${escapeHtml(files)}</small>` : ''}</span></div>`;
+}
+
+function restoreTestHtml() {
+    const d = (typeof backupData !== 'undefined' && backupData) || {};
+    const parts = [];
+    if ((d.destinations || []).length) {
+        parts.push(restoreTestLine(d.restore_test, (d.restore_test && d.restore_test.dest_label) || t('backup.restore_test.files')));
+        parts.push(`<div class="log-actions-right"><button class="btn btn-secondary btn-sm" onclick="sendToBackend({action:'backup_restore_test'})" ${d.restore_testing ? 'disabled' : ''}>${escapeHtml(t(d.restore_testing ? 'backup.restore_test.running' : 'backup.restore_test.run'))}</button></div>`);
+    }
+    if (d.timeshift_test && !['btrfs', 'not_configured', 'device_unmounted'].includes(d.timeshift_test.error)) parts.push(restoreTestLine(d.timeshift_test, 'Timeshift'));
+    return parts.length ? `<div class="restore-test"><h5>${escapeHtml(t('backup.restore_test.title'))}</h5>${parts.join('')}</div>` : '';
+}
+
+// ═══ 2.4.0 : actions de la checklist, exposition sur Internet, « Après une attaque » ═══════════════════
+async function confirmCenterAction(key, msg) {
+    const ok = await appConfirm({ title: t(`check.${key}.confirm_title`), message: t(`check.${key}.confirm_msg`), ok: t(`check.${key}.action`), cancel: t('modal.cancel') });
+    if (ok) sendToBackend(msg);
+}
+
+async function runExposureTest() {
+    const ok = await appConfirm({ title: t('exposure.confirm_title'), message: t('exposure.confirm_msg'), ok: t('exposure.run'), cancel: t('modal.cancel') });
+    if (!ok) return;
+    const box = $('exposureBox');
+    if (box) box.innerHTML = `<p class="text-muted">${escapeHtml(t('exposure.running'))}</p>`;
+    sendToBackend({ action: 'exposure_test', consent: true });
+}
+
+function onExposureData(d) {
+    const box = $('exposureBox');
+    if (!box) return;
+    const test = (d && d.test) || null, upnp = (d && d.upnp) || null;
+    let html = '';
+    if (!test) html += `<p class="text-muted">${escapeHtml(t('exposure.never'))}</p>`;
+    else if (!test.ok) html += `<p class="dns-error">${escapeHtml(t('exposure.error.' + (test.error || 'unreachable')) !== 'exposure.error.' + (test.error || 'unreachable') ? t('exposure.error.' + (test.error || 'unreachable')) : (test.error || ''))}</p>`;
+    else if (!(test.open || []).length) html += `<p class="enc-ok">✓ ${escapeHtml(t('exposure.none_open', { ip: test.ip, n: (test.tested || []).length, date: formatDateTime(test.at) }))}</p>`;
+    else html += `<p class="isolate-on">${escapeHtml(t('exposure.open', { ip: test.ip, date: formatDateTime(test.at) }))}</p><ul class="isolate-procs">${test.open.map(p => `<li><b>${p}/tcp</b> — ${escapeHtml(t('exposure.port.' + p) !== 'exposure.port.' + p ? t('exposure.port.' + p) : t('exposure.port.other'))}</li>`).join('')}</ul><p class="text-muted">${escapeHtml(t('exposure.open_fix'))}</p>`;
+    html += `<h5>${escapeHtml(t('exposure.upnp_title'))}</h5>`;
+    if (!upnp) html += `<p class="text-muted">${escapeHtml(t('exposure.upnp_unknown'))}</p>`;
+    else if (!upnp.router) html += `<p class="text-muted">${escapeHtml(t('exposure.upnp_none'))}</p>`;
+    else {
+        const maps = upnp.mappings || [];
+        html += `<p>${escapeHtml(t('exposure.upnp_router', { router: upnp.router, model: upnp.model || '', n: maps.length }))}</p>`;
+        if (maps.length) html += `<ul class="isolate-procs">${maps.map(m => `<li${m.this_host ? ' class="isolate-on"' : ''}>${escapeHtml(`${m.external}/${m.protocol} → ${m.client}:${m.internal}`)} ${m.description ? `— ${escapeHtml(m.description)}` : ''}${m.this_host ? ` · ${escapeHtml(t('exposure.upnp_this_host'))}` : ''}</li>`).join('')}</ul>`;
+        html += `<p class="text-muted">${escapeHtml(t('exposure.upnp_advice'))}</p>`;
+    }
+    box.innerHTML = html;
+}
+
+// Étapes : [clé, action (bouton), page/onglet à ouvrir]
+const INCIDENT_STEPS = [
+    ['isolate', () => confirmIsolate(true)],
+    ['scan', () => startFullSystemScan(true)],
+    ['alerts', () => switchTab('system')],
+    ['integrity', () => { openSection('security', 'integrity'); loadSecurityData('integrity', false, true); }],
+    ['persistence', () => { switchTab('system'); setTimeout(() => { const el = $('persistenceList'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 150); }],
+    ['sshkeys', () => openSection('security', 'sshkeys')],
+    ['checklist', () => switchTab('security')],
+    ['passwords', () => openSection('security', 'leaks')],
+    ['sessions', null],
+    ['updates', () => switchTab('update')],
+    ['restore', () => switchTab('backup')],
+    ['report', null],
+    ['keep', () => exportReport('pdf')],
+    ['reconnect', () => confirmIsolate(false)],
+];
+let incidentData = {};
+
+function onIncidentData(d) {
+    incidentData = d || {};
+    const box = $('incidentBox');
+    if (!box) return;
+    const steps = incidentData.steps || {};
+    const isolated = !!(lastStatus && lastStatus.isolated);
+    box.innerHTML = `<ol class="incident-steps">${INCIDENT_STEPS.map(([k, fn], i) => {
+        const done = !!steps[k] || (k === 'isolate' && isolated);
+        return `<li class="${done ? 'done' : ''}">
+            <label class="incident-check"><input type="checkbox" ${done ? 'checked' : ''} onchange="incidentToggle('${k}', this.checked)"> <b>${escapeHtml(t(`incident.${k}.title`))}</b></label>
+            <div class="text-muted">${escapeHtml(t(`incident.${k}.text`))}</div>
+            ${fn ? `<button class="btn btn-secondary btn-sm" onclick="INCIDENT_STEPS[${i}][1]()">${escapeHtml(t(`incident.${k}.action`))}</button>` : ''}
+        </li>`;
+    }).join('')}</ol>`;
+}
+
+function incidentToggle(key, done) { sendToBackend({ action: 'incident_step', key, done }); }
+
+async function incidentReset() {
+    const ok = await appConfirm({ title: t('incident.reset_title'), message: t('incident.reset_msg'), ok: t('incident.reset'), cancel: t('modal.cancel') });
+    if (ok) sendToBackend({ action: 'incident_step', reset: true });
+}
+
+// ═══ 2.5.0 : clés SSH autorisées, résumé de la semaine ════════════════════════════════════════════════
+function onSshKeysData(keys) {
+    const box = $('sshKeysBox');
+    if (!box) return;
+    keys = keys || [];
+    if (!keys.length) { box.innerHTML = `<p class="text-muted">${escapeHtml(t('sshkeys.none'))}</p>`; return; }
+    box.innerHTML = keys.map(k => `<div class="package-item">
+        <span class="scope-badge scope-user">${escapeHtml(k.user)}</span>
+        <span class="package-name">${escapeHtml(k.comment || k.type)}</span>
+        <span class="package-versions" title="${escapeHtml(k.path)}">${escapeHtml(k.type)} · ${escapeHtml(k.fp)}${k.options ? ` · ${escapeHtml(k.options)}` : ''}</span>
+        <button class="btn btn-danger btn-sm" onclick="removeSshKey('${escapeJs(k.path)}','${escapeJs(k.fp)}','${escapeJs(k.comment || k.type)}')">${escapeHtml(t('sshkeys.remove'))}</button>
+    </div>`).join('') + `<p class="text-muted">${escapeHtml(t('sshkeys.note'))}</p>`;
+}
+
+async function removeSshKey(path, fp, label) {
+    const ok = await appConfirm({ title: t('sshkeys.remove_title'), message: t('sshkeys.remove_msg', { key: label, fp, path }), ok: t('sshkeys.remove'), cancel: t('modal.cancel'), danger: true });
+    if (ok) sendToBackend({ action: 'ssh_key_remove', path, fp });
+}
+
+function onWeeklySummary(d) {
+    const box = $('weeklyBox');
+    if (!box) return;
+    if (!d) { box.innerHTML = ''; return; }
+    const b = d.blocked || {};
+    const delta = d.score != null && d.score_before != null && d.score !== d.score_before ? ` (${d.score > d.score_before ? '+' : ''}${d.score - d.score_before})` : '';
+    const cells = [
+        [t('weekly.score'), `${d.score ?? '—'} ${d.grade || ''}${delta}`], [t('weekly.scans'), `${d.scans} · ${(d.files || 0).toLocaleString(locale())}`],
+        [t('weekly.alerts'), `${d.alerts} (${d.danger} ${t('weekly.danger')})`], [t('weekly.threats'), b.threats || 0],
+        [t('weekly.links'), b.links || 0], [t('weekly.suspended'), b.suspended || 0], [t('weekly.network'), b.network || 0], [t('weekly.changes'), b.changes || 0],
+    ];
+    box.innerHTML = `<div class="weekly-card"><h5>${escapeHtml(t('weekly.title', { date: fmtDay(String(d.date || '').slice(0, 10)) }))}</h5>
+        <div class="weekly-grid">${cells.map(([k, v]) => `<div><span class="text-muted">${escapeHtml(k)}</span><b>${escapeHtml(String(v))}</b></div>`).join('')}</div>
+        ${(d.todo || []).length ? `<p class="text-muted">${escapeHtml(t('weekly.todo'))} ${d.todo.map(k => escapeHtml(t('check.' + k + '.title'))).join(', ')}</p>` : ''}</div>`;
+}

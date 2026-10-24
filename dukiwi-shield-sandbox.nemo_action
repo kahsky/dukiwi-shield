@@ -1,0 +1,13 @@
+[Nemo Action]
+Name=Open in a sandbox (Dukiwi Shield)
+Name[fr]=Ouvrir dans un bac à sable (Dukiwi Shield)
+Name[de]=In einer Sandbox öffnen (Dukiwi Shield)
+Name[it]=Apri in una sandbox (Dukiwi Shield)
+Comment=No network, no access to your files
+Comment[fr]=Sans réseau, sans accès à vos fichiers
+Comment[de]=Ohne Netzwerk, ohne Zugriff auf Ihre Dateien
+Comment[it]=Senza rete, senza accesso ai tuoi file
+Exec=/opt/dukiwi-shield/dukiwi-shield-sandbox %F
+Icon-Name=/opt/dukiwi-shield/icons/logo.svg
+Selection=s
+Extensions=nodirs;

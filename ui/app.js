@@ -119,7 +119,7 @@ function locale() {
 // « Ignorer », « C'est normal », « Faire confiance », « Réafficher »… : le service recalcule bouclier, score et listes.
 // Trois secondes après, tout l'état affiché est relu pour montrer le nouveau statut sans changer d'onglet.
 const RELOAD_AFTER_ACTIONS = new Set(['acknowledge_vuln', 'acknowledge_port', 'acknowledge_integrity', 'acknowledge_persistence',
-    'ignore_check', 'acknowledge_sudoers', 'timeshift_ignore', 'trust_program', 'untrust_program', 'untrust_usb', 'hid_allow', 'hid_forget', 'network_gateway_accept', 'honeypot_block', 'honeypot_ignore', 'honeypot_forget', 'feature_answer', 'url_allow', 'guard_ack', 'privacy_allow']);
+    'ignore_check', 'acknowledge_sudoers', 'timeshift_ignore', 'trust_program', 'untrust_program', 'untrust_usb', 'hid_allow', 'hid_forget', 'network_gateway_accept', 'honeypot_block', 'honeypot_ignore', 'honeypot_forget', 'feature_answer', 'url_allow', 'guard_ack', 'privacy_allow', 'isolate', 'password_policy_apply', 'browser_harden', 'exposure_test', 'ssh_key_remove']);
 let statusReloadTimer = null;
 
 function scheduleStatusReload(delay = 3000) {
@@ -419,6 +419,12 @@ function onSecurityData(data) {
     if (type === 'integrity' && data.after_scan && data.data && scan.running) setHeroNote((data.data.warnings || 0) ? t('scan.note.integrity_warn', { n: data.data.warnings }) : t('scan.note.integrity_ok'));
     secData[type] = data.data || null;
     if (type === 'journal') { onJournalData(data.data); return; }
+    if (type === 'dns_filter') { onDnsFilterData(data.data); return; }
+    if (type === 'home_encryption') { onEncryptionData(data.data); return; }
+    if (type === 'exposure') { onExposureData(data.data); return; }
+    if (type === 'incident') { onIncidentData(data.data); return; }
+    if (type === 'ssh_keys') { onSshKeysData(data.data); return; }
+    if (type === 'weekly_summary') { onWeeklySummary(data.data); return; }
     if (type === 'vulns') { renderVulns(data.refreshing); }
     else if (type === 'checklist') renderChecklist();
     else if (type === 'integrity') renderIntegrity(data.refreshing);
@@ -466,6 +472,8 @@ function renderChecklist() {
     $('checklistCounts').textContent = t('security.checklist.counts', { ok: counts.ok, warn: counts.warn, fail: counts.fail });
     const order = { fail: 0, warn: 1, unknown: 2, ok: 3, na: 4 };
     items.forEach(i => { if (i.key === 'secrets' && i.params && (i.params.secrets || []).length) i.detail = i.params.secrets.map(s => `${s.user}: ${s.name} (${t('check.secrets.kind.' + s.kind)})`).join(', '); });
+    items.forEach(i => { if (i.key === 'browser_security' && i.params && (i.params.browsers || []).length) i.detail = i.params.browsers.map(b => `${b.browser} (${b.user}) : ${b.issues.map(x => t('check.browser_security.issue.' + x)).join(', ')}`).join(' · '); });
+    items.forEach(i => { if (i.key === 'suid_files' && i.params && (i.params.files || []).length) i.detail = i.params.files.map(f => `${f.path} (${f.suid ? 'SUID' : 'SGID'} ${f.owner})`).join(', '); });
     items.forEach(i => { if (i.key === 'root_ca' && i.params && (i.params.certs || []).length) i.detail = i.params.certs.map(c => `${c.name} (${(c.stores || []).join(', ')})`).join(', '); });
     items.forEach(i => { if (i.key === 'network_redirect' && i.params && (i.params.redirects || []).length) i.detail = i.params.redirects.map(r => `${t('check.network_redirect.type.' + r.type)}${lang === 'fr' ? ' : ' : ': '}${r.value}`).join(', '); });
     $('checklistList').innerHTML = items.slice().sort((a, b) => order[a.status] - order[b.status] || b.weight - a.weight).map(i => `
@@ -1187,7 +1195,7 @@ function acknowledgePersistence(key, remove = false) { sendToBackend({ action: '
 
 function onTrustedList(data) {
     trustedData = { programs: (data && data.programs) || [], acknowledged: (data && data.acknowledged) || [], usb: (data && data.usb) || [], hid: (data && data.hid) || [], sudoers: (data && data.sudoers) || [],
-        privacy: (data && data.privacy) || [], certs: (data && data.certs) || [], redirects: (data && data.redirects) || [] };
+        privacy: (data && data.privacy) || [], certs: (data && data.certs) || [], redirects: (data && data.redirects) || [], suid: (data && data.suid) || [] };
     renderTrusted();
 }
 
@@ -1195,8 +1203,8 @@ function renderTrusted() {
     const el = $('trustedList');
     if (!el) return;
     const progs = trustedData.programs, ack = trustedData.acknowledged, usb = trustedData.usb || [], hid = trustedData.hid || [], sud = trustedData.sudoers || [];
-    const priv = trustedData.privacy || [], certs = trustedData.certs || [], redir = trustedData.redirects || [];
-    if (!progs.length && !ack.length && !usb.length && !hid.length && !sud.length && !priv.length && !certs.length && !redir.length) { el.innerHTML = `<p class="text-muted">${t('settings.trusted.none')}</p>`; return; }
+    const priv = trustedData.privacy || [], certs = trustedData.certs || [], redir = trustedData.redirects || [], suid = trustedData.suid || [];
+    if (!progs.length && !ack.length && !usb.length && !hid.length && !sud.length && !priv.length && !certs.length && !redir.length && !suid.length) { el.innerHTML = `<p class="text-muted">${t('settings.trusted.none')}</p>`; return; }
     const row = (badge, name, sub, at, js) => `<div class="package-item">
             <span class="scope-badge scope-user">${badge}</span>
             <span class="package-name">${escapeHtml(name)}</span>
@@ -1207,6 +1215,7 @@ function renderTrusted() {
     el.innerHTML = [
         ...priv.map(p => row(t(`settings.trusted.privacy_${p.device === 'microphone' ? 'microphone' : 'camera'}`), p.comm || p.exe, p.exe, p.at, `sendToBackend({action:'privacy_allow', remove:true, exe:'${escapeJs(p.exe)}'})`)),
         ...certs.map(c => row(t('settings.trusted.cert'), c.name || c.fp, `SHA-256 ${(c.fp || '').slice(0, 16)}…`, c.at, `sendToBackend({action:'guard_ack', group:'certs', remove:true, keys:['${escapeJs(c.fp)}']})`)),
+        ...suid.map(f => row(t('settings.trusted.suid'), f.path, `sha256 ${(f.sha256 || '').slice(0, 12)}…`, f.at, `sendToBackend({action:'guard_ack', group:'suid', remove:true, keys:['${escapeJs(f.path)}']})`)),
         ...redir.map(r => row(t('settings.trusted.redirect'), r.name || r.key, r.key, r.at, `sendToBackend({action:'guard_ack', group:'redirects', remove:true, keys:['${escapeJs(r.key)}']})`)),
         ...sud.map(s => `<div class="package-item">
             <span class="scope-badge scope-user">${t('settings.trusted.sudoers')}</span>
@@ -1409,6 +1418,7 @@ function saveSettings() {
 let lastExtrasKey = '';
 
 function updateDashboardStatus(data) {
+    if (typeof onCenterStatus === 'function') onCenterStatus(data);
     const prevExtras = lastExtrasKey;
     lastStatus = data;
     // Les compléments de la checklist (Spices, Flatpak) viennent de l'état : re-rendre la checklist quand ils changent
@@ -1748,7 +1758,7 @@ function onAlertEvent(alert) {
 }
 
 // Centre de sécurité : leurre anti-rançongiciel, caméra/micro, mineur, certificat racine, détournement réseau
-const GUARD_KINDS = ['ransomware', 'privacy', 'miner', 'certificate', 'redirect'];
+const GUARD_KINDS = ['ransomware', 'privacy', 'miner', 'certificate', 'redirect', 'extension', 'ssh_key', 'suid'];
 
 function guardAlertText(a) {
     const prog = a.comm || a.title || '?';
@@ -1758,12 +1768,16 @@ function guardAlertText(a) {
     if (a.kind === 'privacy') return t(`popup.privacy.${a.device || 'camera'}_body`, { program: prog });
     if (a.kind === 'miner') return `${t('popup.miner.body', { program: prog, cpu: a.cpu || 0 })} ${t(`alert.reason.${reason}`)}`;
     if (a.kind === 'certificate') return t('popup.certificate.body', { name: a.title || '?', stores: a.detail || '' });
+    if (a.kind === 'extension') return t(`popup.extension.${a.subtype || 'new'}`, { name: a.title || '?', where: a.detail || '', perms: (a.perms || []).map(p => t('ext.perm.' + p) !== 'ext.perm.' + p ? t('ext.perm.' + p) : p).join(', ') || t('ext.perm.none') });
+    if (a.kind === 'ssh_key') return t('popup.ssh_key.body', { user: a.user || a.title || '?', comment: a.detail || '?', fp: a.fp || '' });
+    if (a.kind === 'suid') return t('popup.suid.body', { path: a.path || a.detail || '?', owner: a.owner || '?' });
     return t(`popup.redirect.${a.subtype || 'hosts'}`, { value: a.title || '?', where: a.detail || '' });
 }
 
 function renderGuardAlert(a) {
     const cls = a.severity === 'danger' ? ['alert-danger', 'badge-red'] : a.severity === 'warn' ? ['alert-warn', 'badge-amber'] : ['alert-info', 'badge-blue'];
     const badge = a.kind === 'privacy' ? t(`system.alert.privacy_${a.device || 'camera'}`) : t(`system.alert.${a.kind}`);
+    if (a.kind === 'ssh_key' || a.kind === 'suid') a = Object.assign({}, a, { exe: a.kind === 'suid' ? a.path : a.fp });
     const btn = (label, js, kind = 'secondary') => `<button class="btn btn-${kind} btn-sm" onclick="${js}">${label}</button>`;
     const actions = [];
     if (a.suspended && (a.kind === 'ransomware' || a.kind === 'miner')) {
@@ -1775,6 +1789,8 @@ function renderGuardAlert(a) {
     if ((a.kind === 'ransomware' || a.kind === 'miner') && a.exe && a.pid) actions.push(btn(t('popup.btn.its_me'), `trustProgram('${escapeJs(a.exe)}','${escapeJs(a.comm || '')}')`));
     if (a.kind === 'ransomware' && a.top_dir) actions.push(btn(t('popup.btn.scan_folder'), `startScan('${escapeJs(a.top_dir)}')`));
     if (a.kind === 'certificate' && a.fp) actions.push(btn(t('security.ignore'), `sendToBackend({action:'guard_ack', group:'certs', keys:['${escapeJs(a.fp)}']})`));
+    if (a.kind === 'ssh_key') actions.push(btn(t('popup.ssh_key.remove'), `openSection('security','sshkeys')`, 'danger'));
+    if (a.kind === 'suid' && a.path) actions.push(btn(t('security.ignore'), `sendToBackend({action:'guard_ack', group:'suid', keys:['${escapeJs(a.path)}']})`));
     if (a.kind === 'redirect' && a.key) actions.push(btn(t('security.ignore'), `sendToBackend({action:'guard_ack', group:'redirects', keys:['${escapeJs(a.key)}']})`));
     return `
         <div class="alert-item ${cls[0]}">
@@ -2836,6 +2852,12 @@ function simulateBackend(data) {
             break;
         case 'get_security_data': {
             const now = new Date().toISOString();
+            if (data.type === 'incident') { reply('securityData', { type: 'incident', available: true, data: { started_at: now, steps: { isolate: now, scan: now } } }); break; }
+            if (data.type === 'ssh_keys') { reply('securityData', { type: 'ssh_keys', available: true, data: [{ user: 'anna', path: '/home/anna/.ssh/authorized_keys', type: 'ssh-ed25519', fp: 'SHA256:e8sk6wqXazhRcQ1o2', comment: 'anna@laptop', options: '' }] }); break; }
+            if (data.type === 'weekly_summary') { reply('securityData', { type: 'weekly_summary', available: true, data: { date: now, score: 82, grade: 'B', score_before: 76, scans: 3, files: 412803, alerts: 9, danger: 1, blocked: { threats: 2, links: 5, suspended: 1, network: 3, changes: 4 }, todo: ['security_updates', 'disk_encryption', 'filtered_dns'] } }); break; }
+            if (data.type === 'exposure') { reply('securityData', { type: 'exposure', available: true, data: { test: { ok: true, ip: '203.0.113.7', open: [22], tested: [], at: now }, upnp: { router: '192.168.1.1', model: 'AVM FRITZ!Box 7590', mappings: [{ external: '22', protocol: 'TCP', client: '192.168.1.20', internal: '22', description: 'ssh', enabled: true, this_host: true }] } } }); break; }
+            if (data.type === 'dns_filter') { reply('securityData', { type: 'dns_filter', available: true, data: { usable: true, active: true, provider: 'quad9', setting: 'quad9', suspended: false, error: '' } }); break; }
+            if (data.type === 'home_encryption') { reply('securityData', { type: 'home_encryption', available: true, data: { disk_encrypted: false, fs: 'ext4', device: '/dev/nvme0n1p5', fs_supported: true, encrypt_feature: false, boot_same_fs: true, fscrypt: false, pam: false, free: 20e9, users: [{ user: 'anna', home: '/home/anna', encrypted: false, size: 12e9, space_ok: true }] } }); break; }
             if (data.type === 'journal') {
                 const ago = h => new Date(Date.now() - h * 3600e3).toISOString().slice(0, 19);
                 reply('securityData', { type: 'journal', available: true, data: { days: data.days || 30, events: [
@@ -3065,7 +3087,12 @@ function sectionsOf(tab) { return [...document.querySelectorAll(`#tab-${tab} .ac
 // Page principale d'un onglet (clic sur l'élément du menu) : ses sections data-main (Pare-feu : pare-feu et type de réseau ;
 // Paramètres : général et popups ; Sécurité : score et checklist) ; les autres sections sont les pages du sous-menu.
 function showSubpage(tab, key, persist = true) {
-    if (tab === 'security' && key === 'journal' && typeof loadJournal === 'function') loadJournal();
+    if (tab === 'security' && key === 'journal' && typeof loadJournal === 'function') { loadJournal(); sendToBackend({ action: 'get_security_data', type: 'weekly_summary' }); }
+    if (tab === 'security' && key === 'sshkeys') sendToBackend({ action: 'get_security_data', type: 'ssh_keys' });
+    if (tab === 'security' && key === 'encryption') loadEncryption();
+    if (tab === 'firewall' && key === 'dns') loadDnsFilter();
+    if (tab === 'firewall' && key === 'exposure') sendToBackend({ action: 'get_security_data', type: 'exposure' });
+    if (tab === 'security' && key === 'incident') sendToBackend({ action: 'get_security_data', type: 'incident' });
     const secs = sectionsOf(tab);
     if (!secs.length) return;
     const target = secs.find(s => s.dataset.acc === key && !s.dataset.main);
@@ -3266,7 +3293,7 @@ function backupIgnoreBtn() {
 
 function backupUserStateHtml() {
     const info = backupUserInfo();
-    return `<div class="ts-line backup-user-state"><span class="ts-dot ${info.state}"></span><span>${escapeHtml(info.text)}</span>${backupIgnored() ? ` <span class="scope-badge scope-user">${t('backup.user.ignored_badge')}</span>` : ''}${backupIgnoreBtn()}</div>`;
+    return `<div class="ts-line backup-user-state"><span class="ts-dot ${info.state}"></span><span>${escapeHtml(info.text)}</span>${backupIgnored() ? ` <span class="scope-badge scope-user">${t('backup.user.ignored_badge')}</span>` : ''}${backupIgnoreBtn()}</div>` + (typeof restoreTestHtml === 'function' ? restoreTestHtml() : '');
 }
 
 function timeshiftIgnoreBtn(d) {
@@ -3476,6 +3503,12 @@ function runIntegrityOnly() {
 const CHECK_FIX = {
     firewall: () => openSection('firewall', 'firewall'),
     ssh: () => openSection('firewall', 'ssh'),
+    disk_encryption: () => openSection('security', 'encryption'),
+    filtered_dns: () => openSection('firewall', 'dns'),
+    password_policy: () => confirmCenterAction('password_policy', { action: 'password_policy_apply' }),
+    browser_security: () => confirmCenterAction('browser_security', { action: 'browser_harden' }),
+    internet_exposure: () => openSection('firewall', 'exposure'),
+    restore_test: () => switchTab('backup'),
     security_updates: () => sendToBackend({ action: 'system_upgrade' }),
     reboot: null,
     auto_updates: () => sendToBackend({ action: 'auto_updates_enable' }),
@@ -3498,16 +3531,18 @@ const CHECK_FIX = {
     secrets: null,
     root_ca: null,
     network_redirect: null,
+    suid_files: null,
     login_failures: () => { switchTab('system'); setTimeout(() => { const el = $('alertsList'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 150); },
     hardening: () => openSection('security', 'hardening'),
 };
 
 // Libellé du bouton quand l'application règle elle-même (sinon « Régler » / « Comment faire »)
-const CHECK_FIX_LABEL = { auto_updates: 'check.auto_updates.action', firmware: 'check.firmware.action' };
+const CHECK_FIX_LABEL = { auto_updates: 'check.auto_updates.action', firmware: 'check.firmware.action', disk_encryption: 'check.disk_encryption.action', filtered_dns: 'check.filtered_dns.action',
+    password_policy: 'check.password_policy.action', browser_security: 'check.browser_security.action', internet_exposure: 'check.internet_exposure.action', restore_test: 'check.restore_test.action' };
 
 /** Contrôles que l'utilisateur peut ignorer en connaissance de cause (« Ignorer ») : ports ouverts voulus (développement web…). */
 const CHECK_ACK = { open_ports: () => ackAllPorts(), open_vulns: () => ackAllVulns(), nopasswd_sudo: () => ackSudoers(),
-    root_ca: () => ackGuard('root_ca', 'certs'), network_redirect: () => ackGuard('network_redirect', 'redirects') };
+    root_ca: () => ackGuard('root_ca', 'certs'), network_redirect: () => ackGuard('network_redirect', 'redirects'), suid_files: () => ackGuard('suid_files', 'suid') };
 
 /** « Ignorer » les certificats racine ajoutés (proxy d'entreprise, outil de développement) ou les détournements voulus. */
 async function ackGuard(key, group) {

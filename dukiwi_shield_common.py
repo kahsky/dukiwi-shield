@@ -13,7 +13,7 @@ import struct
 import subprocess
 from datetime import datetime
 
-VERSION = "2.2.0"
+VERSION = "2.5.0"
 
 # ─── Chemins système (daemon root) ───────────────────────────────────────────
 # Surchargeables par variables d'environnement pour les tests sans root.
@@ -103,6 +103,8 @@ DEFAULT_SETTINGS = {
     "ransomware_decoys": True,
     "privacy_watch": True,
     "miner_watch": True,
+    # DNS filtré (systemd-resolved) : "" (désactivé), "quad9", "cloudflare" ; suspendu sur un réseau Entreprise
+    "filtered_dns": "",
     "geoip_lookup": True,
     # Clé ip-api.com Pro (optionnelle) : HTTPS et sans limite ; vide = service gratuit (15 requêtes groupées/min, HTTP)
     "geoip_api_key": "",

@@ -965,6 +965,9 @@ class TrayIcon:
         self.item_system = Gtk.MenuItem(label="")
         self.item_system.connect("activate", self.on_system)
         menu.append(self.item_system)
+        self.item_isolate = Gtk.MenuItem(label="")
+        self.item_isolate.connect("activate", self.on_isolate)
+        menu.append(self.item_isolate)
         menu.append(Gtk.SeparatorMenuItem())
         self.item_status = Gtk.MenuItem(label="")
         self.item_status.set_sensitive(False)
@@ -990,9 +993,20 @@ class TrayIcon:
         self.item_scan.set_label(T("tray.full_scan"))
         self.item_update.set_label(T("tray.update"))
         self.item_system.set_label(T("tray.system"))
+        self.item_isolate.set_label(T("tray.unisolate" if self.isolated() else "tray.isolate"))
         self.item_quit.set_label(T("tray.quit"))
 
+    def isolated(self):
+        st = self.app.last_daemon_status
+        return bool(isinstance(st, dict) and st.get("isolated"))
+
+    def on_isolate(self, _item):
+        """Le choix se confirme dans la fenêtre (fenêtre modale de l'application), jamais d'un seul clic dans le menu."""
+        self.app.window.present()
+        self.app.run_js("if(typeof confirmIsolate==='function')confirmIsolate(" + ("false" if self.isolated() else "true") + ");")
+
     def update_status(self):
+        self.item_isolate.set_label(self.app.T("tray.unisolate" if self.isolated() else "tray.isolate"))
         color, message = get_protection_status(self.app.lang, self.app.last_daemon_status)
         overall = self.app.overall_state()
         icon_color = overall.get("color") if overall else color
@@ -1091,6 +1105,7 @@ class ClamAVAntivirusApp:
                 pass
         GLib.timeout_add_seconds(25, self.show_daily_tip)
         self.backup_runner = None
+        self.restore_test_thread = None
         self.backup_progress = None
         GLib.timeout_add_seconds(120, self._backup_first_check)
         self.restore_runner = None
@@ -1279,7 +1294,7 @@ class ClamAVAntivirusApp:
         if kind == "honeypot":
             self.show_honeypot_alert(alert)
             return
-        if kind in ("ransomware", "privacy", "miner", "certificate", "redirect"):
+        if kind in ("ransomware", "privacy", "miner", "certificate", "redirect", "extension", "ssh_key", "suid"):
             self.show_guard_alert(alert)
             return
         if kind == "account":
@@ -1432,6 +1447,26 @@ class ClamAVAntivirusApp:
             self.popup("danger" if sev == "danger" else "warning", T("popup.miner.title"), body, meta=meta, timeout=None,
                        buttons=self.suspended_buttons(alert), on_activate=lambda: self.show_tab("system"))
             return
+        if kind == "extension":
+            perms = ", ".join(T(f"ext.perm.{p}") if T(f"ext.perm.{p}") != f"ext.perm.{p}" else p for p in (alert.get("perms") or []))
+            body = T(f"popup.extension.{alert.get('subtype') or 'new'}", name=alert.get("title") or "?", where=alert.get("detail") or "",
+                     perms=perms or T("ext.perm.none"))
+            self.popup("warning" if sev == "warn" else "info", T("popup.extension.title"), body, timeout=None if sev == "warn" else 20,
+                       buttons=[(T("popup.btn.details"), "primary", lambda: self.show_tab("system"))], on_activate=lambda: self.show_tab("system"))
+            return
+        if kind == "ssh_key":
+            body = T("popup.ssh_key.body", user=alert.get("user") or "?", comment=alert.get("detail") or "?", fp=alert.get("fp") or "")
+            if (alert.get("reasons") or [""])[0].endswith("_sshd"):
+                body += "\n" + T("popup.ssh_key.sshd")
+            self.popup("danger" if sev == "danger" else "warning", T("popup.ssh_key.title"), body, timeout=None, meta=alert.get("path") or None,
+                       buttons=[(T("popup.ssh_key.remove"), "danger", lambda: self.show_section("security", "sshkeys")),
+                                (T("popup.ssh_key.mine"), None, lambda: None)], on_activate=lambda: self.show_section("security", "sshkeys"))
+            return
+        if kind == "suid":
+            self.popup("danger" if sev == "danger" else "warning", T("popup.suid.title"),
+                       T("popup.suid.body", path=alert.get("path") or "?", owner=alert.get("owner") or "?"), timeout=None,
+                       buttons=[(T("popup.btn.details"), "primary", lambda: self.show_tab("security"))], on_activate=lambda: self.show_tab("security"))
+            return
         group, key = ("certs", alert.get("fp")) if kind == "certificate" else ("redirects", alert.get("key"))
         if kind == "certificate":
             title, body = T("popup.certificate.title"), T("popup.certificate.body", name=alert.get("title") or "?", stores=alert.get("detail") or "")
@@ -1442,6 +1477,68 @@ class ClamAVAntivirusApp:
                    buttons=[(T("security.ignore"), None, lambda g=group, k=key: self.act_guard_ack({"group": g, "keys": [k]})),
                             (T("popup.btn.details"), "primary", lambda: self.show_tab("security"))],
                    on_activate=lambda: self.show_tab("security"))
+
+    def act_ssh_key_remove(self, data):
+        params = {"path": str(data.get("path") or ""), "fp": str(data.get("fp") or "")}
+
+        def done(resp):
+            self.send_to_js("operationResult", {"status": "success" if resp.get("ok") else "error", "op": "security",
+                                                "message": self.T("msg.ssh_key_removed") if resp.get("ok") else self.daemon_error(resp)})
+            self.act_get_security_data({"type": "ssh_keys"})
+            return False
+        self.run_admin("ssh_key_remove", params, done)
+
+    def show_section(self, tab, key):
+        self.window.present()
+        self.run_js(f"if(typeof openSection==='function')openSection({json.dumps(tab)},{json.dumps(key)});")
+
+    def act_isolate(self, data):
+        """Isoler l'ordinateur (urgence, sans mot de passe) ou rétablir le réseau (administrateur en mode famille)."""
+        on = data.get("on", True) is not False
+
+        def done(resp):
+            if resp.get("ok"):
+                info = resp.get("isolated") or {}
+                msg = self.T("msg.isolated", n=len(info.get("suspended") or [])) if on else self.T("msg.unisolated")
+                self.send_to_js("operationResult", {"status": "success", "op": "security", "message": msg})
+            else:
+                self.send_to_js("operationResult", {"status": "error", "op": "security", "message": self.daemon_error(resp)})
+            self.send_status()
+            self.tray.update_status()
+            return False
+        self.run_admin("isolate", {"on": on}, done)
+
+    def _center_done(self, ok_key, refresh_types=(), with_checklist=True, **params):
+        """Réponse commune des actions du centre de sécurité : message, checklist recalculée, données relues."""
+        def done(resp):
+            if resp.get("ok"):
+                self.send_to_js("operationResult", {"status": "success", "op": "security", "message": self.T(ok_key, **{k: resp.get(k, v) for k, v in params.items()})})
+            else:
+                self.send_to_js("operationResult", {"status": "error", "op": "security", "message": self.daemon_error(resp)})
+            if with_checklist and isinstance(resp.get("checklist"), dict):
+                self.send_to_js("securityData", {"type": "checklist", "data": resp["checklist"], "available": True})
+            for kind in refresh_types:
+                self.act_get_security_data({"type": kind})
+            return False
+        return done
+
+    def act_password_policy_apply(self, _data):
+        self.run_admin("password_policy_apply", {}, self._center_done("msg.password_policy_applied"))
+
+    def act_browser_harden(self, data):
+        remove = bool(data.get("remove"))
+        self.run_admin("browser_harden", {"remove": remove},
+                       self._center_done("msg.browser_unhardened" if remove else "msg.browser_hardened", firefox=0, policies=0))
+
+    def act_exposure_test(self, data):
+        if data.get("consent") is not True:
+            return
+        self.run_admin("exposure_test", {"consent": True}, self._center_done("msg.exposure_done", refresh_types=("exposure",)))
+
+    def act_incident_step(self, data):
+        params = {"reset": True} if data.get("reset") else {"key": str(data.get("key") or ""), "done": bool(data.get("done", True))}
+        resp = DaemonClient.request("incident_step", **params)
+        self.send_to_js("securityData", {"type": "incident", "data": resp.get("incident") or {}, "available": bool(resp.get("ok"))})
 
     def act_privacy_allow(self, data):
         """« Toujours autoriser » un programme sur la caméra / le micro (ou retirer l'autorisation depuis Programmes de confiance)."""
@@ -1659,7 +1756,12 @@ class ClamAVAntivirusApp:
             self.send_to_js("securityData", {"type": "integrity", "data": ev.get("integrity") or {}, "available": True, "after_scan": True})
         elif et == "mail":
             self.send_to_js("mailStatus", {"mail": ev.get("mail"), "available": True})
-        elif et in ("vulns", "checklist", "integrity", "persistence", "app_update", "integrity_running", "suspended"):
+        elif et == "isolated":
+            if isinstance(self.last_daemon_status, dict):
+                self.last_daemon_status["isolated"] = ev.get("isolated")
+            self.send_status()
+            self.tray.update_status()
+        elif et in ("vulns", "checklist", "integrity", "persistence", "app_update", "integrity_running", "suspended", "dns_filter", "weekly_summary"):
             self.send_to_js("securityData", {"type": et, "data": ev.get(et) or ev.get("update") or {},
                                              "available": True})
             if et == "app_update" or et == "suspended":
@@ -1925,6 +2027,8 @@ class ClamAVAntivirusApp:
                "invalid_host": "msg.url_invalid_host"}.get(err)
         if key:
             return self.T(key, path=resp.get("path", ""), detail=str(resp.get("detail") or "")[:200])
+        if err and self.T(f"error.{err}") != f"error.{err}":
+            return self.T(f"error.{err}")
         return err or self.T("msg.daemon_unavailable")
 
     # ── Scan local (callbacks) ──────────────────────────────────────────
@@ -2280,7 +2384,7 @@ class ClamAVAntivirusApp:
     def act_get_trusted(self, _data):
         resp = DaemonClient.request("trusted_programs")
         ok = bool(resp.get("ok"))
-        self.send_to_js("trustedList", dict({k: resp.get(k, []) if ok else [] for k in ("programs", "acknowledged", "usb", "hid", "sudoers", "privacy", "certs", "redirects")},
+        self.send_to_js("trustedList", dict({k: resp.get(k, []) if ok else [] for k in ("programs", "acknowledged", "usb", "hid", "sudoers", "privacy", "certs", "redirects", "suid")},
                                             available=ok))
 
     def act_acknowledge_vuln(self, data):
@@ -2491,7 +2595,50 @@ class ClamAVAntivirusApp:
                 "destinations": dests, "sources": st["sources"], "excludes": st["excludes"], "retention": st["retention"],
                 "schedule": st["schedule"], "history": st["history"][:20], "rclone": backup.rclone_path() is not None,
                 "remotes": backup.rclone_remotes() if backup.rclone_path() else [], "running": self.backup_progress,
-                "hostuser": backup._hostuser(), "timeshift_installed": shutil.which("timeshift") is not None}
+                "hostuser": backup._hostuser(), "timeshift_installed": shutil.which("timeshift") is not None,
+                "restore_test": st.get("restore_test"), "restore_testing": bool(self.restore_test_thread and self.restore_test_thread.is_alive()),
+                "timeshift_test": ((ds or {}).get("state") or {}).get("timeshift_test")}
+
+    def act_backup_restore_test(self, data, auto=False):
+        """Test de restauration : quelques fichiers du dernier instantané restaurés dans un dossier temporaire et vérifiés."""
+        if (self.backup_runner and self.backup_runner.is_alive()) or (self.restore_test_thread and self.restore_test_thread.is_alive()):
+            if not auto:
+                self.send_to_js("operationResult", {"status": "error", "message": self.T("msg.backup_running")})
+            return False
+        st = backup.load_state()
+        drives = backup.detect_drives()
+        dests = [d for d in st["destinations"] if not data.get("dest_id") or d.get("id") == data.get("dest_id")]
+        dest = next((d for d in dests if backup.destination_available(d, drives)[0]), None)
+        if dest is None:
+            if not auto:
+                self.send_to_js("operationResult", {"status": "error", "message": self.T("msg.restore_test_no_dest")})
+            return False
+
+        def worker():
+            res = backup.restore_test(dest, st["sources"])
+            cur = backup.load_state()
+            cur["restore_test"] = res
+            backup.save_state(cur)
+            DaemonClient.request("backup_test_report", result=res)
+            GLib.idle_add(self._restore_test_done, res, auto)
+        self.restore_test_thread = threading.Thread(target=worker, daemon=True, name="restore-test")
+        self.restore_test_thread.start()
+        self.send_to_js("backupStatus", self._backup_payload(drives))
+        return True
+
+    def _restore_test_done(self, res, auto):
+        T = self.T
+        if res.get("ok"):
+            msg = T("msg.restore_test_ok", n=res.get("restored", 0), identical=res.get("identical", 0), dest=res.get("dest_label", ""))
+        else:
+            msg = T("msg.restore_test_failed", n=len(res.get("failed") or []), error=T(f"backup.restore_test.error.{res.get('error')}") if res.get("error") else "", dest=res.get("dest_label", ""))
+        if not auto or not res.get("ok"):
+            self.send_to_js("operationResult", {"status": "success" if res.get("ok") else "error", "message": msg})
+        if auto and not res.get("ok"):
+            self.popup("warning", T("popup.restore_test.title"), msg, timeout=None, on_activate=lambda: self.show_tab("backup"),
+                       buttons=[(T("popup.btn.details"), "primary", lambda: self.show_tab("backup"))])
+        self.send_to_js("backupStatus", self._backup_payload())
+        return False
 
     def act_backup_status(self, data):
         if data.get("refresh"):
@@ -2795,6 +2942,8 @@ class ClamAVAntivirusApp:
                 return True
             st = backup.load_state()
             if not backup.summary(st).get("due"):
+                if backup.restore_test_due(st) and not (self.restore_test_thread and self.restore_test_thread.is_alive()):
+                    self.act_backup_restore_test({}, auto=True)        # test mensuel dès qu'une destination est là
                 return True
             drives = backup.detect_drives()
             for dest in st["destinations"]:
@@ -2831,6 +2980,7 @@ class ClamAVAntivirusApp:
         checklist = DaemonClient.request("checklist").get("checklist") or {}
         state = load_state()
         report = extras.weekly_report(history, alerts, checklist, self.backup_summary(), state.get("read_lessons"), state.get("weekly_prev_score"))
+        report["center"] = daemon_request("weekly_summary", timeout=30, now=True).get("weekly_summary") or {}
         GLib.idle_add(self._show_weekly_report, report)
 
     def _show_weekly_report(self, r):
@@ -2842,6 +2992,11 @@ class ClamAVAntivirusApp:
             if r.get("score_delta") is not None and r["score_delta"] != 0:
                 delta = T("report.delta_up", d=r["score_delta"]) if r["score_delta"] > 0 else T("report.delta_down", d=r["score_delta"])
             lines.append(T("report.score", score=r["score"], grade=r.get("grade") or "", delta=delta).strip())
+        b = (r.get("center") or {}).get("blocked") or {}
+        if any(b.values()):
+            lines.append(T("report.blocked", threats=b.get("threats", 0), links=b.get("links", 0), suspended=b.get("suspended", 0), network=b.get("network", 0)))
+        if b.get("changes"):
+            lines.append(T("report.changes", n=b["changes"]))
         lines.append(T("report.backup_ok", rel=self.relative(r["backup_last"])) if r.get("backup_last") else T("report.backup_none"))
         lines.append(T("report.lessons", n=r["lessons_read"]))
         kind = "danger" if r["threats"] or r["danger_alerts"] else ("warning" if r.get("backup_state") in ("none", "old", "missing") else "success")
@@ -3262,7 +3417,9 @@ class ClamAVAntivirusApp:
         kind = data.get("type")
         cmd = {"vulns": "vulns", "checklist": "checklist", "integrity": "integrity", "persistence": "persistence",
                "connections": "connections", "app_update": "check_update", "honeypot": "honeypot", "urlguard": "urlguard",
-               "journal": "security_journal"}.get(kind)
+               "journal": "security_journal", "dns_filter": "dns_filter", "home_encryption": "home_encryption",
+               "browser_security": "browser_security", "exposure": "exposure", "incident": "incident",
+               "ssh_keys": "ssh_keys", "suid": "suid", "weekly_summary": "weekly_summary"}.get(kind)
         if not cmd:
             return
         params = {}
@@ -3563,6 +3720,8 @@ class ClamAVAntivirusApp:
             "telemetry_answered": bool(state.get("telemetry_answered")),
             "upload_gb": (ds or {}).get("upload_gb", 0),
             "overall": (ds or {}).get("overall"),
+            "isolated": (ds or {}).get("isolated"),
+            "firejail": bool(shutil.which("firejail")),
             "read_lessons": load_state().get("read_lessons") or [],
             "backup": {"timeshift": (ds or {}).get("timeshift"), "user": self.backup_summary(), "running": self.backup_progress},
             "travel_mode": bool(load_state().get("travel_mode")),

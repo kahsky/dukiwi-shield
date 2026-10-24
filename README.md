@@ -48,15 +48,15 @@ versions itself (popup or Security tab) and can install them on its own when the
 
 ### Direct download
 
-- Mint / Ubuntu: [dukiwi-shield_2.2.0_all.deb](https://www.dukiwi.com/repo/dukiwi-shield/dukiwi-shield_2.2.0_all.deb)
-- Fedora: [dukiwi-shield-2.2.0-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/dukiwi-shield-2.2.0-1.noarch.rpm)
+- Mint / Ubuntu: [dukiwi-shield_2.5.0_all.deb](https://www.dukiwi.com/repo/dukiwi-shield/dukiwi-shield_2.5.0_all.deb)
+- Fedora: [dukiwi-shield-2.5.0-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/dukiwi-shield-2.5.0-1.noarch.rpm)
 - All versions: [www.dukiwi.com/repo](https://www.dukiwi.com/repo)
 
 ### Installing a downloaded package by hand
 
 ```bash
-sudo apt install ./dukiwi-shield_2.2.0_all.deb          # Mint / Ubuntu
-sudo dnf install ./dukiwi-shield-2.2.0-1.noarch.rpm      # Fedora
+sudo apt install ./dukiwi-shield_2.5.0_all.deb          # Mint / Ubuntu
+sudo dnf install ./dukiwi-shield-2.5.0-1.noarch.rpm      # Fedora
 ```
 
 The installation enables the system service and the scheduler, then starts the initial scan:
@@ -78,6 +78,63 @@ sudo dnf remove dukiwi-shield   # Fedora
 
 ## Features
 
+- **Extensions, SSH keys, scheduled tasks and services, SUID files, weekly summary (2.5)** —
+  1. *Real-time persistence watch*: every minute the service compares a cheap fingerprint of the autostart folders,
+     crontabs, `/etc/cron.*`, `/etc/systemd/system`, user units, `at` jobs, `/etc/profile.d`, `rc.local`, `ld.so.preload`
+     and the browser extension folders; when it changes, the full inventory runs and every new item raises an alert
+     (before, once a day). New kinds: systemd timers (system and user) and pending `at` jobs.
+  2. *Browser extensions*: each extension's sensitive permissions are read (read and change all sites, native
+     messaging, debugger, proxy, cookies, history, clipboard…). A new extension and, above all, an update that adds
+     such permissions (a typical sign of a sold or hijacked extension) raise an alert naming them.
+  3. *Authorized SSH keys* (Security › SSH keys): `authorized_keys` of every account checked every 30 seconds; a new
+     key raises an alert (red when the SSH server runs). The page lists every key (type, comment, SHA256 fingerprint
+     like `ssh-keygen -l`, options) with "Remove": no password for your own keys, administrator for another account.
+  4. *SUID/SGID files outside packages*: daily scan of the local file systems, the decrypted eCryptfs view and the
+     temporary folders (containers, Flatpak and snap left out), package owner checked (dpkg with merged `/usr`, rpm).
+     New checklist item, red when such a file sits in `/tmp`, `/dev/shm`, `/var/tmp`, `/run` or a home; "Ignore" by path
+     and SHA-256 (comes back if the file changes); a new one raises an alert.
+  5. *Weekly summary*: every Monday from 08:00 the service sums up the last 7 days (score and its change, scans and
+     files, alerts, threats isolated, links blocked, programs suspended, network events, changes reported, items to
+     fix), keeps 8 weeks, shows it at the top of Security › Journal and in the weekly popup, and e-mails it when e-mail
+     notifications are set up.
+- **Restore test, after an attack, password quality, browser settings, Internet exposure (2.4)** —
+  1. *Restore test*: once a month, as soon as a destination is plugged in or reachable, a few random files of the
+     latest backup are restored to a temporary folder, read in full and, when the original has not changed since (same
+     size and date), compared with it; "Test the restore" runs it at once (Backups tab). The service does the same for
+     the latest Timeshift snapshot (rsync mode). New checklist item "Restore test"; a failed test raises a popup.
+  2. *After an attack* (Security › After an attack): thirteen steps to tick, each with its button: isolate, full scan,
+     alerts, integrity, autostart and extensions, certificates/proxy/DNS, passwords from another device, sign out the
+     other sessions, updates, recover files from a backup, report (NCSC in Switzerland, national offices elsewhere),
+     keep the PDF report, restore the network.
+  3. *Password quality*: checklist item; "Apply" installs pam_pwquality if needed and writes
+     `/etc/security/pwquality.conf.d/90-dukiwi-shield.conf` (12 characters minimum, no dictionary word, no user name).
+     Existing passwords stay valid.
+  4. *Browser security*: Firefox profiles (safe browsing, download checks, HTTPS-only mode, signed extensions) and
+     Chrome, Chromium, Brave, Edge (safe browsing). "Apply" writes a marked block in the Firefox `user.js` of the user
+     asking for it and a *recommended* policy (that the user can change) for the Chromium family.
+  5. *Internet exposure* (Firewall › Internet exposure): after explicit consent, the Dukiwi server
+     (`repo/api/exposure.php`) tries to connect back to the public address on 26 common ports plus the ports this computer
+     listens on (parallel connections, 3 seconds, one test per address every 10 minutes, nothing stored). UPnP: the
+     router is found by SSDP or, when the local firewall drops the reply, on the usual description addresses; its port
+     mappings are listed and those pointing to this computer count in the checklist.
+- **Filtered DNS, isolate the computer, sandbox, home encryption assistant (2.3)** —
+  1. *Filtered DNS* (Firewall › Filtered DNS): systemd-resolved asks Quad9 (Switzerland, no logs) or Cloudflare
+     1.1.1.2, which refuse to resolve malware and phishing domains, over DNS-over-TLS when the network allows it
+     (`/etc/systemd/resolved.conf.d/90-dukiwi-shield-dns.conf`, `Domains=~.`). After applying, the service checks
+     that names still resolve and goes back to the network DNS otherwise; on a network with the Enterprise profile the
+     filter is suspended so internal company names keep working. New checklist item.
+  2. *Isolate the computer* (Firewall › Isolate, shield menu): the network is cut (NetworkManager, otherwise firewalld
+     panic mode, otherwise ufw denying everything), programs started from a temporary folder, deleted from disk or
+     named in a red alert of the last 24 hours are suspended, and a full scan starts. A red banner stays on every page
+     until "Restore the network"; suspended programs stay suspended until you decide. Isolating never asks for a
+     password; restoring needs the administrator in family mode.
+  3. *Sandbox*: right-click a file in Nemo › "Open in a sandbox": the file is copied to a temporary folder that becomes
+     the home of its default program under firejail (no network, private /tmp, no session bus, no capabilities,
+     seccomp). Before opening, the launcher checks that the real home and the network are really out of reach and
+     refuses otherwise (firejail only warns when it detects another sandbox). firejail is a recommended dependency.
+  4. *Home encryption assistant* (Security › Encryption): disk already encrypted (LUKS) or home already encrypted
+     (eCryptfs, fscrypt), file system, ext4 `encrypt` feature, fscrypt and pam_fscrypt, free space for the copy; then the
+     steps with the commands to copy (backup, install, setup, log out, migrate, check, clean up). It changes nothing itself.
 - **Ransomware decoys, camera and microphone, miners, root certificates, network redirection (2.2)** —
   1. *Ransomware decoys*: a hidden file `.dukiwi-guard-<id>` (a real .docx, .jpg, .pdf or .xlsx) sits in Documents,
      Pictures, Desktop and the home folder of each user (localised XDG folders, a per-machine suffix so two computers
@@ -638,8 +695,8 @@ python3 dukiwi-shield.py
 ## Building the packages
 
 ```bash
-./build-deb.sh        # dukiwi-shield_2.2.0_all.deb   (Mint / Ubuntu)
-./build-rpm.sh        # dukiwi-shield-2.2.0-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
+./build-deb.sh        # dukiwi-shield_2.5.0_all.deb   (Mint / Ubuntu)
+./build-rpm.sh        # dukiwi-shield-2.5.0-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
 ```
 
 Both packages share the same file tree (`build-deb.sh --stage-only`) and the same signed integrity manifest.
@@ -724,6 +781,9 @@ dukiwi-shield/
 ├── dukiwi-shield-daemon.py       # Root system service (Unix socket) + --request client
 ├── dukiwi_shield_common.py                 # Shared paths, exclusions, protocol
 ├── dukiwi_shield_guard.py                  # Decoys, camera/microphone, miners, root certificates, redirection
+├── dukiwi_shield_protect.py                # Filtered DNS, isolation, home encryption check
+├── dukiwi_shield_hygiene.py                # Password quality, browser settings, exposure test, UPnP
+├── dukiwi-shield-sandbox                   # Open a file under firejail (Nemo action)
 ├── systemd/
 │   ├── dukiwi-shield-daemon.service
 │   ├── dukiwi-shield-update.service

@@ -8,7 +8,7 @@
 set -e
 
 APP_NAME="dukiwi-shield"
-VERSION="2.2.0"
+VERSION="2.5.0"
 ARCH="all"
 PKG_DIR="${APP_NAME}_${VERSION}_${ARCH}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -56,6 +56,9 @@ mkdir -p "${PKG_DIR}/opt/${APP_NAME}/extensions"
 cp -r "${SCRIPT_DIR}/dist/extensions/." "${PKG_DIR}/opt/${APP_NAME}/extensions/"
 cp "${SCRIPT_DIR}/dukiwi-shield-tray"           "${PKG_DIR}/opt/${APP_NAME}/"
 cp "${SCRIPT_DIR}/dukiwi-shield-scan-nemo.sh"             "${PKG_DIR}/opt/${APP_NAME}/"
+cp "${SCRIPT_DIR}/dukiwi-shield-sandbox"                  "${PKG_DIR}/opt/${APP_NAME}/"
+cp "${SCRIPT_DIR}/dukiwi_shield_protect.py"               "${PKG_DIR}/opt/${APP_NAME}/"
+cp "${SCRIPT_DIR}/dukiwi_shield_hygiene.py"               "${PKG_DIR}/opt/${APP_NAME}/"
 cp "${SCRIPT_DIR}/systemd/"*.service               "${PKG_DIR}/lib/systemd/system/"
 cp "${SCRIPT_DIR}/systemd/"*.timer                 "${PKG_DIR}/lib/systemd/system/"
 cp "${SCRIPT_DIR}/ui/index.html"                    "${PKG_DIR}/opt/${APP_NAME}/ui/"
@@ -72,6 +75,7 @@ cp "${SCRIPT_DIR}/polkit/"*.policy                  "${PKG_DIR}/usr/share/polkit
 cp "${SCRIPT_DIR}/icons/"*.svg                      "${PKG_DIR}/opt/${APP_NAME}/icons/"
 cp "${SCRIPT_DIR}/dukiwi-shield.desktop"         "${PKG_DIR}/usr/share/applications/"
 cp "${SCRIPT_DIR}/dukiwi-shield-nemo.nemo_action" "${PKG_DIR}/usr/share/nemo/actions/"
+cp "${SCRIPT_DIR}/dukiwi-shield-sandbox.nemo_action" "${PKG_DIR}/usr/share/nemo/actions/"
 cp "${SCRIPT_DIR}/dukiwi-shield-autostart.desktop" "${PKG_DIR}/etc/xdg/autostart/"
 
 # Normalize permissions (independent of the builder's umask), then mark scripts executable
@@ -82,6 +86,7 @@ chmod +x "${PKG_DIR}/opt/${APP_NAME}/dukiwi-shield-daemon.py"
 chmod +x "${PKG_DIR}/opt/${APP_NAME}/dukiwi-shield-unlock"
 chmod +x "${PKG_DIR}/opt/${APP_NAME}/dukiwi-shield-tray"
 chmod +x "${PKG_DIR}/opt/${APP_NAME}/dukiwi-shield-scan-nemo.sh"
+chmod +x "${PKG_DIR}/opt/${APP_NAME}/dukiwi-shield-sandbox"
 
 # ── Integrity manifest (sha256 of every packaged file), signed with the Dukiwi key if present ──
 echo "[2b/5] Writing integrity manifest..."
@@ -133,7 +138,7 @@ Conflicts: clamav-antivirus
 Replaces: clamav-antivirus
 Breaks: clamav-antivirus
 Depends: python3 (>= 3.8), python3-gi, python3-pyudev, python3-apt, gir1.2-webkit2-4.1, gir1.2-ayatanaappindicator3-0.1 | gir1.2-appindicator3-0.1, gir1.2-gtk-3.0, pkexec | policykit-1, clamav, clamav-daemon, clamav-freshclam, lynis, unhide, chkrootkit, debsums, msmtp-mta | mail-transport-agent, zenity, systemd, udev, udisks2
-Recommends: libnotify-bin, mintupdate | update-manager, timeshift, rclone, rsync, gocryptfs, flatpak
+Recommends: libnotify-bin, mintupdate | update-manager, timeshift, rclone, rsync, gocryptfs, flatpak, firejail
 Maintainer: Dukiwi SA <info@dukiwi.ch>
 Homepage: https://dukiwi.ch
 Description: Dukiwi Shield - antivirus, protection et vérification d'intégrité pour Linux

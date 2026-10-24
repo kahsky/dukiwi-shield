@@ -3133,3 +3133,33 @@ input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-o
 .journal-row.sev-danger { background: rgba(239,68,68,0.06); }
 .journal-time { color: var(--text-muted); font-size: 12px; white-space: nowrap; min-width: 128px; }
 .journal-text { color: var(--text-secondary); word-break: break-word; }
+
+/* ── 2.3.0 : ordinateur isolé, DNS filtré, chiffrement du dossier personnel ── */
+.isolated-banner { display: flex; align-items: center; gap: 12px; justify-content: space-between; background: var(--accent-red-dark); color: #fff;
+    padding: 10px 16px; border-radius: var(--radius-md); margin: 0 0 16px; font-weight: 600; }
+.isolated-banner[hidden] { display: none; }
+.isolated-banner .btn { background: #fff; color: var(--accent-red-dark); border: 0; }
+.isolate-steps { margin: 6px 0 14px 20px; line-height: 1.6; }
+.isolate-on { color: var(--accent-red); font-weight: 600; }
+.isolate-procs { margin: 4px 0 12px 20px; font-size: 0.92em; }
+.dns-error { color: var(--accent-amber); }
+.enc-checks { list-style: none; padding: 0; margin: 6px 0 14px; line-height: 1.7; }
+.enc-checks .ok { color: var(--accent); }
+.enc-checks .bad { color: var(--accent-red); }
+.enc-checks .na { color: var(--text-muted); }
+.enc-ok { color: var(--accent); font-weight: 600; }
+.enc-steps { margin: 6px 0 12px 20px; line-height: 1.6; }
+.enc-steps pre { background: var(--bg-secondary); padding: 8px 10px; border-radius: var(--radius-sm); margin: 6px 0 10px;
+    font-family: var(--font-mono); font-size: 0.9em; white-space: pre-wrap; user-select: text; }
+.restore-test { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+.restore-test h5 { margin: 0 0 6px; }
+.incident-steps { margin: 6px 0 0 20px; line-height: 1.5; }
+.incident-steps li { margin-bottom: 12px; }
+.incident-steps li .btn { margin-top: 6px; }
+.incident-steps li.done b { text-decoration: line-through; color: var(--text-secondary); }
+.incident-check { cursor: pointer; }
+.weekly-card { border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px 14px; margin: 8px 0 14px; background: var(--bg-secondary); }
+.weekly-card h5 { margin: 0 0 8px; }
+.weekly-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 14px; }
+.weekly-grid div { display: flex; flex-direction: column; gap: 2px; }
+.weekly-grid b { font-size: 1.1em; }
