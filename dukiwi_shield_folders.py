@@ -87,7 +87,9 @@ class ProtectedFolders(threading.Thread):
 
     def d_human_users(self):
         import pwd
-        return [pw for pw in pwd.getpwall() if pw.pw_uid >= 1000 and pw.pw_dir.startswith("/home/") and os.path.isdir(pw.pw_dir)]
+        from dukiwi_shield_common import home_mounted
+        return [pw for pw in pwd.getpwall() if pw.pw_uid >= 1000 and pw.pw_dir.startswith("/home/") and os.path.isdir(pw.pw_dir)
+                and home_mounted(pw)]                     # dossier chiffré non monté : rien à protéger, et le montage le cachera
 
     def refresh_allowed(self):
         # Seulement les programmes autorisés pour les dossiers protégés (par un administrateur) : la liste générale des

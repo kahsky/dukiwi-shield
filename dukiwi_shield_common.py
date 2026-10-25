@@ -13,7 +13,7 @@ import struct
 import subprocess
 from datetime import datetime
 
-VERSION = "2.7.1"
+VERSION = "2.7.2"
 
 # ─── Chemins système (daemon root) ───────────────────────────────────────────
 # Surchargeables par variables d'environnement pour les tests sans root.
@@ -431,6 +431,24 @@ def load_i18n():
     except Exception:
         _I18N_CACHE = {}
     return _I18N_CACHE
+
+
+def home_mounted(pw):
+    """Faux tant que le dossier personnel chiffré avec eCryptfs n'est pas monté (avant l'ouverture de session, après la
+    fermeture) : /home/<nom> est alors le dossier vide caché sous le montage. Y écrire laisserait des fichiers invisibles
+    une fois la session ouverte, et ses vrais fichiers n'y sont pas."""
+    if not os.path.isdir(f"/home/.ecryptfs/{pw.pw_name}/.Private"):
+        return True
+    home = pw.pw_dir.rstrip("/")
+    try:
+        with open("/proc/mounts") as f:
+            for ln in f:
+                parts = ln.split()
+                if len(parts) >= 3 and parts[1].replace("\\040", " ") == home and parts[2] == "ecryptfs":
+                    return True
+    except OSError:
+        return True
+    return False
 
 
 def migrate_user_data():

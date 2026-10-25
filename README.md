@@ -48,15 +48,15 @@ versions itself (popup or Security tab) and can install them on its own when the
 
 ### Direct download
 
-- Mint / Ubuntu: [dukiwi-shield_2.7.1_all.deb](https://www.dukiwi.com/repo/dukiwi-shield/dukiwi-shield_2.7.1_all.deb)
-- Fedora: [dukiwi-shield-2.7.1-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/dukiwi-shield-2.7.1-1.noarch.rpm)
+- Mint / Ubuntu: [dukiwi-shield_2.7.2_all.deb](https://www.dukiwi.com/repo/dukiwi-shield/dukiwi-shield_2.7.2_all.deb)
+- Fedora: [dukiwi-shield-2.7.2-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/dukiwi-shield-2.7.2-1.noarch.rpm)
 - All versions: [www.dukiwi.com/repo](https://www.dukiwi.com/repo)
 
 ### Installing a downloaded package by hand
 
 ```bash
-sudo apt install ./dukiwi-shield_2.7.1_all.deb          # Mint / Ubuntu
-sudo dnf install ./dukiwi-shield-2.7.1-1.noarch.rpm      # Fedora
+sudo apt install ./dukiwi-shield_2.7.2_all.deb          # Mint / Ubuntu
+sudo dnf install ./dukiwi-shield-2.7.2-1.noarch.rpm      # Fedora
 ```
 
 The installation enables the system service and the scheduler, then starts the initial scan:
@@ -78,6 +78,13 @@ sudo dnf remove dukiwi-shield   # Fedora
 
 ## Features
 
+- **2.7.2: encrypted home folders (eCryptfs) at boot** — the service starts before the session opens, when an
+  eCryptfs home is still unmounted: `/home/<user>` is then the empty folder hidden under the mount. The ransomware
+  decoys were written there, then hidden by the mount at login, which raised two false alerts ("decoy replaced",
+  "modified while the protection was stopped") and left a stray file under the mount. Decoys and protected folders now
+  skip a home whose eCryptfs mount is absent, catch up within 30 seconds of login, stay silent when the home is
+  unmounted at logout, and a stray decoy left under the mount by a previous version is removed. A recreated decoy
+  also saves its new fingerprint at once (a .docx/.xlsx differs at each write), which caused the second false alert.
 - **2.7.1: no more false alarms on development packages** — a vulnerability whose title mentions "malicious code
   execution" (for example OpenClaw's GHSA-m3mh-3mpg-37hw) was counted as malware. An advisory now counts as malware only
   when it is a `MAL-` entry, tagged CWE-506, or titled as malware ("Malicious Package in…", "Embedded Malicious Code
@@ -737,8 +744,8 @@ python3 dukiwi-shield.py
 ## Building the packages
 
 ```bash
-./build-deb.sh        # dukiwi-shield_2.7.1_all.deb   (Mint / Ubuntu)
-./build-rpm.sh        # dukiwi-shield-2.7.1-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
+./build-deb.sh        # dukiwi-shield_2.7.2_all.deb   (Mint / Ubuntu)
+./build-rpm.sh        # dukiwi-shield-2.7.2-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
 ```
 
 Both packages share the same file tree (`build-deb.sh --stage-only`) and the same signed integrity manifest.

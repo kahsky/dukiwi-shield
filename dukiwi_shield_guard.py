@@ -31,6 +31,7 @@ import time
 import zipfile
 
 import dukiwi_shield_audit as audit
+from dukiwi_shield_common import home_mounted
 from datetime import datetime
 
 DECOY_PREFIX = ".dukiwi-guard-"
@@ -192,6 +193,8 @@ class SecurityGuard(threading.Thread):
         self.lock = threading.Lock()
         self.tag = machine_tag()
         self.decoys = {}                 # chemin → {sha, ino, size, mtime, uid}
+        self.decoys_pending = []         # comptes dont le dossier personnel n'est pas encore monté (eCryptfs)
+        self.last_decoy_sync = 0.0
         self.decoy_alerted = {}          # chemin → horodatage (alerte sans programme identifié)
         self.decoy_pid_alerted = {}      # pid → horodatage
         self.privacy_active = {}         # (exe, appareil) → {pid, comm, since}
@@ -244,8 +247,17 @@ class SecurityGuard(threading.Thread):
     # ═══ 1. Leurres anti-rançongiciel ═════════════════════════════════════
     def decoy_paths(self):
         out = []
+        pending = []
         for pw in self.human_users():
             if pw.pw_uid < 1000:
+                continue
+            if not home_mounted(pw):
+                pending.append(pw.pw_name)
+                for leftover in glob.glob(os.path.join(pw.pw_dir, DECOY_PREFIX + "*")):
+                    try:
+                        os.unlink(leftover)              # leurre écrit sous le montage par une version précédente : inutile
+                    except OSError:
+                        pass
                 continue
             for key, default, ext in DECOY_DIRS:
                 folder = xdg_dir(pw, key, default)
@@ -256,6 +268,7 @@ class SecurityGuard(threading.Thread):
             if item[0] not in seen:
                 seen.add(item[0])
                 uniq.append(item)
+        self.decoys_pending = pending
         return uniq
 
     def write_decoy(self, path, pw, ext):
@@ -278,6 +291,7 @@ class SecurityGuard(threading.Thread):
         """Crée les leurres manquants (ou les retire si la protection est désactivée). Au démarrage, un leurre modifié
         pendant l'arrêt du service est signalé puis réécrit."""
         stored = self.d.state.get("decoys") or {}
+        self.last_decoy_sync = time.time()
         if not self.setting("ransomware_decoys"):
             self.remove_decoys()
             return
@@ -287,7 +301,7 @@ class SecurityGuard(threading.Thread):
                     st = os.lstat(path)
                 except FileNotFoundError:
                     st = None
-                prev = stored.get(path)
+                prev = self.decoys.get(path) or stored.get(path)       # la mémoire du service d'abord (à jour), puis l'état sauvé
                 if st is not None and prev:
                     if self.file_sha(path) == prev.get("sha"):
                         self.decoys[path] = dict(prev, ino=st.st_ino, size=st.st_size, mtime=st.st_mtime)
@@ -315,7 +329,9 @@ class SecurityGuard(threading.Thread):
             self.save_decoys()
 
     def save_decoys(self):
-        self.d.state.update(decoys={p: {k: v for k, v in i.items() if k in ("sha", "uid", "ext", "user")} for p, i in self.decoys.items()})
+        data = {p: {k: v for k, v in i.items() if k in ("sha", "uid", "ext", "user")} for p, i in self.decoys.items()}
+        if data != (self.d.state.get("decoys") or {}):
+            self.d.state.update(decoys=data)
 
     @staticmethod
     def file_sha(path):
@@ -363,6 +379,7 @@ class SecurityGuard(threading.Thread):
         try:
             pw = pwd.getpwuid(meta.get("uid"))
             self.write_decoy(path, pw, meta.get("ext") or path.rsplit(".", 1)[-1])
+            self.save_decoys()                            # nouvelle empreinte (un .docx/.xlsx change à chaque écriture)
         except (KeyError, OSError, TypeError) as e:
             self.log(f"Leurre {path} : recréation impossible ({e})")
 
@@ -384,9 +401,10 @@ class SecurityGuard(threading.Thread):
             if self.decoys:
                 self.remove_decoys()
             return
-        if not self.decoys:
-            self.sync_decoys()
-            return
+        if (not self.decoys or self.decoys_pending) and time.time() - self.last_decoy_sync > 30:
+            self.sync_decoys()                            # dossier personnel monté entre-temps (ouverture de session)
+            if not self.decoys:
+                return
         for path in list(self.decoys):
             meta = self.decoys.get(path)
             if not meta:
@@ -395,6 +413,17 @@ class SecurityGuard(threading.Thread):
                 st = os.lstat(path)
             except FileNotFoundError:
                 st = None
+            if st is None:
+                try:
+                    pw = pwd.getpwuid(meta.get("uid"))
+                except (KeyError, TypeError):
+                    pw = None
+                if pw is not None and not home_mounted(pw):
+                    with self.lock:
+                        self.decoys.pop(path, None)       # session fermée : le dossier chiffré est démonté, rien à signaler
+                        if pw.pw_name not in self.decoys_pending:
+                            self.decoys_pending.append(pw.pw_name)
+                    continue
             if st is not None and st.st_ino == meta["ino"] and st.st_size == meta["size"] and st.st_mtime == meta["mtime"]:
                 continue
             if st is not None and self.file_sha(path) == meta["sha"]:
