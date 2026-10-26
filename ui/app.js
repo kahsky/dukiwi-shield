@@ -1781,7 +1781,7 @@ function guardAlertText(a) {
     if (a.kind === 'privacy') return t(`popup.privacy.${a.device || 'camera'}_body`, { program: prog });
     if (a.kind === 'miner') return `${t('popup.miner.body', { program: prog, cpu: a.cpu || 0 })} ${t(`alert.reason.${reason}`)}`;
     if (a.kind === 'certificate') return t('popup.certificate.body', { name: a.title || '?', stores: a.detail || '' });
-    if (a.kind === 'extension') return t(`popup.extension.${a.subtype || 'new'}`, { name: a.title || '?', where: a.detail || '', perms: (a.perms || []).map(p => t('ext.perm.' + p) !== 'ext.perm.' + p ? t('ext.perm.' + p) : p).join(', ') || t('ext.perm.none') });
+    if (a.kind === 'extension') return t(`popup.extension.${a.subtype || 'new'}`, { name: a.title || '?', where: a.detail || '', perms: (a.perms || []).map(p => t('ext.perm.' + p) !== 'ext.perm.' + p ? t('ext.perm.' + p) : p).join(', ') || t('ext.perm.none'), list: (a.names || []).join(', ') });
     if (a.kind === 'ssh_key') return t('popup.ssh_key.body', { user: a.user || a.title || '?', comment: a.detail || '?', fp: a.fp || '' });
     if (a.kind === 'suid') return t('popup.suid.body', { path: a.path || a.detail || '?', owner: a.owner || '?' });
     if (a.kind === 'keylogger') return `${t('popup.keylogger.body', { program: prog, device: a.detail || '' })} ${t('alert.reason.' + reason)}`;
@@ -1929,6 +1929,7 @@ function renderAlerts(available = true) {
                 ? `${escapeHtml(a.title || '')} — ${escapeHtml(t(reasonKey))}${(a.items || []).length ? `<div class="alert-exe">${(a.items || []).map(escapeHtml).join('<br>')}</div>` : ''}`
                 : a.kind === 'integrity' && !a.text
                     ? escapeHtml(t('popup.integrity.body', { n: a.title || '0', tools: a.detail || '' }))   // ancien format (avant 1.24.4) : détail non conservé
+                    : a.kind === 'persistence' && a.subtype === 'many' ? escapeHtml(t('popup.persistence.many', { n: a.title || '', list: a.detail || '' }))
                     : `${escapeHtml(a.kind === 'update' ? '' : a.title || '')}${a.detail ? ` — ${escapeHtml(a.detail)}` : ''}`;
             // Veille des processus : « C'est normal » (avertissement approuvé, même après la fin du processus) et « Faire confiance » (programme)
             const actions = a.kind === 'integrity' && a.check && a.text

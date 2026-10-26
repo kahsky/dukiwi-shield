@@ -81,7 +81,7 @@ from dukiwi_shield_common import (  # noqa: E402
     SYSTEM_FILELIST_CACHE, FIRST_SCAN_FLAG, SYSTEM_LOG_FILE, USB_MOUNT_ROOT,
     SYSTEM_SETTINGS_FILE, DEFAULT_SETTINGS, DAEMON_ALLOWED_ROOTS, LANGUAGES,
     BURST_PID_COOLDOWN_SEC, BURST_GLOBAL_COOLDOWN, BURST_IGNORE_PREFIXES, BURST_IGNORE_PARTS,
-    LineSocket, peer_credentials, daemon_connect, daemon_request, find_command, SCAN_EXCLUDE,
+    LineSocket, peer_credentials, daemon_connect, daemon_request, find_command, SCAN_EXCLUDE, home_mounted,
     is_noise_line, classify_line, db_last_update, db_files_info, t,
     sanitize_settings, parse_ufw_verbose, parse_ufw_numbered, systemd_is_active,
 )
@@ -3599,11 +3599,18 @@ def desktop_exec(path):
 
 
 def user_homes():
+    """(nom, dossier) des comptes humains dont le dossier personnel est lisible maintenant (un dossier chiffré eCryptfs non
+    monté, avant l'ouverture de session, est laissé de côté : il paraîtrait vide)."""
     homes = []
     for pw in pwd.getpwall():
-        if (pw.pw_uid >= 1000 or pw.pw_uid == 0) and pw.pw_dir.startswith(("/home/", "/root")) and os.path.isdir(pw.pw_dir):
+        if (pw.pw_uid >= 1000 or pw.pw_uid == 0) and pw.pw_dir.startswith(("/home/", "/root")) and os.path.isdir(pw.pw_dir) and home_mounted(pw):
             homes.append((pw.pw_name, pw.pw_dir))
     return homes
+
+
+def pending_homes():
+    """Comptes dont le dossier personnel chiffré n'est pas monté : leurs relevés précédents sont conservés tels quels."""
+    return sorted(pw.pw_name for pw in pwd.getpwall() if pw.pw_uid >= 1000 and pw.pw_dir.startswith("/home/") and not home_mounted(pw))
 
 
 def collect_persistence():
@@ -3740,7 +3747,7 @@ def collect_persistence():
             extensions += audit.editor_extensions(user, home)       # VS Code, VSCodium, Cursor, Windsurf
         except Exception:  # noqa: BLE001
             pass
-    return {"checked_at": now_iso(), "items": items, "extensions": extensions,
+    return {"checked_at": now_iso(), "items": items, "extensions": extensions, "pending": pending_homes(),
             "counts": {"items": len(items), "untrusted": sum(1 for it in items if not it["trusted"]),
                        "extensions": len(extensions), "ext_outside_store": sum(1 for e in extensions if not e["from_store"])}}
 
@@ -6338,22 +6345,46 @@ class Daemon:
             prev_keys = {it["key"] for it in prev.get("items", [])}
             prev_ext = {e["key"]: e for e in prev.get("extensions", [])}
             pers = self.apply_acknowledged(collect_persistence())
+            # Dossier personnel chiffré pas encore monté (service démarré avant la session) : ses entrées du relevé
+            # précédent sont reprises telles quelles, sinon elles réapparaîtraient toutes « nouvelles » à l'ouverture.
+            for name in pers.get("pending") or []:
+                pers["items"] += [it for it in prev.get("items", []) if it.get("user") == name]
+                pers["extensions"] += [e for e in prev.get("extensions", []) if e.get("user") == name]
+            if pers.get("pending"):
+                pers["counts"] = {"items": len(pers["items"]), "untrusted": sum(1 for it in pers["items"] if not it.get("trusted")),
+                                  "extensions": len(pers["extensions"]), "ext_outside_store": sum(1 for e in pers["extensions"] if not e.get("from_store"))}
             self.state.update(persistence=pers)
             if prev.get("items") is not None and (prev_keys or prev_ext):
-                for it in pers["items"]:
-                    if it["key"] not in prev_keys:
-                        self.publish_alert({"kind": "persistence", "severity": "warn" if not it["trusted"] else "info",
-                                            "time": now_iso(), "title": it["name"], "detail": it["path"],
-                                            "item": it, "pid": 0, "comm": it["name"], "exe": it["path"], "count": 0,
-                                            "top_dir": os.path.dirname(it["path"]), "reasons": [it.get("kind", "")], "sample": []})
+                new_items = [it for it in pers["items"] if it["key"] not in prev_keys]
+                new_ext = [e for e in pers["extensions"] if e["key"] not in prev_ext]
+                # Plus de quatre nouveautés d'un coup : ce n'est pas une installation mais un changement de référence (profil
+                # importé, nouveau compte, restauration) → un seul avis, pas une rafale de popups.
+                if len(new_items) > 4:
+                    self.write_log(f"⚠ persistence: {len(new_items)} new entries at once: " + ", ".join(it["name"] for it in new_items[:8]))
+                    self.publish_alert({"kind": "persistence", "subtype": "many", "severity": "warn", "time": now_iso(), "title": str(len(new_items)),
+                                        "detail": ", ".join(it["name"] for it in new_items[:8]), "pid": 0, "comm": "", "exe": "", "count": len(new_items),
+                                        "top_dir": "", "reasons": ["many_at_once"], "sample": []})
+                    new_items = []
+                if len(new_ext) > 4:
+                    self.write_log(f"⚠ extension: {len(new_ext)} new extensions at once: " + ", ".join(e["name"] for e in new_ext[:8]))
+                    self.publish_alert({"kind": "extension", "subtype": "many", "severity": "info", "time": now_iso(), "title": str(len(new_ext)),
+                                        "detail": ", ".join(sorted({e["browser"] for e in new_ext})), "perms": [], "names": [e["name"] for e in new_ext[:12]],
+                                        "pid": 0, "comm": "", "exe": "", "count": len(new_ext), "top_dir": "", "reasons": ["many_at_once"], "sample": []})
+                    new_ext = []
+                for it in new_items:
+                    self.publish_alert({"kind": "persistence", "severity": "warn" if not it["trusted"] else "info",
+                                        "time": now_iso(), "title": it["name"], "detail": it["path"],
+                                        "item": it, "pid": 0, "comm": it["name"], "exe": it["path"], "count": 0,
+                                        "top_dir": os.path.dirname(it["path"]), "reasons": [it.get("kind", "")], "sample": []})
+                for e in new_ext:
+                    severity = "warn" if (not e["from_store"] or any(p_ in (e.get("perms") or []) for p_ in ("all_sites", "nativeMessaging", "sideloaded"))) else "info"
+                    self.write_log(f"⚠ extension: new {e['browser']} extension {e['name']} ({e['user']}) perms {','.join(e.get('perms') or []) or '-'}")
+                    self.publish_alert({"kind": "extension", "subtype": "new", "severity": severity, "time": now_iso(), "title": e["name"],
+                                        "detail": f"{e['browser']} · {e['user']}", "extension": e, "perms": e.get("perms") or [],
+                                        "pid": 0, "comm": "", "exe": "", "count": 0, "top_dir": "", "reasons": ["ext_new"], "sample": []})
                 for e in pers["extensions"]:
                     old = prev_ext.get(e["key"])
                     if old is None:
-                        severity = "warn" if (not e["from_store"] or any(p_ in (e.get("perms") or []) for p_ in ("all_sites", "nativeMessaging", "sideloaded"))) else "info"
-                        self.write_log(f"⚠ extension: new {e['browser']} extension {e['name']} ({e['user']}) perms {','.join(e.get('perms') or []) or '-'}")
-                        self.publish_alert({"kind": "extension", "subtype": "new", "severity": severity, "time": now_iso(), "title": e["name"],
-                                            "detail": f"{e['browser']} · {e['user']}", "extension": e, "perms": e.get("perms") or [],
-                                            "pid": 0, "comm": "", "exe": "", "count": 0, "top_dir": "", "reasons": ["ext_new"], "sample": []})
                         continue
                     added = sorted(set(e.get("perms") or []) - set(old.get("perms") or []))
                     if added and "perms" in old:
@@ -6391,6 +6422,10 @@ class Daemon:
             except OSError:
                 continue
         prev = self.state.get("suid")
+        pending = tuple(pwd.getpwnam(n).pw_dir.rstrip("/") + "/" for n in pending_homes())
+        if prev is not None and pending:
+            seen = {u["path"] for u in unowned}
+            unowned += [u for u in prev.get("unowned") or [] if u["path"].startswith(pending) and u["path"] not in seen]   # dossier non monté
         info = {"checked_at": now_iso(), "total": len(paths), "unowned": unowned}
         self.state.update(suid=info)
         if prev is not None:

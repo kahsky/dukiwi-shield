@@ -1275,8 +1275,9 @@ class ClamAVAntivirusApp:
         if kind == "persistence":
             if not self.popups_enabled("info"):
                 return
-            self.popup("warning" if alert.get("severity") == "warn" else "info", T("popup.persistence.title"),
-                       T("popup.persistence.body", name=alert.get("title", ""), detail=alert.get("detail", "")),
+            body = T("popup.persistence.many", n=alert.get("title", ""), list=alert.get("detail", "")) if alert.get("subtype") == "many" \
+                else T("popup.persistence.body", name=alert.get("title", ""), detail=alert.get("detail", ""))
+            self.popup("warning" if alert.get("severity") == "warn" else "info", T("popup.persistence.title"), body,
                        timeout=16, on_activate=lambda: self.show_tab("system"),
                        buttons=[(T("popup.btn.details"), None, lambda: self.show_tab("system"))])
             return
@@ -1458,7 +1459,7 @@ class ClamAVAntivirusApp:
         if kind == "extension":
             perms = ", ".join(T(f"ext.perm.{p}") if T(f"ext.perm.{p}") != f"ext.perm.{p}" else p for p in (alert.get("perms") or []))
             body = T(f"popup.extension.{alert.get('subtype') or 'new'}", name=alert.get("title") or "?", where=alert.get("detail") or "",
-                     perms=perms or T("ext.perm.none"))
+                     perms=perms or T("ext.perm.none"), list=", ".join(alert.get("names") or []))
             self.popup("warning" if sev == "warn" else "info", T("popup.extension.title"), body, timeout=None if sev == "warn" else 20,
                        buttons=[(T("popup.btn.details"), "primary", lambda: self.show_tab("system"))], on_activate=lambda: self.show_tab("system"))
             return

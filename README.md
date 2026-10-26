@@ -48,15 +48,15 @@ versions itself (popup or Security tab) and can install them on its own when the
 
 ### Direct download
 
-- Mint / Ubuntu: [dukiwi-shield_2.7.2_all.deb](https://www.dukiwi.com/repo/dukiwi-shield/dukiwi-shield_2.7.2_all.deb)
-- Fedora: [dukiwi-shield-2.7.2-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/dukiwi-shield-2.7.2-1.noarch.rpm)
+- Mint / Ubuntu: [dukiwi-shield_2.7.3_all.deb](https://www.dukiwi.com/repo/dukiwi-shield/dukiwi-shield_2.7.3_all.deb)
+- Fedora: [dukiwi-shield-2.7.3-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/dukiwi-shield-2.7.3-1.noarch.rpm)
 - All versions: [www.dukiwi.com/repo](https://www.dukiwi.com/repo)
 
 ### Installing a downloaded package by hand
 
 ```bash
-sudo apt install ./dukiwi-shield_2.7.2_all.deb          # Mint / Ubuntu
-sudo dnf install ./dukiwi-shield-2.7.2-1.noarch.rpm      # Fedora
+sudo apt install ./dukiwi-shield_2.7.3_all.deb          # Mint / Ubuntu
+sudo dnf install ./dukiwi-shield-2.7.3-1.noarch.rpm      # Fedora
 ```
 
 The installation enables the system service and the scheduler, then starts the initial scan:
@@ -78,6 +78,12 @@ sudo dnf remove dukiwi-shield   # Fedora
 
 ## Features
 
+- **2.7.3: no more alert storms after login on an encrypted home** — the daily inventory of autostart entries,
+  scheduled tasks and browser/editor extensions ran at boot, before the session opened, on an unmounted eCryptfs
+  home: it saw nothing for that user and dropped their entries from the baseline, so every entry came back as "new"
+  at login (a dozen popups at each reboot). The inventory now carries the previous entries of a user whose home is
+  unmounted, as do the SSH key, root certificate, network redirection and SUID baselines. As a safety net, more than
+  four new extensions or persistence entries found in one pass raise a single summary alert instead of one popup each.
 - **2.7.2: encrypted home folders (eCryptfs) at boot** — the service starts before the session opens, when an
   eCryptfs home is still unmounted: `/home/<user>` is then the empty folder hidden under the mount. The ransomware
   decoys were written there, then hidden by the mount at login, which raised two false alerts ("decoy replaced",
@@ -744,8 +750,8 @@ python3 dukiwi-shield.py
 ## Building the packages
 
 ```bash
-./build-deb.sh        # dukiwi-shield_2.7.2_all.deb   (Mint / Ubuntu)
-./build-rpm.sh        # dukiwi-shield-2.7.2-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
+./build-deb.sh        # dukiwi-shield_2.7.3_all.deb   (Mint / Ubuntu)
+./build-rpm.sh        # dukiwi-shield-2.7.3-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
 ```
 
 Both packages share the same file tree (`build-deb.sh --stage-only`) and the same signed integrity manifest.

@@ -2402,7 +2402,10 @@ window.I18N = {
     "alert.reason.protected_selftest_failed": "auto-test en échec",
     "mail.alert.protected": "Accès bloqué à un dossier protégé",
     "error.invalid_path": "Dossier introuvable ou non autorisé.",
-    "error.invalid_exe": "Programme invalide."
+    "error.invalid_exe": "Programme invalide.",
+    "popup.persistence.many": "{n} nouvelles entrées de démarrage ou tâches planifiées d'un coup ({list}) : profil importé, nouveau compte ou restauration ? Vérifiez la liste dans État du système.",
+    "popup.extension.many": "{name} extensions sont apparues d'un coup ({where}) : {list}. Profil de navigateur importé ou restauré ? Vérifiez-les dans État du système.",
+    "alert.reason.many_at_once": "plusieurs nouveautés d'un coup"
   },
   "en": {
     "admin.lock": "Lock",
@@ -4807,7 +4810,10 @@ window.I18N = {
     "alert.reason.protected_selftest_failed": "self-test failed",
     "mail.alert.protected": "Access to a protected folder blocked",
     "error.invalid_path": "Folder not found or not allowed.",
-    "error.invalid_exe": "Invalid program."
+    "error.invalid_exe": "Invalid program.",
+    "popup.persistence.many": "{n} new autostart entries or scheduled tasks at once ({list}): imported profile, new account or restore? Check the list in System status.",
+    "popup.extension.many": "{name} extensions appeared at once ({where}): {list}. Imported or restored browser profile? Check them in System status.",
+    "alert.reason.many_at_once": "several new items at once"
   },
   "de": {
     "admin.lock": "Sperren",
@@ -7212,7 +7218,10 @@ window.I18N = {
     "alert.reason.protected_selftest_failed": "Selbsttest fehlgeschlagen",
     "mail.alert.protected": "Zugriff auf einen geschützten Ordner gesperrt",
     "error.invalid_path": "Ordner nicht gefunden oder nicht erlaubt.",
-    "error.invalid_exe": "Ungültiges Programm."
+    "error.invalid_exe": "Ungültiges Programm.",
+    "popup.persistence.many": "{n} neue Autostart-Einträge oder geplante Aufgaben auf einmal ({list}): importiertes Profil, neues Konto oder Wiederherstellung? Prüfen Sie die Liste im Systemstatus.",
+    "popup.extension.many": "{name} Erweiterungen sind auf einmal erschienen ({where}): {list}. Importiertes oder wiederhergestelltes Browserprofil? Prüfen Sie sie im Systemstatus.",
+    "alert.reason.many_at_once": "mehrere Neuerungen auf einmal"
   },
   "it": {
     "admin.lock": "Blocca",
@@ -9617,6 +9626,9 @@ window.I18N = {
     "alert.reason.protected_selftest_failed": "autotest non riuscito",
     "mail.alert.protected": "Accesso a una cartella protetta bloccato",
     "error.invalid_path": "Cartella non trovata o non consentita.",
-    "error.invalid_exe": "Programma non valido."
+    "error.invalid_exe": "Programma non valido.",
+    "popup.persistence.many": "{n} nuove voci di avvio o attività pianificate in una volta ({list}): profilo importato, nuovo account o ripristino? Controlla l'elenco in Stato del sistema.",
+    "popup.extension.many": "{name} estensioni sono apparse in una volta ({where}): {list}. Profilo del browser importato o ripristinato? Controllale in Stato del sistema.",
+    "alert.reason.many_at_once": "diverse novità in una volta"
   }
 };

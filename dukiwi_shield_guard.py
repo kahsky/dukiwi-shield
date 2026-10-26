@@ -872,9 +872,12 @@ class SecurityGuard(threading.Thread):
         leurres posés dans les dossiers apparus depuis (nouvel utilisateur, dossier Documents créé)."""
         if self.setting("ransomware_decoys"):
             self.sync_decoys()
+        # Un dossier personnel chiffré non monté cache ses bases NSS, réglages de proxy… : les références ne rétrécissent
+        # jamais dans ce cas, sinon tout réapparaîtrait « nouveau » à l'ouverture de session.
+        pending = any(not home_mounted(pw) for pw in self.human_users() if pw.pw_uid >= 1000)
         certs = self.root_cas(max_age=0)
         known = self.d.state.get("known_certs")
-        fps = sorted(c["fp"] for c in certs)
+        fps = sorted(set(c["fp"] for c in certs) | (set(known or []) if pending else set()))
         if known is not None:
             for c in certs:
                 if c["fp"] not in known and not c["acknowledged"]:
@@ -884,7 +887,7 @@ class SecurityGuard(threading.Thread):
             self.d.state.update(known_certs=fps)
         found = self.redirects(max_age=0)
         known_r = self.d.state.get("known_redirects")
-        keys = sorted(f["key"] for f in found)
+        keys = sorted(set(f["key"] for f in found) | (set(known_r or []) if pending else set()))
         if known_r is not None:
             for f in found:
                 if f["key"] not in known_r and not f["acknowledged"]:
@@ -981,6 +984,8 @@ class SecurityGuard(threading.Thread):
             pass
         out = []
         for pw in users:
+            if pw.pw_uid >= 1000 and not home_mounted(pw):
+                continue                                   # dossier chiffré non monté : ses clés ne sont pas visibles
             for name in ("authorized_keys", "authorized_keys2"):
                 p = os.path.join(pw.pw_dir, ".ssh", name)
                 if os.path.isfile(p):
@@ -993,7 +998,8 @@ class SecurityGuard(threading.Thread):
     def check_ssh_keys(self):
         keys = self.ssh_keys()
         known = self.d.state.get("ssh_keys_known")
-        current = sorted({f"{k['path']}|{k['fp']}" for k in keys})
+        pending = tuple(pw.pw_dir.rstrip("/") + "/" for pw in self.human_users() if pw.pw_uid >= 1000 and not home_mounted(pw))
+        current = sorted({f"{k['path']}|{k['fp']}" for k in keys} | {x for x in (known or []) if pending and x.startswith(pending)})
         if known is None:
             self.d.state.update(ssh_keys_known=current)    # référence silencieuse au premier passage
             return
