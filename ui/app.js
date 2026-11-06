@@ -119,7 +119,7 @@ function locale() {
 // « Ignorer », « C'est normal », « Faire confiance », « Réafficher »… : le service recalcule bouclier, score et listes.
 // Trois secondes après, tout l'état affiché est relu pour montrer le nouveau statut sans changer d'onglet.
 const RELOAD_AFTER_ACTIONS = new Set(['acknowledge_vuln', 'acknowledge_port', 'acknowledge_integrity', 'acknowledge_persistence',
-    'ignore_check', 'acknowledge_sudoers', 'timeshift_ignore', 'trust_program', 'untrust_program', 'untrust_usb', 'hid_allow', 'hid_forget', 'network_gateway_accept', 'honeypot_block', 'honeypot_ignore', 'honeypot_forget', 'feature_answer', 'url_allow', 'guard_ack', 'privacy_allow', 'isolate', 'password_policy_apply', 'browser_harden', 'exposure_test', 'ssh_key_remove']);
+    'ignore_check', 'acknowledge_sudoers', 'timeshift_ignore', 'trust_program', 'untrust_program', 'untrust_usb', 'hid_allow', 'hid_forget', 'network_gateway_accept', 'honeypot_block', 'honeypot_ignore', 'honeypot_forget', 'feature_answer', 'url_allow', 'guard_ack', 'privacy_allow', 'isolate', 'password_policy_apply', 'browser_harden', 'exposure_test', 'ssh_key_remove', 'acknowledge_alert', 'forget_habit']);
 let statusReloadTimer = null;
 
 function scheduleStatusReload(delay = 3000) {
@@ -366,7 +366,7 @@ function onTelemetryPreview(data) {
 
 const TELEMETRY_EXAMPLE_FALLBACK = JSON.stringify({
     install_id: '5f0f79d2…', version: '1.17.0', os: 'Linux Mint 22.3', kernel: '7.0.0-34-generic', arch: 'x86_64',
-    settings: { family_mode: false, firewall_profile: 'home', auto_response: true, connection_monitor: true, auto_harden: false, scan_cache_days: 30, backup_check: true, timeshift_check: true },
+    settings: { family_mode: false, firewall_profile: 'home', auto_response: true, auto_ignore_known: true, connection_monitor: true, auto_harden: false, scan_cache_days: 30, backup_check: true, timeshift_check: true },
     checklist: { score: 92, grade: 'A', fail: [], warn: ['open_vulns'] },
     alerts_7d: { connection: 3, burst: 1 },
     trusted_programs: ['/home/~/.local/bin/mon-script'],
@@ -443,7 +443,42 @@ function renderSecurityUnavailable(type) {
     if (type === 'app_update') { $('appUpdateSummary').textContent = t('system.unavailable'); }
 }
 
+// Pastilles des sous-menus de Sécurité : ce qui attend une décision de l'utilisateur dans chaque section.
+let appsData = null;
+
+function subBadgeCounts() {
+    const hp = (lastStatus && lastStatus.honeypot_summary) || {};
+    const integ = (lastStatus && lastStatus.integrity_summary) || {};
+    const it = secData.integrity || null;
+    // Durcissement : réglages applicables (d'un clic ou à la main dans un réglage du bureau) pas encore appliqués
+    let hardening = 0;
+    if (it && it.lynis) {
+        const h = it.hardening || {}, catalog = h.catalog || {}, applied = h.applied || {};
+        hardening = (it.lynis.items || []).filter(i => ['apply', 'gui'].includes(hardenKind(i.test, catalog)) && !applied[i.test]).length;
+    }
+    // Applications hors dépôts : permissions à risque pas encore approuvées
+    let apps = 0;
+    if (appsData) {
+        const inv = appsData.inventory || {}, ack = new Set(appsData.acknowledged || []);
+        apps = [...(inv.flatpak || []), ...(inv.snap || []), ...(inv.appimage || [])].filter(a => (a.risky || []).length && !ack.has(a.key)).length;
+    }
+    return { honeypot: hp.danger_24h || 0, integrity: (integ.rootkit || 0) + (integ.app_modified || 0), hardening, apps };
+}
+
+function renderSubBadges() {
+    const counts = subBadgeCounts();
+    document.querySelectorAll('.nav-sub[data-tab="security"] .nav-sub-btn').forEach(b => {
+        const n = counts[b.dataset.acc] || 0;
+        let badge = b.querySelector('.nav-sub-badge');
+        if (!n) { if (badge) badge.remove(); return; }
+        if (!badge) { badge = document.createElement('span'); badge.className = 'nav-sub-badge'; b.appendChild(badge); }
+        badge.textContent = n > 99 ? '99+' : n;
+        badge.classList.toggle('red', b.dataset.acc === 'honeypot' || b.dataset.acc === 'integrity');   // menace ; ambre = amélioration
+    });
+}
+
 function renderSecurityBadge() {
+    renderSubBadges();
     // Le badge compte ce qui demande une action (points de la checklist à corriger ou à améliorer),
     // pas les milliers de failles « sans correctif » qu'Ubuntu n'a pas encore traitées.
     const c = secData.checklist;
@@ -716,6 +751,7 @@ function acknowledgeIntegrity(ref, remove = false) {
 function hardenKind(test, catalog) { return (catalog[test] || {}).kind || 'other'; }
 
 function renderHardening() {
+    renderSubBadges();
     const el = $('hardeningList');
     if (!el) return;
     const it = secData.integrity || {};
@@ -1200,7 +1236,7 @@ function gatewayAccept(key) { sendToBackend({ action: 'network_gateway_accept', 
 function acknowledgePersistence(key, remove = false) { sendToBackend({ action: 'acknowledge_persistence', key, remove }); }
 
 function onTrustedList(data) {
-    trustedData = { programs: (data && data.programs) || [], acknowledged: (data && data.acknowledged) || [], usb: (data && data.usb) || [], hid: (data && data.hid) || [], sudoers: (data && data.sudoers) || [],
+    trustedData = { programs: (data && data.programs) || [], habits: (data && data.habits) || [], acknowledged: (data && data.acknowledged) || [], usb: (data && data.usb) || [], hid: (data && data.hid) || [], sudoers: (data && data.sudoers) || [],
         privacy: (data && data.privacy) || [], certs: (data && data.certs) || [], redirects: (data && data.redirects) || [], suid: (data && data.suid) || [],
         flatpak: (data && data.flatpak) || [] };
     renderTrusted();
@@ -1210,8 +1246,9 @@ function renderTrusted() {
     const el = $('trustedList');
     if (!el) return;
     const progs = trustedData.programs, ack = trustedData.acknowledged, usb = trustedData.usb || [], hid = trustedData.hid || [], sud = trustedData.sudoers || [];
+    const habits = trustedData.habits || [];
     const priv = trustedData.privacy || [], certs = trustedData.certs || [], redir = trustedData.redirects || [], suid = trustedData.suid || [], fpk = trustedData.flatpak || [];
-    if (!progs.length && !ack.length && !usb.length && !hid.length && !sud.length && !priv.length && !certs.length && !redir.length && !suid.length && !fpk.length) { el.innerHTML = `<p class="text-muted">${t('settings.trusted.none')}</p>`; return; }
+    if (!progs.length && !habits.length && !ack.length && !usb.length && !hid.length && !sud.length && !priv.length && !certs.length && !redir.length && !suid.length && !fpk.length) { el.innerHTML = `<p class="text-muted">${t('settings.trusted.none')}</p>`; return; }
     const row = (badge, name, sub, at, js) => `<div class="package-item">
             <span class="scope-badge scope-user">${badge}</span>
             <span class="package-name">${escapeHtml(name)}</span>
@@ -1220,6 +1257,8 @@ function renderTrusted() {
             <button class="btn btn-secondary btn-sm" onclick="${js}">${t('settings.trusted.remove')}</button>
         </div>`;
     el.innerHTML = [
+        // Habitudes apprises : rafales d'écritures déclarées normales deux fois, ignorées d'office depuis (« Retirer » = oublier)
+        ...habits.map(h => row(t('settings.trusted.habit'), h.key.startsWith('dir:') ? h.key.slice(4) : h.key.split('/').pop(), h.key.startsWith('dir:') ? t('settings.trusted.habit_folder') : h.key, h.last, `sendToBackend({action:'forget_habit', key:'${escapeJs(h.key)}'})`)),
         ...priv.map(p => row(t(`settings.trusted.privacy_${p.device === 'microphone' ? 'microphone' : 'camera'}`), p.comm || p.exe, p.exe, p.at, `sendToBackend({action:'privacy_allow', remove:true, exe:'${escapeJs(p.exe)}'})`)),
         ...certs.map(c => row(t('settings.trusted.cert'), c.name || c.fp, `SHA-256 ${(c.fp || '').slice(0, 16)}…`, c.at, `sendToBackend({action:'guard_ack', group:'certs', remove:true, keys:['${escapeJs(c.fp)}']})`)),
         ...fpk.map(f => row(t('settings.trusted.flatpak'), f.app, (f.risks || []).map(r => t('check.flatpak_permissions.risk.' + r)).join(', '), f.at, `sendToBackend({action:'guard_ack', group:'flatpak', remove:true, keys:['${escapeJs(f.app)}']})`)),
@@ -1287,6 +1326,7 @@ function onSettingsData(data) {
     $('setUpdateTime').value = `${String(sys.update_hour ?? 7).padStart(2, '0')}:${String(sys.update_minute ?? 0).padStart(2, '0')}`;
     $('setFamilyMode').checked = !!sys.family_mode;
     $('setAutoResponse').checked = sys.auto_response !== false;
+    if ($('setAutoIgnoreKnown')) $('setAutoIgnoreKnown').checked = sys.auto_ignore_known !== false;
     $('setConnectionMonitor').checked = sys.connection_monitor !== false;
     if ($('setHoneypot')) $('setHoneypot').checked = !!sys.honeypot;
     if ($('setUrlGuard')) $('setUrlGuard').checked = sys.url_guard !== false;
@@ -1387,6 +1427,7 @@ function saveSettings() {
         weekly_scan: $('setWeekly').checked,
         family_mode: $('setFamilyMode').checked,
         auto_response: $('setAutoResponse').checked,
+        auto_ignore_known: $('setAutoIgnoreKnown') ? $('setAutoIgnoreKnown').checked : true,
         connection_monitor: $('setConnectionMonitor').checked,
         honeypot: $('setHoneypot') ? $('setHoneypot').checked : false,
         url_guard: $('setUrlGuard') ? $('setUrlGuard').checked : true,
@@ -1837,7 +1878,9 @@ function ackAlert(time, kind, title, remove = false) { sendToBackend({ action: '
 // « C'est OK » sur toute alerte rouge de la liste, quel que soit son gabarit : une fois ignorée, elle passe en bleu avec
 // un badge, le bouclier revient à la normale, et « Annuler » la fait compter à nouveau.
 function decorateAlert(a, html) {
-    if (!alertCountsRed(a)) return html;
+    // Une rafale d'écritures simplement signalée (bleue) a aussi son « C'est OK » : deux fois pour le même programme ou
+    // le même dossier, et les suivantes sont ignorées d'office (habitude apprise, visible dans Programmes de confiance).
+    if (!alertCountsRed(a) && a.kind !== 'burst') return html;
     const args = `'${escapeJs(a.time || '')}','${escapeJs(a.kind || '')}','${escapeJs(String(a.title || a.comm || ''))}'`;
     const extra = a.ignored
         ? `<span class="badge badge-green">${t('system.alert.ignored_badge')}</span> <button class="btn btn-secondary btn-sm" onclick="ackAlert(${args}, true)">${t('system.alert.unignore')}</button>`
@@ -3200,7 +3243,10 @@ function buildSubnav() {
             const b = document.createElement('button');
             b.className = 'nav-sub-btn'; b.dataset.acc = sec.dataset.acc;
             const key = sec.dataset.navI18n || (label && label.dataset.i18n);
-            if (key) { b.dataset.i18n = key; b.textContent = t(key); } else b.textContent = (label || sec.querySelector('.acc-head')).textContent.trim();
+            // Libellé dans son propre élément : la traduction ne remplace que lui, la pastille posée à sa droite reste
+            const text = document.createElement('span'); text.className = 'nav-sub-label';
+            if (key) { text.dataset.i18n = key; text.textContent = t(key); } else text.textContent = (label || sec.querySelector('.acc-head')).textContent.trim();
+            b.appendChild(text);
             b.addEventListener('click', () => { if (currentTab !== tab) switchTab(tab); showSubpage(tab, sec.dataset.acc); });
             sub.appendChild(b);
         });
@@ -3577,6 +3623,9 @@ const CHECK_FIX = {
     browser_security: () => confirmCenterAction('browser_security', { action: 'browser_harden' }),
     internet_exposure: () => openSection('firewall', 'exposure'),
     restore_test: () => switchTab('backup'),
+    file_backups: () => switchTab('backup'),
+    protected_folders: () => openSection('security', 'protected'),
+    system_snapshots: () => switchTab('backup'),
     security_updates: () => sendToBackend({ action: 'system_upgrade' }),
     reboot: null,
     auto_updates: () => sendToBackend({ action: 'auto_updates_enable' }),
@@ -3609,7 +3658,8 @@ const CHECK_FIX = {
 
 // Libellé du bouton quand l'application règle elle-même (sinon « Régler » / « Comment faire »)
 const CHECK_FIX_LABEL = { auto_updates: 'check.auto_updates.action', firmware: 'check.firmware.action', disk_encryption: 'check.disk_encryption.action', filtered_dns: 'check.filtered_dns.action',
-    password_policy: 'check.password_policy.action', browser_security: 'check.browser_security.action', internet_exposure: 'check.internet_exposure.action', restore_test: 'check.restore_test.action' };
+    password_policy: 'check.password_policy.action', browser_security: 'check.browser_security.action', internet_exposure: 'check.internet_exposure.action', restore_test: 'check.restore_test.action',
+    file_backups: 'check.restore_test.action', system_snapshots: 'check.restore_test.action' };
 
 /** Contrôles que l'utilisateur peut ignorer en connaissance de cause (« Ignorer ») : ports ouverts voulus (développement web…). */
 const CHECK_ACK = { open_ports: () => ackAllPorts(), open_vulns: () => ackAllVulns(), nopasswd_sudo: () => ackSudoers(),
@@ -3865,6 +3915,8 @@ function renderHibpEmails(results, err) {
 
 // ─── Applications hors dépôts ───────────────────────────────────────────────
 function renderApps(data) {
+    appsData = data;
+    renderSubBadges();
     const el = $('appsList');
     if (!el) return;
     const inv = data.inventory || {};

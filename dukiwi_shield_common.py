@@ -13,7 +13,7 @@ import struct
 import subprocess
 from datetime import datetime
 
-VERSION = "2.7.7"
+VERSION = "2.7.8"
 
 # ─── Chemins système (daemon root) ───────────────────────────────────────────
 # Surchargeables par variables d'environnement pour les tests sans root.
@@ -92,6 +92,9 @@ DEFAULT_SETTINGS = {
     "family_mode": False,
     # Réponse automatique : suspendre (SIGSTOP) un programme jugé dangereux, puis demander
     "auto_response": True,
+    # Apprendre des choix de l'utilisateur : rafales d'écritures connues ignorées d'office (action lancée par un
+    # gestionnaire de paquets, application dans son propre dossier, rafale déjà déclarée normale deux fois)
+    "auto_ignore_known": True,
     # Connexions sortantes : programmes inconnus, listes d'IP malveillantes, géolocalisation
     "connection_monitor": True,
     # Analyse à l'arrivée : fichiers écrits dans les dossiers de téléchargement, sur le bureau ou sur un support amovible

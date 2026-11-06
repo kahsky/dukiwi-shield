@@ -48,15 +48,15 @@ versions itself (popup or Security tab) and can install them on its own when the
 
 ### Direct download
 
-- Mint / Ubuntu: [dukiwi-shield_2.7.7_all.deb](https://www.dukiwi.com/repo/dukiwi-shield/dukiwi-shield_2.7.7_all.deb)
-- Fedora: [dukiwi-shield-2.7.7-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/dukiwi-shield-2.7.7-1.noarch.rpm)
+- Mint / Ubuntu: [dukiwi-shield_2.7.8_all.deb](https://www.dukiwi.com/repo/dukiwi-shield/dukiwi-shield_2.7.8_all.deb)
+- Fedora: [dukiwi-shield-2.7.8-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/dukiwi-shield-2.7.8-1.noarch.rpm)
 - All versions: [www.dukiwi.com/repo](https://www.dukiwi.com/repo)
 
 ### Installing a downloaded package by hand
 
 ```bash
-sudo apt install ./dukiwi-shield_2.7.7_all.deb          # Mint / Ubuntu
-sudo dnf install ./dukiwi-shield-2.7.7-1.noarch.rpm      # Fedora
+sudo apt install ./dukiwi-shield_2.7.8_all.deb          # Mint / Ubuntu
+sudo dnf install ./dukiwi-shield-2.7.8-1.noarch.rpm      # Fedora
 ```
 
 The installation enables the system service and the scheduler, then starts the initial scan:
@@ -78,6 +78,18 @@ sudo dnf remove dukiwi-shield   # Fedora
 
 ## Features
 
+- **2.7.8: the antivirus learns what is normal, backups weigh on the score, notifications in any corner, counters
+  in the Security menu** — file-write bursts: the program is now identified at its first writes (an installer that had
+  already exited was shown as "?" and treated as unknown). What is known is ignored automatically, with one line in
+  the journal: a program started by a package manager or a system update (apt, dpkg, Update Manager, dnf…), an
+  application writing only inside its own folder (Steam, Flatpak, editor extensions), and a burst you declared normal
+  twice with "It's OK" (learned habit, listed and removable under Trusted programs). Anything ClamAV flags is never
+  ignored, and the setting "Learn from my choices" turns all of this off. Security score: file backups and system
+  snapshots are now checklist items and keep weighing on the score when their reminder is ignored (green shield,
+  lower score); protected folders are a checklist item with a Fix button. Notifications can be placed in any of the
+  four corners and stay clear of panels and docks, including the area where a dock enlarges its icons. The Security
+  sub-menu shows how many points wait for a decision: honeypot, integrity and rootkits, hardening, apps outside
+  repositories.
 - **2.7.7: "It's OK" on any red alert, ignored network devices become plain information, Dukiwi applications
   trusted out of the box** — a serious alert kept the shield red for 24 hours with no way to close it: every red
   alert under "Unusual activity detected" now has an "It's OK" button; the alert stays in the list, marked as
@@ -782,8 +794,8 @@ python3 dukiwi-shield.py
 ## Building the packages
 
 ```bash
-./build-deb.sh        # dukiwi-shield_2.7.7_all.deb   (Mint / Ubuntu)
-./build-rpm.sh        # dukiwi-shield-2.7.7-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
+./build-deb.sh        # dukiwi-shield_2.7.8_all.deb   (Mint / Ubuntu)
+./build-rpm.sh        # dukiwi-shield-2.7.8-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
 ```
 
 Both packages share the same file tree (`build-deb.sh --stage-only`) and the same signed integrity manifest.

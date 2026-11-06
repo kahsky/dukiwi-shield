@@ -142,12 +142,15 @@ def load_awareness():
     return _AWARENESS
 
 
+POPUP_CORNERS = ("right", "left", "top-right", "top-left")     # « right » / « left » : en bas (valeurs d'origine)
+
+
 def user_settings():
     state = load_state()
     popups = dict(USER_DEFAULTS["popups"])
     popups.update({k: bool(v) for k, v in (state.get("popups") or {}).items() if k in popups})
     mode = state.get("view_mode") if state.get("view_mode") in ("simple", "advanced") else USER_DEFAULTS["view_mode"]
-    corner = state.get("popup_corner") if state.get("popup_corner") in ("right", "left") else "right"
+    corner = state.get("popup_corner") if state.get("popup_corner") in POPUP_CORNERS else "right"
     return {"view_mode": mode, "popups": popups, "language": state.get("language"), "popup_corner": corner}
 
 
@@ -862,8 +865,7 @@ class Popup(Gtk.Window):
             GLib.source_remove(self.timeout_id)
             self.timeout_id = None
         x, y = self.get_position()
-        geo = self.manager.monitor_geometry()
-        self._animate(y, geo.y + geo.height + 10, x, duration=0.22, on_done=self._destroy)
+        self._animate(y, self.manager.offscreen_y(self.get_preferred_height()[1]), x, duration=0.22, on_done=self._destroy)
 
     def _destroy(self):
         self.manager.forget(self)
@@ -871,7 +873,8 @@ class Popup(Gtk.Window):
 
 
 class PopupManager:
-    """Empile les popups en bas à droite et les fait glisser depuis derrière la barre des tâches."""
+    """Empile les popups dans le coin choisi (en bas ou en haut, à droite ou à gauche), à l'intérieur de la zone libre du
+    bureau, et les fait glisser depuis le bord de l'écran le plus proche."""
 
     def __init__(self):
         self.popups = []
@@ -901,13 +904,10 @@ class PopupManager:
         popup.show_all()
         popup.hide()
         height = popup.get_preferred_height()[1]
-        wa = self.workarea()
-        geo = self.monitor_geometry()
-        x = self.corner_x(wa)
         offset = sum(p.get_preferred_height()[1] + Popup.GAP
                      for p in self.popups if p is not popup and not p.closing)
-        y = wa.y + wa.height - height - Popup.MARGIN - offset
-        popup.present_sliding(x, y, geo.y + geo.height)
+        x, y = self.place(height, offset, popup.get_preferred_width()[1])
+        popup.present_sliding(x, y, self.offscreen_y(height))
         return popup
 
     def find(self, key):
@@ -927,20 +927,61 @@ class PopupManager:
         self.relayout()
 
     @staticmethod
-    def corner_x(wa):
-        """Coin bas droite (défaut) ou bas gauche (réglage « Position des notifications »)."""
-        if user_settings().get("popup_corner") == "left":
-            return wa.x + Popup.MARGIN
-        return wa.x + wa.width - Popup.WIDTH - Popup.MARGIN
+    def corner():
+        """(à gauche ?, en haut ?) d'après le réglage « Position des notifications » ; en bas à droite par défaut."""
+        c = user_settings().get("popup_corner") or "right"
+        return c.endswith("left"), c.startswith("top")
+
+    def usable_area(self):
+        """Zone où poser les notifications, (x0, y0, x1, y1) : la zone de travail du bureau — donc hors barres du haut,
+        du bas et bande réservée par un dock — encore réduite de ce qu'un dock occupe au-delà de sa réserve : Plank
+        agrandit ses icônes au survol dans une fenêtre plus large que la bande qu'il réserve."""
+        wa, geo = self.workarea(), self.monitor_geometry()
+        x0, y0, x1, y1 = wa.x, wa.y, wa.x + wa.width, wa.y + wa.height
+        try:
+            stack = Gdk.Screen.get_default().get_window_stack() or []       # X11 ; vide sous Wayland
+        except Exception:  # noqa: BLE001
+            stack = []
+        for w in stack:
+            try:
+                if w.get_type_hint() != Gdk.WindowTypeHint.DOCK or not w.is_visible():
+                    continue
+                r = w.get_frame_extents()
+            except Exception:  # noqa: BLE001
+                continue
+            # Dock collé à un bord, dans le sens de ce bord ; jamais plus d'un tiers de l'écran (fenêtre dock géante)
+            if r.height >= r.width:
+                if r.x <= geo.x + 2:
+                    x0 = max(x0, min(r.x + r.width, geo.x + geo.width // 3))
+                elif r.x + r.width >= geo.x + geo.width - 2:
+                    x1 = min(x1, max(r.x, geo.x + geo.width - geo.width // 3))
+            elif r.y <= geo.y + 2:
+                y0 = max(y0, min(r.y + r.height, geo.y + geo.height // 3))
+            elif r.y + r.height >= geo.y + geo.height - 2:
+                y1 = min(y1, max(r.y, geo.y + geo.height - geo.height // 3))
+        return x0, y0, x1, y1
+
+    def place(self, height, offset, width=0):
+        """Position d'un popup de hauteur `height` (et de largeur réelle `width`, un texte long l'élargit), `offset`
+        pixels après ceux qui le précèdent dans la pile : vers le haut depuis un coin du bas, vers le bas depuis un
+        coin du haut."""
+        x0, y0, x1, y1 = self.usable_area()
+        left, top = self.corner()
+        width = max(width or 0, Popup.WIDTH)
+        x = x0 + Popup.MARGIN if left else x1 - width - Popup.MARGIN
+        y = y0 + Popup.MARGIN + offset if top else y1 - height - Popup.MARGIN - offset
+        return max(x0, min(x, x1 - width)), y
+
+    def offscreen_y(self, height):
+        """Ordonnée hors écran d'où un popup arrive et où il repart : au-dessus pour un coin du haut, sinon en dessous."""
+        geo = self.monitor_geometry()
+        return geo.y - height - 10 if self.corner()[1] else geo.y + geo.height + 10
 
     def relayout(self):
-        wa = self.workarea()
-        x = self.corner_x(wa)
         offset = 0
         for p in [p for p in self.popups if not p.closing]:
             height = p.get_preferred_height()[1]
-            y = wa.y + wa.height - height - Popup.MARGIN - offset
-            p.slide_to(x, y)
+            p.slide_to(*self.place(height, offset, p.get_preferred_width()[1]))
             offset += height + Popup.GAP
 
 
@@ -1025,6 +1066,7 @@ class TrayIcon:
         icon_color = overall.get("color") if overall else color
         reasons = [self.app.T(f"overall.reason.{r}") for r in (overall or {}).get("reasons", [])[:4]]
         bk = self.app.backup_summary()
+        self.app.report_backup_state(bk)
         if self.app.backup_check_enabled() and bk.get("state") in ("none", "missing", "old"):
             if icon_color == "green":
                 icon_color = "yellow"           # disponibilité (CIA) : fichiers non sauvegardés
@@ -2475,6 +2517,17 @@ class ClamAVAntivirusApp:
     def act_trust_program(self, data):
         self.trust_program(data.get("exe"), data.get("comm") or "")
 
+    def act_forget_habit(self, data):
+        """Oublier une habitude apprise (rafale déclarée normale) : elle sera de nouveau signalée."""
+        def done(resp):
+            if resp.get("ok"):
+                self.send_to_js("operationResult", {"status": "success", "message": self.T("msg.habit_forgotten")})
+                self.act_get_trusted({})
+            else:
+                self.send_to_js("operationResult", {"status": "error", "message": self.daemon_error(resp)})
+            return False
+        self.run_admin("forget_habit", {"key": str(data.get("key") or "")}, done)
+
     def act_untrust_program(self, data):
         def done(resp):
             if resp.get("ok"):
@@ -2488,7 +2541,7 @@ class ClamAVAntivirusApp:
     def act_get_trusted(self, _data):
         resp = DaemonClient.request("trusted_programs")
         ok = bool(resp.get("ok"))
-        self.send_to_js("trustedList", dict({k: resp.get(k, []) if ok else [] for k in ("programs", "acknowledged", "usb", "hid", "sudoers", "privacy", "certs", "redirects", "suid", "flatpak")},
+        self.send_to_js("trustedList", dict({k: resp.get(k, []) if ok else [] for k in ("programs", "habits", "acknowledged", "usb", "hid", "sudoers", "privacy", "certs", "redirects", "suid", "flatpak")},
                                             available=ok))
 
     def act_acknowledge_vuln(self, data):
@@ -2698,6 +2751,26 @@ class ClamAVAntivirusApp:
         except Exception:  # noqa: BLE001
             return {"state": "none", "last": None, "destinations": 0}
 
+    def report_backup_state(self, bk):
+        """État des sauvegardes de fichiers de cet utilisateur transmis au service, qui le compte dans le score de
+        sécurité : à chaque changement, et au plus tard toutes les 6 heures (hors du fil principal)."""
+        key = (bk.get("state"), bk.get("last"))
+        now = time.time()
+        if bk.get("state") not in ("ok", "none", "missing", "old") or getattr(self, "_backup_report_busy", False):
+            return
+        if key == getattr(self, "_backup_reported", None) and now - getattr(self, "_backup_reported_at", 0) < 6 * 3600:
+            return
+        self._backup_report_busy = True
+
+        def worker():
+            try:
+                resp = DaemonClient.request("backup_state_report", state=bk.get("state"), last=bk.get("last") or "")
+                if resp.get("ok"):
+                    self._backup_reported, self._backup_reported_at = key, now
+            finally:
+                self._backup_report_busy = False
+        threading.Thread(target=worker, daemon=True).start()
+
     def backup_check_enabled(self):
         ds = self.last_daemon_status if isinstance(self.last_daemon_status, dict) else {}
         settings = (ds or {}).get("settings") or {}
@@ -2711,6 +2784,7 @@ class ClamAVAntivirusApp:
         for d in st["destinations"]:
             avail, target = backup.destination_available(d, drives)
             dests.append(dict(d, available=avail, target=target))
+        self.report_backup_state(backup.summary(st))
         return {"timeshift": (ds or {}).get("timeshift"), "user": backup.summary(st), "drives": drives,
                 "destinations": dests, "sources": st["sources"], "excludes": st["excludes"], "retention": st["retention"],
                 "schedule": st["schedule"], "history": st["history"][:20], "rclone": backup.rclone_path() is not None,
@@ -3473,7 +3547,7 @@ class ClamAVAntivirusApp:
             save_state({"popups": popups})
         if user.get("view_mode") in ("simple", "advanced"):
             save_state({"view_mode": user["view_mode"]})
-        if user.get("popup_corner") in ("right", "left"):
+        if user.get("popup_corner") in POPUP_CORNERS:
             save_state({"popup_corner": user["popup_corner"]})
             GLib.idle_add(self.popups.relayout)
         if user.get("language") in LANGUAGES and user["language"] != self.lang:

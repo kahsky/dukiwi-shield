@@ -233,7 +233,7 @@
                     <option value="de">Deutsch</option>
                     <option value="it">Italiano</option>
                 </select></label>
-                <small class="version">v2.7.7 — <a href="#" class="credits-link" onclick="openCredits(); return false;" data-i18n="sidebar.credits">Crédits</a> · <a href="#" class="credits-link" onclick="openLegal(); return false;" data-i18n="legal.link">Avertissement</a></small>
+                <small class="version">v2.7.8 — <a href="#" class="credits-link" onclick="openCredits(); return false;" data-i18n="sidebar.credits">Crédits</a> · <a href="#" class="credits-link" onclick="openLegal(); return false;" data-i18n="legal.link">Avertissement</a></small>
             </div>
         </div>
     </aside>
@@ -1269,7 +1269,7 @@
                     <label class="setting-row toggle"><span data-i18n="settings.popup.security">Mises à jour de sécurité en attente</span><input type="checkbox" id="setPopupSecurity"></label>
                     <label class="setting-row toggle"><span data-i18n="settings.popup.tip">Conseil de sécurité quotidien au démarrage</span><input type="checkbox" id="setPopupTip"></label>
                     <label class="setting-row"><span data-i18n="settings.popup.corner">Position des notifications</span>
-                        <select id="setPopupCorner" class="lang-select"><option value="right" data-i18n="settings.popup.corner.right">En bas à droite</option><option value="left" data-i18n="settings.popup.corner.left">En bas à gauche</option></select></label>
+                        <select id="setPopupCorner" class="lang-select"><option value="right" data-i18n="settings.popup.corner.right">En bas à droite</option><option value="left" data-i18n="settings.popup.corner.left">En bas à gauche</option><option value="top-right" data-i18n="settings.popup.corner.top_right">En haut à droite</option><option value="top-left" data-i18n="settings.popup.corner.top_left">En haut à gauche</option></select></label>
                     <p class="text-muted" data-i18n="settings.popup.note">Les dangers potentiels et les menaces détectées sont toujours affichés.</p>
                 </div>
 
@@ -1293,6 +1293,7 @@
                     <h4 data-i18n="settings.security">Famille et réponse automatique</h4>
                     <label class="setting-row toggle"><span data-i18n="settings.family_mode">Mode famille : réglages et actions sensibles réservés à un administrateur</span><input type="checkbox" id="setFamilyMode"></label>
                     <label class="setting-row toggle"><span data-i18n="settings.auto_response">Suspendre automatiquement un programme jugé dangereux, puis demander</span><input type="checkbox" id="setAutoResponse"></label>
+                    <label class="setting-row toggle"><span data-i18n="settings.auto_ignore_known">Apprendre de mes choix et ignorer d'office ce qui est connu (mises à jour du système, application qui s'installe dans son dossier, rafale déjà déclarée normale deux fois)</span><input type="checkbox" id="setAutoIgnoreKnown"></label>
                 </div>
 
                 <div class="card settings-card" data-acc="realtime" data-nav-i18n="nav.settings.realtime">

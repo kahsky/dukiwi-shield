@@ -707,6 +707,30 @@ QUIET_BURST_BASENAMES = frozenset({
     "ldconfig.real", "update-initramfs", "mkinitramfs", "dracut", "dkms", "depmod", "timeshift", "rsync", "rclone", "borg", "restic",
 })
 UNTRUSTED_EXE_PREFIXES = ("/tmp/", "/var/tmp/", "/dev/shm/", "/run/user/", "/home/", "/root/", "/media/", "/mnt/")
+# Gestionnaires de paquets et outils de mise à jour : ce qu'ils lancent (scripts d'installation, caches, compilation de
+# modules…) écrit beaucoup de fichiers parce que l'utilisateur ou le système a demandé une installation ; une rafale d'un
+# programme qui en descend est attendue. Jamais « flatpak » ni « snap », dont descendent les applications elles-mêmes.
+PACKAGE_TOOLS = frozenset({
+    "dpkg", "apt", "apt-get", "aptd", "aptitude", "nala", "unattended-upgrade", "unattended-upgrades", "synaptic", "mintupdate",
+    "mintupdate-cli", "mintinstall", "update-manager", "do-release-upgrade", "packagekitd", "gnome-software", "plasma-discover",
+    "rpm", "dnf", "dnf5", "yum", "flatpak-system-helper", "snapd", "dkms", "update-initramfs", "mkinitramfs", "dracut",
+})
+SCRIPT_INTERPRETERS = ("python", "perl", "bash", "dash", "sh")
+BURST_IDENTIFY_AT = 3                    # écritures d'un programme avant de relever qui il est (il peut finir avant l'évaluation)
+HABIT_LEARNED_AT = 2                     # « C'est OK » sur la même rafale avant qu'elle soit ignorée d'office
+# Dossiers qui appartiennent à une application (en plus des motifs ~/ de la liste blanche centrale) : une rafale qui
+# n'écrit que là est une application qui s'installe ou se met à jour, pas un rançongiciel (qui vise les documents).
+APP_DATA_DIRS = ("/home/*/.local/share/Steam/*", "/home/*/.steam/*", "/home/*/.var/app/*", "/home/*/snap/*",
+                 "/home/*/.local/share/flatpak/*", "/home/*/.vscode/extensions/*", "/home/*/.cursor/*",
+                 "/home/*/.local/share/JetBrains/*", "/home/*/.cache/*")
+
+
+def package_tool(names):
+    """Nom d'un gestionnaire de paquets parmi `names` (le nom d'un processus est tronqué à 15 caractères), sinon ""."""
+    for n in sorted(names):
+        if n in PACKAGE_TOOLS or (len(n) == 15 and any(t.startswith(n) for t in PACKAGE_TOOLS)):
+            return n
+    return ""
 
 
 def load_policy():
@@ -861,6 +885,10 @@ class ActivityMonitor(threading.Thread):
         if len(track["paths"]) < 400:
             track["paths"].add(path)
         track["count"] += 1
+        if track["count"] == BURST_IDENTIFY_AT:
+            # Qui écrit : relevé dès les premières écritures. Un installeur qui vit une seconde a fini avant l'évaluation
+            # (25e ou 50e écriture) et l'alerte nommait alors « ? », traité comme un programme inconnu.
+            track["info"] = self.process_info(pid)
         if path.startswith("/home/") or path.startswith("/root/"):
             track["home"] += 1
         info_th = self.daemon_ref.settings.get("burst_info_threshold")
@@ -870,7 +898,7 @@ class ActivityMonitor(threading.Thread):
 
     # ── Évaluation ───────────────────────────────────────────────────────
     def process_info(self, pid):
-        info = {"pid": pid, "comm": "?", "exe": "", "cmdline": "", "uid": None, "user": ""}
+        info = {"pid": pid, "comm": "?", "exe": "", "cmdline": "", "uid": None, "user": "", "ppid": 0}
         try:
             with open(f"/proc/{pid}/comm") as f:
                 info["comm"] = f.read().strip()
@@ -888,7 +916,9 @@ class ActivityMonitor(threading.Thread):
         try:
             with open(f"/proc/{pid}/status") as f:
                 for line in f:
-                    if line.startswith("Uid:"):
+                    if line.startswith("PPid:"):
+                        info["ppid"] = int(line.split()[1])
+                    elif line.startswith("Uid:"):
                         info["uid"] = int(line.split()[1])
                         break
             if info["uid"] is not None:
@@ -935,6 +965,8 @@ class ActivityMonitor(threading.Thread):
         if now - self.reported.get(pid, 0) < BURST_PID_COOLDOWN_SEC:
             return
         info = self.process_info(pid)
+        if not info["exe"] and (track.get("info") or {}).get("exe"):
+            info = track["info"]              # programme déjà terminé : identité relevée à ses premières écritures
         if info["comm"] in ("clamscan", "clamd", "clamdscan", "freshclam", "find") and \
                 info["exe"].startswith("/usr/"):
             return
@@ -957,6 +989,29 @@ class ActivityMonitor(threading.Thread):
         if infected_files:
             severity = "danger"
             reasons.append("files_infected")
+        # Dossier le plus touché (pour proposer une analyse ciblée, et pour reconnaître une rafale déjà déclarée normale)
+        dirs = {}
+        for p in sample:
+            d = os.path.dirname(p)
+            dirs[d] = dirs.get(d, 0) + 1
+        top_dir = max(dirs, key=dirs.get) if dirs else "/"
+        if severity == "info" and self.daemon_ref.settings.get("auto_ignore_known") is not False \
+                and not exe_path.startswith(("/tmp/", "/var/tmp/", "/dev/shm/")):
+            # Rien d'infecté : ce qui est connu est ignoré d'office (réglage « Apprendre de mes choix »), une ligne du
+            # journal en garde la trace. Dans l'ordre : action lancée par un gestionnaire de paquets (apt upgrade,
+            # mise à jour du système…), application qui n'écrit que dans son propre dossier, rafale que l'utilisateur
+            # a déjà déclarée normale.
+            why = self.launched_by(info)
+            if why:
+                why = f"launched by {why}"
+            elif track["paths"] and all(self.app_data_path(p) for p in track["paths"]):
+                why = "application folder"
+            elif self.daemon_ref.habit_learned(self.daemon_ref.habit_key(info["exe"], top_dir)):
+                why = "learned"
+            if why:
+                self.reported[pid] = now
+                self.note_auto_ignored(why, info["comm"], track["count"], top_dir, now)
+                return
         if not trusted and track["home"] >= self.daemon_ref.settings.get("burst_danger_threshold"):
             severity = "danger"
             reasons.append("untrusted_home_burst")
@@ -969,12 +1024,6 @@ class ActivityMonitor(threading.Thread):
             return
         self.reported[pid] = now
         self.last_report = now
-        # Dossier le plus touché (pour proposer une analyse ciblée)
-        dirs = {}
-        for p in sample:
-            d = os.path.dirname(p)
-            dirs[d] = dirs.get(d, 0) + 1
-        top_dir = max(dirs, key=dirs.get) if dirs else "/"
         alert = {
             "kind": "burst",
             "time": now_iso(), "severity": severity, "reasons": reasons,
@@ -986,6 +1035,58 @@ class ActivityMonitor(threading.Thread):
             "infected_exe": infected_exe, "infected_files": infected_files,
         }
         self.daemon_ref.publish_alert(alert)
+
+    def launched_by(self, info):
+        """Gestionnaire de paquets ou outil de mise à jour dont descend ce programme (« apt », « dpkg », « mintupdate »…),
+        "" sinon. Remonte les parents à partir de celui relevé avec l'identité ; il faut un exécutable du système."""
+        ppid = int(info.get("ppid") or 0)
+        for _ in range(8):
+            if ppid <= 1:
+                return ""
+            try:
+                exe = os.readlink(f"/proc/{ppid}/exe")
+                with open(f"/proc/{ppid}/comm") as f:
+                    comm = f.read().strip()
+                with open(f"/proc/{ppid}/cmdline", "rb") as f:
+                    argv = [a.decode(errors="replace") for a in f.read().split(b"\0") if a]
+                parent = 0
+                with open(f"/proc/{ppid}/status") as f:
+                    for line in f:
+                        if line.startswith("PPid:"):
+                            parent = int(line.split()[1])
+                            break
+            except (OSError, ValueError):
+                return ""
+            base = os.path.basename(normalize_exe(exe))
+            names = {base.lower(), comm.lower()}
+            if base.startswith(SCRIPT_INTERPRETERS):
+                # /usr/bin/python3 /usr/bin/unattended-upgrade, …/mintUpdate/mintUpdate.py : le script, pas l'interpréteur
+                names |= {os.path.splitext(os.path.basename(a))[0].lower() for a in argv[1:3] if a.startswith(("/usr/", "/opt/"))}
+            tool = package_tool(names)
+            if tool and self.exe_trusted(exe):
+                return tool
+            ppid = parent
+        return ""
+
+    def app_data_path(self, path):
+        """Fichier dans le dossier propre à une application connue (Steam, Flatpak, extensions d'éditeur, motifs ~/ de
+        la liste blanche centrale) ?"""
+        if any(fnmatch.fnmatch(path, pat) for pat in APP_DATA_DIRS):
+            return True
+        return any(pat.startswith("/home/*/") and fnmatch.fnmatch(path, pat) for pat in getattr(self.daemon_ref, "central_patterns", ()))
+
+    def note_auto_ignored(self, why, comm, count, top_dir, now):
+        """Trace des rafales ignorées d'office : une ligne du journal par minute au plus (une mise à jour du système en
+        produit des dizaines), avec le décompte par motif."""
+        pending = getattr(self, "auto_ignored", None)
+        if pending is None:
+            pending = self.auto_ignored = {"since": now, "n": {}, "last": ""}
+        pending["n"][why] = pending["n"].get(why, 0) + 1
+        pending["last"] = f"{comm} · {count} files · {top_dir}"
+        if now - pending["since"] >= 60 or sum(pending["n"].values()) == 1:
+            detail = ", ".join(f"{n}× {w}" for w, n in sorted(pending["n"].items()))
+            self.daemon_ref.write_log(f"file bursts ignored automatically: {detail} (last: {pending['last'][:160]})")
+            self.auto_ignored = {"since": now, "n": {}, "last": ""}
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -3088,6 +3189,20 @@ def security_journal(daemon, days=30):
     return events[:5000]
 
 
+def user_backup_states(states):
+    """États de sauvegarde des fichiers transmis par l'application des utilisateurs, limités aux comptes qui existent
+    encore : {uid: {"state": ok | none | missing | old, "last", "at"}}."""
+    out = {}
+    for uid, b in (states or {}).items():
+        try:
+            pwd.getpwuid(int(uid))
+        except (KeyError, ValueError):
+            continue
+        if isinstance(b, dict) and b.get("state") in ("ok", "none", "missing", "old"):
+            out[str(uid)] = b
+    return out
+
+
 def collect_checklist(daemon):
     """Liste de contrôles pondérés → score 0-100."""
     items = []
@@ -3306,6 +3421,30 @@ def collect_checklist(daemon):
     add("internet_exposure", "fail" if sensitive else ("warn" if open_ports or mine else ("ok" if expo.get("ok") else "unknown")), 4,
         ", ".join([f"{p_}/tcp" for p_ in open_ports[:8]] + [f"UPnP {m['external']}/{m['protocol']} → {m['internal']}" for m in mine[:4]]),
         params={"open": open_ports, "upnp": mine[:8], "tested_at": expo.get("at")})
+    # Disponibilité : instantanés du système (Timeshift) et sauvegarde des fichiers personnels (relevée par l'application
+    # de chaque utilisateur, backup_state_report). « Ignorer » le rappel rend le bouclier vert, mais le score en tient
+    # toujours compte : ne pas avoir de sauvegarde reste un risque, qu'on veuille ou non en entendre parler.
+    ts = daemon.state.get("timeshift") or {}
+    if not ts.get("checked_at"):
+        snap = "unknown"
+    elif not ts.get("installed") or not ts.get("configured"):
+        snap = "fail"
+    elif not ts.get("schedule"):
+        snap = "warn"
+    else:
+        try:
+            late = not ts.get("last") or (time.time() - datetime.fromisoformat(ts["last"]).timestamp()) > 30 * 86400
+        except ValueError:
+            late = True
+        snap = "warn" if late else "ok"
+    add("system_snapshots", snap, 4)
+    if snap in ("warn", "fail") and settings.get("timeshift_check") is False:
+        items[-1]["detail_key"] = "check.reminder_ignored"
+    reported = {b.get("state") for b in user_backup_states(daemon.state.get("backup_states")).values()}
+    files = "unknown" if not reported else "fail" if "none" in reported else "warn" if reported & {"missing", "old"} else "ok"
+    add("file_backups", files, 5)
+    if files in ("warn", "fail") and settings.get("backup_check") is False:
+        items[-1]["detail_key"] = "check.reminder_ignored"
     # Test de restauration : instantanés Timeshift (service) et sauvegardes de fichiers (application de chaque utilisateur)
     tests = [t for t in [daemon.state.get("timeshift_test")] + list((daemon.state.get("backup_tests") or {}).values())
              if t and t.get("error") not in ("btrfs", "not_configured", "device_unmounted")]
@@ -3356,6 +3495,8 @@ def collect_checklist(daemon):
         params={"redirects": [{k: r.get(k) for k in ("key", "type", "value", "where")} for r in redirects[:12]]})
     # Réponse automatique
     add("auto_response", "ok" if settings.get("auto_response") else "warn", 2)
+    # Dossiers protégés : seuls les programmes approuvés écrivent dans Documents, Images, Bureau (rançongiciel bloqué)
+    add("protected_folders", "ok" if settings.get("protected_folders") else "warn", 4)
 
     applicable = [it for it in items if it["status"] in ("ok", "warn", "fail")]
     total = sum(it["weight"] for it in applicable) or 1
@@ -7433,6 +7574,38 @@ class Daemon:
         """Exécutables approuvés par l'utilisateur (« C'est moi ») : plus jamais d'alerte pour eux."""
         return self._trusted_set
 
+    # ── Habitudes apprises : rafales d'écritures que l'utilisateur a déclarées normales (« C'est OK ») ──
+    @staticmethod
+    def habit_key(exe, top_dir):
+        """Ce qu'on retient d'une rafale : son programme quand il est connu, sinon le dossier exact où elle écrit
+        (jamais plus large : ignorer d'office tout un dossier de documents ouvrirait la porte à un rançongiciel)."""
+        exe = normalize_exe(exe)
+        if exe:
+            return "" if exe.startswith(("/tmp/", "/var/tmp/", "/dev/shm/")) else exe
+        top_dir = os.path.normpath(top_dir or "/")
+        return "dir:" + top_dir if top_dir.count("/") >= 3 else ""
+
+    def habit_learned(self, key):
+        return bool(key) and int(((self.state.get("habits") or {}).get(key) or {}).get("n") or 0) >= HABIT_LEARNED_AT
+
+    def habit_note(self, key, delta=1):
+        if not key:
+            return
+        habits = dict(self.state.get("habits") or {})
+        entry = dict(habits.get(key) or {})
+        entry["n"] = max(0, int(entry.get("n") or 0) + delta)
+        entry["last"] = now_iso()
+        if entry["n"]:
+            habits[key] = entry
+        else:
+            habits.pop(key, None)
+        if len(habits) > 300:
+            for old in sorted(habits, key=lambda k: habits[k].get("last", ""))[:len(habits) - 300]:
+                habits.pop(old, None)
+        self.state.update(habits=habits)
+        if delta > 0 and entry["n"] == HABIT_LEARNED_AT:
+            self.write_log(f"habit learned: file bursts of {key} are now ignored automatically")
+
     def central_trusted(self, exe):
         """Liste blanche centrale Dukiwi (signée) + programmes de confiance de la politique d'entreprise + applications
         Dukiwi elles-mêmes (reconnues d'office)."""
@@ -7612,7 +7785,7 @@ class Daemon:
         vulns = (self.state.get("vulns") or {}).get("counts") or {}
         payload = {
             "install_id": install_id, "version": VERSION, "os": pretty, "kernel": os.uname().release, "arch": os.uname().machine,
-            "settings": {k: self.settings.get(k) for k in ("family_mode", "firewall_profile", "backup_check", "timeshift_check", "auto_response", "connection_monitor", "honeypot", "url_guard",
+            "settings": {k: self.settings.get(k) for k in ("family_mode", "firewall_profile", "backup_check", "timeshift_check", "auto_response", "auto_ignore_known", "connection_monitor", "honeypot", "url_guard",
                                                              "auto_harden", "scan_cache_days", "integrity_weekly", "weekly_scan")},
             "checklist": {"score": checklist.get("score"), "grade": checklist.get("grade"),
                           "fail": [i["key"] for i in checklist.get("items", []) if i.get("status") == "fail"],
@@ -8467,6 +8640,7 @@ class Daemon:
             self.write_log(f"settings: {setting}={self.settings.get(setting)} (ignore_check)")
             self.broadcast({"event": "settings", "settings": self.settings.snapshot()})
             self.refresh_overall()
+            self.refresh_checklist_async()               # le contrôle reste compté dans le score, marqué « rappel ignoré »
             return {"ok": True, "changed": changed, "settings": {k: self.settings.get(k) for k in ("backup_check", "timeshift_check")}}
 
         if cmd == "untrust_usb":
@@ -8547,8 +8721,21 @@ class Daemon:
         if cmd == "alerts":
             return {"ok": True, "alerts": self.state.get("alerts", [])}
 
+        if cmd == "forget_habit":
+            # Oublier une habitude apprise : les rafales de ce programme / de ce dossier sont à nouveau signalées
+            key = str(req.get("key") or "")[:400]
+            habits = dict(self.state.get("habits") or {})
+            if key not in habits:
+                return {"ok": False, "error": "not_found"}
+            habits.pop(key)
+            self.state.update(habits=habits)
+            self.write_log(f"habit forgotten: {key}")
+            return {"ok": True}
+
         if cmd == "trusted_programs":
             return {"ok": True, "programs": self.state.get("trusted_programs") or [],
+                    "habits": [dict(v, key=k) for k, v in sorted((self.state.get("habits") or {}).items())
+                               if int(v.get("n") or 0) >= HABIT_LEARNED_AT],
                     "acknowledged": self.state.get("acknowledged_persistence") or [],
                     "usb": [dict(v, id=k) for k, v in (self.state.get("trusted_usb") or {}).items()],
                     "hid": [dict(v, id=k) for k, v in (self.state.get("trusted_hid") or {}).items()],
@@ -8693,6 +8880,20 @@ class Daemon:
 
         if cmd == "incident":
             return {"ok": True, "incident": self.state.get("incident") or {}}
+
+        if cmd == "backup_state_report":
+            # État des sauvegardes de fichiers de l'utilisateur (ses réglages, ses supports), relevé par son application :
+            # il entre dans le score de sécurité, que le rappel soit ignoré ou non.
+            reported = str(req.get("state") or "")
+            if reported not in ("ok", "none", "missing", "old"):
+                return {"ok": False, "error": "invalid_key"}
+            states = user_backup_states(self.state.get("backup_states"))
+            changed = (states.get(str(uid)) or {}).get("state") != reported
+            states[str(uid)] = {"state": reported, "last": str(req.get("last") or "")[:19], "at": now_iso()}
+            self.state.update(backup_states=states)
+            if changed:
+                self.refresh_checklist_async()
+            return {"ok": True, "changed": changed}
 
         if cmd == "backup_test_report":
             # Test de restauration des sauvegardes de fichiers, fait par l'application de l'utilisateur (ses droits)
@@ -8948,6 +9149,10 @@ class Daemon:
             if not marked:
                 return {"ok": False, "error": "not_found"}
             for a in marked:
+                if a.get("kind") == "burst" and bool(a.get("ignored")) == bool(req.get("remove")) \
+                        and not a.get("infected_exe") and not a.get("infected_files"):
+                    # Rafale déclarée normale : retenue ; à la deuxième fois, les suivantes sont ignorées d'office
+                    self.habit_note(self.habit_key(a.get("exe"), a.get("top_dir")), -1 if req.get("remove") else 1)
                 a["ignored"] = not req.get("remove")
             self.state.update(alerts=alerts)
             self.write_log(f"alert {'counted again' if req.get('remove') else 'ignored'} ({kind}): "

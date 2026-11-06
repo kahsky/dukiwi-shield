@@ -3083,6 +3083,14 @@ input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-o
     text-align: left; background: none; border: none; color: var(--text-secondary); font: inherit; font-size: 13px;
     padding: 6px 10px; border-radius: 6px; cursor: pointer; line-height: 1.3;
 }
+.nav-sub-btn { display: flex; align-items: center; gap: 8px; }
+.nav-sub-label { flex: 1; min-width: 0; }
+/* Pastille d'un sous-menu : nombre de points qui attendent une action (rouge : menace, ambre : amélioration) */
+.nav-sub-badge {
+    flex: none; min-width: 17px; height: 17px; padding: 0 5px; border-radius: 9px; font-size: 10px; font-weight: 700; line-height: 17px;
+    text-align: center; background: var(--accent-amber); color: #1a1207;
+}
+.nav-sub-badge.red { background: var(--accent-red); color: white; }
 .nav-sub-btn:hover { background: rgba(255,255,255,0.04); color: var(--text-primary); }
 .nav-sub-btn.active { color: var(--accent); background: rgba(34,197,94,0.08); font-weight: 500; }
 /* Pages : une seule section visible, titre fixe (ni chevron ni repli) */
