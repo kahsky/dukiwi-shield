@@ -306,20 +306,29 @@ class LocalScan:
         prefix = ["pkexec"] if self.use_sudo else []
         cmd = prefix + find_command(self.path)
         with self.proc_lock:
-            self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                                         stderr=subprocess.DEVNULL, text=True, bufsize=1)
+            self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+                                         errors="surrogateescape", bufsize=1)
         last = time.time()
+        bad_names = 0
         with open(SCAN_FILES_CACHE, "w") as out:
             for line in self.proc.stdout:
                 if self.cancel_event.is_set():
                     break
                 if line.strip():
+                    try:
+                        line.encode("utf-8")
+                    except UnicodeEncodeError:
+                        bad_names += 1                    # nom qui n'est pas de l'UTF-8 : compté et signalé, pas analysé
+                        continue
                     out.write(line)
                     self.found += 1
                     if time.time() - last >= PROGRESS_INTERVAL:
                         self.emit("progress", self.progress())
                         last = time.time()
         rc = self.proc.wait()
+        if bad_names:
+            self.errors += bad_names
+            self.emit("line", {"kind": "error", "text": f"⚠ {bad_names} file(s) not scanned: file name is not valid UTF-8"})
         if self.use_sudo and rc in (126, 127):
             raise PermissionError("auth")
         return self.found
@@ -1650,6 +1659,7 @@ class ClamAVAntivirusApp:
         connecter (danger). Boutons : bloquer l'appareil au pare-feu, l'ignorer (appareil connu), détails."""
         T = self.T
         danger = alert.get("severity") == "danger"
+        info = alert.get("severity") == "info"            # appareil ignoré qui balaie à nouveau : simple information
         if not danger and not self.popups_enabled("info"):
             return
         ip = alert.get("ip") or "?"
@@ -1678,9 +1688,11 @@ class ClamAVAntivirusApp:
         buttons = []
         if not alert.get("gateway"):
             buttons.append((T("popup.btn.block_device"), "danger" if danger else "primary", lambda i=ip: self.act_honeypot_block({"ip": i})))
-        buttons.append((T("popup.btn.ignore_device"), None, lambda i=ip: self.act_honeypot_ignore({"ip": i})))
+        if not info:
+            buttons.append((T("popup.btn.ignore_device"), None, lambda i=ip: self.act_honeypot_ignore({"ip": i})))
         buttons.append((T("popup.btn.details"), None, lambda: self.show_tab("security")))
-        self.popup("danger" if danger else "warning", T("popup.honeypot.title" if danger else "popup.honeypot.title_warn"), body,
+        self.popup("danger" if danger else "info" if info else "warning",
+                   T("popup.honeypot.title" if danger else "popup.honeypot.title_info" if info else "popup.honeypot.title_warn"), body,
                    timeout=None if danger else 25, meta=" · ".join(meta_parts) or None, buttons=buttons,
                    on_activate=lambda: self.show_tab("security"))
 
@@ -2513,6 +2525,21 @@ class ClamAVAntivirusApp:
             return False
         self.run_admin("acknowledge_integrity", {"tool": str(data.get("tool") or ""), "text": str(data.get("text") or ""), "remove": remove}, done)
 
+    def act_acknowledge_alert(self, data):
+        """« C'est OK » sur une alerte grave de la liste : elle ne tient plus le bouclier en rouge (remove : la recompter)."""
+        remove = bool(data.get("remove"))
+
+        def done(resp):
+            if resp.get("ok"):
+                self.send_to_js("operationResult", {"status": "success", "op": "security",
+                                                    "message": self.T("msg.alert_unignored" if remove else "msg.alert_ignored")})
+                self.act_get_alerts({})
+            else:
+                self.send_to_js("operationResult", {"status": "error", "op": "security", "message": self.daemon_error(resp)})
+            return False
+        self.run_admin("acknowledge_alert", {"time": str(data.get("time") or ""), "kind": str(data.get("kind") or ""),
+                                             "title": data.get("title"), "remove": remove}, done)
+
     # ── Pot de miel : bloquer / ignorer un appareil, proposer une protection avancée ──
     def _honeypot_action(self, cmd, data, ok_key, remove_key=None):
         """Commande du pot de miel hors du fil principal (ufw / firewall-cmd peuvent dépasser 3 s), puis rechargement."""
@@ -2532,6 +2559,7 @@ class ClamAVAntivirusApp:
             else:
                 self.send_to_js("operationResult", {"status": "error", "op": "security", "message": self.daemon_error(resp)})
             self.act_get_security_data({"type": "honeypot"})
+            self.act_get_alerts({})                      # « Ignorer » depuis la liste des alertes : l'alerte passe en bleu
             self.refresh_daemon_status_now()
             return False
         threading.Thread(target=worker, daemon=True).start()

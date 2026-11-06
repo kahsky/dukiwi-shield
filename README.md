@@ -48,15 +48,15 @@ versions itself (popup or Security tab) and can install them on its own when the
 
 ### Direct download
 
-- Mint / Ubuntu: [dukiwi-shield_2.7.5_all.deb](https://www.dukiwi.com/repo/dukiwi-shield/dukiwi-shield_2.7.5_all.deb)
-- Fedora: [dukiwi-shield-2.7.5-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/dukiwi-shield-2.7.5-1.noarch.rpm)
+- Mint / Ubuntu: [dukiwi-shield_2.7.7_all.deb](https://www.dukiwi.com/repo/dukiwi-shield/dukiwi-shield_2.7.7_all.deb)
+- Fedora: [dukiwi-shield-2.7.7-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/dukiwi-shield-2.7.7-1.noarch.rpm)
 - All versions: [www.dukiwi.com/repo](https://www.dukiwi.com/repo)
 
 ### Installing a downloaded package by hand
 
 ```bash
-sudo apt install ./dukiwi-shield_2.7.5_all.deb          # Mint / Ubuntu
-sudo dnf install ./dukiwi-shield-2.7.5-1.noarch.rpm      # Fedora
+sudo apt install ./dukiwi-shield_2.7.7_all.deb          # Mint / Ubuntu
+sudo dnf install ./dukiwi-shield-2.7.7-1.noarch.rpm      # Fedora
 ```
 
 The installation enables the system service and the scheduler, then starts the initial scan:
@@ -78,6 +78,23 @@ sudo dnf remove dukiwi-shield   # Fedora
 
 ## Features
 
+- **2.7.7: "It's OK" on any red alert, ignored network devices become plain information, Dukiwi applications
+  trusted out of the box** — a serious alert kept the shield red for 24 hours with no way to close it: every red
+  alert under "Unusual activity detected" now has an "It's OK" button; the alert stays in the list, marked as
+  ignored, and the shield returns to normal ("Undo" makes it count again, and a new alert counts as usual). A network
+  device that scans ports by design (printer, router, NAS) gets an "Ignore" button on its honeypot alert: its later
+  port scans are reported as plain information (blue, at most once every six hours) and no longer colour the shield,
+  but a login or intrusion attempt coming from it is still a red alert. Dukiwi's own applications (DukiwiLink, the
+  Gleeder agent, OpenVPN GUI, Dukiwi Shield) are recognised out of the box: their programs and their automatic
+  start-up entries no longer raise alerts or wait for an approval.
+- **2.7.6: USB keys with accented file names can be scanned again, and an approved LD_PRELOAD library stays
+  approved** — a FAT key was mounted for its scan without UTF-8 file names: a single accented name ("é") made the
+  inventory fail with "Internal error: 'utf-8' codec can't decode byte 0xe9" and the key stayed unavailable. FAT and
+  ISO media are now mounted with UTF-8 names, and a file name that is not valid UTF-8 (old encoding on another file
+  system) no longer stops a scan: that file is counted and reported as not scanned. In "Integrity and rootkits", a
+  library injected through LD_PRELOAD is now identified by its path and its content, one warning per library, and no
+  longer by the list of programs that inherited it: "This is normal" does not have to be repeated every time an
+  application is opened (the shield kept turning red), and the warning comes back if the file is replaced.
 - **2.7.5: no more false ransomware alerts caused by the decoys themselves** — the hidden decoy documents (.docx,
   .xlsx) embedded the time they were written, so a decoy rewritten with the same content (restored backup,
   synchronisation, a second copy of the service started for a test) looked "replaced" and raised a ransomware
@@ -765,8 +782,8 @@ python3 dukiwi-shield.py
 ## Building the packages
 
 ```bash
-./build-deb.sh        # dukiwi-shield_2.7.5_all.deb   (Mint / Ubuntu)
-./build-rpm.sh        # dukiwi-shield-2.7.5-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
+./build-deb.sh        # dukiwi-shield_2.7.7_all.deb   (Mint / Ubuntu)
+./build-rpm.sh        # dukiwi-shield-2.7.7-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
 ```
 
 Both packages share the same file tree (`build-deb.sh --stage-only`) and the same signed integrity manifest.

@@ -37,6 +37,7 @@ import hashlib
 import hmac
 import ipaddress
 import fnmatch
+import shlex
 import email.message
 import email.utils
 import glob
@@ -2063,6 +2064,11 @@ class UsbWatcher(threading.Thread):
         opts = "nosuid,nodev,noexec"
         if info["fstype"] in ("vfat", "exfat", "ntfs"):
             opts += ",umask=077"
+        if info["fstype"] in ("vfat", "iso9660"):
+            # Noms de fichiers en UTF-8, comme le montage du bureau. Sans cette option le noyau les rend en ISO 8859-1 :
+            # « é » devient l'octet 0xE9, invalide en UTF-8, et l'inventaire du support échouait (« Internal error:
+            # 'utf-8' codec can't decode byte 0xe9 »), ce qui laissait la clé inaccessible.
+            opts += ",utf8"
         r = run_quiet(["mount", "-o", opts, devnode, mountpoint], timeout=60)
         if r.returncode != 0:
             r = run_quiet(["mount", "-o", "nosuid,nodev,noexec", devnode, mountpoint], timeout=60)
@@ -3613,6 +3619,50 @@ def pending_homes():
     return sorted(pw.pw_name for pw in pwd.getpwall() if pw.pw_uid >= 1000 and pw.pw_dir.startswith("/home/") and not home_mounted(pw))
 
 
+# Applications Dukiwi (DukiwiLink, Gleeder, Dukiwi Shield, OpenVPN GUI) : reconnues d'office, sans approbation ni liste
+# blanche centrale. Emplacements système seulement — jamais un dossier personnel, où n'importe quel programme écrit.
+DUKIWI_PROGRAMS = ("/usr/bin/dukiwilink-*", "/usr/lib/dukiwilink*/*", "/opt/dukiwilink*/*",
+                   "/opt/gleeder-*/*", "/usr/bin/gleeder-*",
+                   "/opt/dukiwi-*/*", "/usr/bin/dukiwi-*", "/usr/bin/openvpn-gui")
+
+
+def dukiwi_program(path):
+    """Programme d'une application Dukiwi : chemin connu, fichier présent, à root, non modifiable par les autres comptes
+    (son dossier non plus) — un chemin connu ne suffit pas si n'importe qui peut y déposer un fichier."""
+    path = os.path.normpath(path or "")
+    if not path.startswith("/") or not any(fnmatch.fnmatch(path, pat) for pat in DUKIWI_PROGRAMS):
+        return False
+    try:
+        for p in (path, os.path.dirname(path)):
+            st = os.stat(p)
+            if st.st_uid != 0 or st.st_mode & 0o022:
+                return False
+    except OSError:
+        return False
+    return True
+
+
+def startup_program(kind, path, exec_line=""):
+    """Programme lancé par une entrée de démarrage : premier mot de Exec= (.desktop) ou de ExecStart= (unité systemd).
+    "" si ce n'est pas un chemin absolu (commande passée à un shell, variable…)."""
+    line = exec_line or ""
+    if kind in ("system_unit", "user_unit"):
+        line = ""
+        try:
+            with open(path, errors="replace") as f:
+                for ln in f:
+                    if ln.startswith("ExecStart=") and ln[10:].strip():
+                        line = ln[10:].strip().lstrip("-@+!:")
+                        break
+        except OSError:
+            pass
+    try:
+        argv = shlex.split(line)
+    except ValueError:
+        return ""
+    return argv[0] if argv and argv[0].startswith("/") else ""
+
+
 def collect_persistence():
     items = []
 
@@ -3674,6 +3724,12 @@ def collect_persistence():
         if it["trusted"] is None:
             it["owner"] = owners.get(it["path"], "")
             it["trusted"] = bool(it["owner"])
+    # Démarrage automatique d'une application Dukiwi (DukiwiLink dans la session, agent Gleeder…) : reconnu d'office,
+    # sans alerte « nouveau démarrage automatique » ni approbation à donner.
+    for it in items:
+        if not it["trusted"] and it["kind"] in ("autostart", "user_unit", "system_unit") \
+                and dukiwi_program(startup_program(it["kind"], it["path"], it["exec"])):
+            it["trusted"], it["owner"] = True, "Dukiwi"
 
     extensions = []
     for user, home in user_homes():
@@ -3933,6 +3989,18 @@ DEBUGGER_NAMES = {"gdb", "strace", "ltrace", "lldb", "lldb-server", "rr", "valgr
 STEAM_PRELOAD_RE = re.compile(r"/(\.steam|\.local/share/Steam|Steam)/")
 
 
+def preload_digest(lib, procs):
+    """12 premiers caractères du sha256 d'une bibliothèque préchargée, lue comme la voit un des processus qui la portent
+    (espace de montage d'un conteneur, d'un Flatpak…), sinon par son chemin. "" si elle est illisible ou énorme."""
+    for cand in [f"/proc/{p.split(' ', 1)[0]}/root{lib}" for p in procs[:3]] + [lib]:
+        try:
+            if os.path.isfile(cand) and os.path.getsize(cand) <= 64 << 20:
+                return sha256_file(cand)[:12]
+        except OSError:
+            continue
+    return ""
+
+
 def process_check(trusted=None):
     """Balayage de /proc (comportement) : exécutable supprimé du disque, exécution depuis un dossier temporaire,
     bibliothèque injectée par LD_PRELOAD, processus suivi par ptrace. Verdicts intégrés : programme mis à jour
@@ -4004,8 +4072,8 @@ def process_check(trusted=None):
     add(findings["exe_trusted"], "benign", "trusted_program", "Process(es) of a trusted program:")
     if preload_libs:
         owners = dpkg_owners([lib for lib in preload_libs if lib.startswith("/")])
-        ns_b, ns_u = [], []
-        for lib, procs in preload_libs.items():
+        ns_b = []
+        for lib, procs in sorted(preload_libs.items()):
             who = ", ".join(sorted({p.split(" ", 2)[1] for p in procs})[:6])
             path = f"{lib} <- {who}"
             if lib in owners:
@@ -4015,12 +4083,15 @@ def process_check(trusted=None):
             elif not lib.startswith("/") or lib.startswith(("/snap/", "/var/lib/flatpak/", "/app/", "/usr/lib/", "/lib/")):
                 ns_b.append({"path": path, "verdict": "benign", "reason": "preload_app"})
             else:
-                ns_u.append({"path": path, "verdict": "unknown", "reason": "preload_unknown"})
-        if ns_u:
-            text = "LD_PRELOAD library injected into process(es):\n" + "\n".join(n["path"] for n in ns_u + ns_b)
-            warnings.append(text)
-            notes[text] = ns_u + ns_b
-        else:
+                # Un avertissement par bibliothèque inconnue, identifié par son chemin et son contenu, jamais par la liste
+                # des programmes (elle change à chaque application lancée, voir integrity_warning_norm) : « C'est normal »
+                # tient d'un passage à l'autre, et tombe si le fichier est remplacé ou si une autre bibliothèque apparaît.
+                digest = preload_digest(lib, procs)
+                note = {"path": f"{lib} (sha256 {digest}) <- {who}" if digest else path, "verdict": "unknown", "reason": "preload_unknown"}
+                text = "LD_PRELOAD library injected into process(es):\n" + note["path"]
+                warnings.append(text)
+                notes[text] = [note]
+        if ns_b:
             text = "LD_PRELOAD in use (known libraries):\n" + "\n".join(n["path"] for n in ns_b)
             benign.append({"text": text, "notes": ns_b})
     if tracers:
@@ -4684,16 +4755,22 @@ def debsums_analysis(lines):
 
 _PROC_PID_RE = re.compile(r"^\d+ (?=\S)")        # « 1234 comm /chemin » → « comm /chemin »
 _TRACER_PID_RE = re.compile(r" \(\d+\) -> ")      # « gdb (4321) -> victime » → « gdb -> victime »
+_PRELOAD_WHO_RE = re.compile(r" <- .*$")           # « lib.so (sha256 …) <- bash, plank » → « lib.so (sha256 …) »
 
 
 def integrity_warning_norm(tool, text):
     """Texte d'un avertissement sans ce qui change d'une exécution à l'autre. Pour la veille des processus : sans les
     PID ni l'ordre des lignes, sinon un programme relancé est un « nouvel » avertissement à chaque passage (alerte
-    rouge toutes les 5 min, « C'est normal » sans effet dès que le PID change)."""
+    rouge toutes les 5 min, « C'est normal » sans effet dès que le PID change). Pour une bibliothèque préchargée
+    (LD_PRELOAD) : sans la liste des programmes qui la portent, héritée par tout ce qu'ils lancent — elle changeait à
+    chaque application ouverte, et l'approbation avec."""
     if tool == "processes":
         lines = [re.sub(r"\s+", " ", ln).strip() for ln in (text or "").strip().splitlines() if ln.strip()]
         if len(lines) > 1:
-            return "\n".join([lines[0]] + sorted({_TRACER_PID_RE.sub(" -> ", _PROC_PID_RE.sub("", ln)) for ln in lines[1:]}))
+            rest = {_TRACER_PID_RE.sub(" -> ", _PROC_PID_RE.sub("", ln)) for ln in lines[1:]}
+            if lines[0].startswith("LD_PRELOAD"):
+                rest = {_PRELOAD_WHO_RE.sub("", ln) for ln in rest}
+            return "\n".join([lines[0]] + sorted(rest))
     return re.sub(r"\s+", " ", (text or "").strip())
 
 
@@ -5297,10 +5374,11 @@ class Daemon:
         else:
             cmd = find_command(job.path, stat=True)
         with job.proc_lock:
-            job.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                                        stderr=subprocess.DEVNULL, text=True, bufsize=1)
+            job.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+                                        errors="surrogateescape", bufsize=1)
         last_emit = time.time()
         batch = []
+        bad_names = 0
         mf_files = (manifest or {}).get("files") or {}
         root = job.path.rstrip("/") + "/"
 
@@ -5329,6 +5407,11 @@ class Daemon:
                 if not line.strip():
                     continue
                 e = parse_find_line(line)
+                try:
+                    e[0].encode("utf-8")
+                except UnicodeEncodeError:
+                    bad_names += 1                                # nom qui n'est pas de l'UTF-8 : signalé plus bas
+                    continue
                 if skip and hash(e[0]) in skip:
                     job.skipped += 1
                     continue
@@ -5349,6 +5432,15 @@ class Daemon:
                     last_emit = time.time()
             flush(out)
         job.proc.wait()
+        if bad_names:
+            # Nom de fichier qui n'est pas de l'UTF-8 (ancien codage sur un disque ext4, support monté sans l'option
+            # utf8…) : la suite du scan manipule les chemins comme du texte et ne sait pas le transmettre au moteur.
+            # Le fichier n'est pas analysé, mais il est compté et signalé — avant, un seul nom de ce genre faisait
+            # échouer tout le scan (« Internal error: 'utf-8' codec can't decode byte… »).
+            job.errors += bad_names
+            msg = f"⚠ {bad_names} file(s) not scanned: file name is not valid UTF-8"
+            self.write_log(msg)
+            self.emit_line("error", msg)
         return job.found
 
     def _resume_offset(self, job):
@@ -7342,7 +7434,10 @@ class Daemon:
         return self._trusted_set
 
     def central_trusted(self, exe):
-        """Liste blanche centrale Dukiwi (signée) + programmes de confiance de la politique d'entreprise."""
+        """Liste blanche centrale Dukiwi (signée) + programmes de confiance de la politique d'entreprise + applications
+        Dukiwi elles-mêmes (reconnues d'office)."""
+        if dukiwi_program(exe):
+            return True
         for pat in self.central_patterns:
             if fnmatch.fnmatch(exe, pat):
                 return True
@@ -7592,8 +7687,8 @@ class Daemon:
                 ts = datetime.fromisoformat(a.get("time", "")).timestamp()
             except ValueError:
                 continue
-            if ts < cutoff:
-                continue
+            if ts < cutoff or a.get("ignored"):
+                continue                                 # « C'est OK » : l'alerte reste listée mais ne compte plus
             # Veille noyau/processus (kind integrity) : c'est le relevé d'intégrité courant qui fait foi (rouge tant que
             # l'avertissement est là, vert dès que le processus a disparu ou a été approuvé), pas l'alerte de 24 h.
             if a.get("severity") == "danger" and a.get("kind") not in ("honeypot", "integrity"):
@@ -7693,7 +7788,7 @@ class Daemon:
                 return os.stat(str(req.get("path") or "")).st_uid != uid
             except OSError:
                 return True
-        if cmd in ("set_settings", "trust_program", "untrust_program", "acknowledge_persistence", "acknowledge_integrity", "acknowledge_sudoers", "hid_allow", "hid_forget", "network_gateway_accept",
+        if cmd in ("set_settings", "trust_program", "untrust_program", "acknowledge_persistence", "acknowledge_integrity", "acknowledge_alert", "acknowledge_sudoers", "hid_allow", "hid_forget", "network_gateway_accept",
                    "system_upgrade", "harden_apply", "forget_network"):
             return bool(self.settings.get("family_mode"))
         return False
@@ -8005,7 +8100,16 @@ class Daemon:
             return {"ok": ok, "error": "" if ok else ("invalid_ip" if text == "invalid_ip" else "command_failed"), "detail": text}
 
         if cmd == "honeypot_ignore":
-            ok = self.honeypot.ignore(str(req.get("ip") or ""), remove=bool(req.get("remove")))
+            ip, remove = str(req.get("ip") or "").strip(), bool(req.get("remove"))
+            ok = self.honeypot.ignore(ip, remove=remove)
+            if ok:
+                # Alertes déjà listées pour cet appareil : ignorées elles aussi (bleues dans la liste), ou recomptées
+                alerts = list(self.state.get("alerts") or [])
+                marked = [a for a in alerts if a.get("kind") == "honeypot" and a.get("ip") == ip]
+                for a in marked:
+                    a["ignored"] = not remove
+                if marked:
+                    self.state.update(alerts=alerts)
             self.refresh_overall()
             return {"ok": ok, "error": "" if ok else "invalid_ip"}
 
@@ -8832,6 +8936,24 @@ class Daemon:
             self.broadcast({"event": "integrity", "integrity": self.integrity_payload()})
             self.refresh_overall()
             return {"ok": True, "key": key}
+
+        if cmd == "acknowledge_alert":
+            # « C'est OK » sur une alerte grave de la liste : elle y reste, marquée ignorée, mais ne tient plus le bouclier
+            # en rouge pendant 24 h (remove : la recompter). Une nouvelle alerte du même genre compte à nouveau.
+            when, kind = str(req.get("time") or "")[:40], str(req.get("kind") or "")[:40]
+            title = req.get("title")
+            alerts = list(self.state.get("alerts") or [])
+            marked = [a for a in alerts if when and a.get("time") == when and a.get("kind") == kind
+                      and (title is None or str(a.get("title") or a.get("comm") or "") == str(title))]
+            if not marked:
+                return {"ok": False, "error": "not_found"}
+            for a in marked:
+                a["ignored"] = not req.get("remove")
+            self.state.update(alerts=alerts)
+            self.write_log(f"alert {'counted again' if req.get('remove') else 'ignored'} ({kind}): "
+                           f"{str(marked[0].get('title') or marked[0].get('comm') or '')[:120]}")
+            self.refresh_overall()
+            return {"ok": True, "n": len(marked)}
 
         if cmd == "acknowledge_vuln":
             # « Ignorer » une ou plusieurs failles sans correctif (par CVE, tous paquets confondus) ; remove les réaffiche

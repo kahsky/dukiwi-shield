@@ -939,7 +939,7 @@ function simpleOverall() {
     // Menaces / quarantaine
     // Même règle que le service : alertes graves des dernières 24 h, hors pot de miel (ligne Réseau local) et hors veille
     // d'intégrité (ligne Intégrité du système, qui suit le relevé courant)
-    const danger = alerts.find(a => a.severity === 'danger' && a.kind !== 'integrity' && a.kind !== 'honeypot' && Date.now() - new Date(a.time).getTime() < 86400e3);
+    const danger = alerts.find(a => alertCountsRed(a) && !a.ignored && Date.now() - new Date(a.time).getTime() < 86400e3);
     const lastScan = lastStatus && lastStatus.last_scan;
     let thrState = 'ok', thrValue = t('simple.threats.none');
     const suspended = (lastStatus && lastStatus.suspended) || [];
@@ -1828,6 +1828,29 @@ function renderGuardAlert(a) {
         </div>`;
 }
 
+// Alerte qui tient le bouclier en rouge pendant 24 h (même règle que le service : grave, hors pot de miel et hors veille
+// d'intégrité, qui ont leurs propres boutons) tant qu'elle n'est pas ignorée.
+function alertCountsRed(a) { return a.severity === 'danger' && a.kind !== 'integrity' && a.kind !== 'honeypot'; }
+
+function ackAlert(time, kind, title, remove = false) { sendToBackend({ action: 'acknowledge_alert', time, kind, title, remove }); }
+
+// « C'est OK » sur toute alerte rouge de la liste, quel que soit son gabarit : une fois ignorée, elle passe en bleu avec
+// un badge, le bouclier revient à la normale, et « Annuler » la fait compter à nouveau.
+function decorateAlert(a, html) {
+    if (!alertCountsRed(a)) return html;
+    const args = `'${escapeJs(a.time || '')}','${escapeJs(a.kind || '')}','${escapeJs(String(a.title || a.comm || ''))}'`;
+    const extra = a.ignored
+        ? `<span class="badge badge-green">${t('system.alert.ignored_badge')}</span> <button class="btn btn-secondary btn-sm" onclick="ackAlert(${args}, true)">${t('system.alert.unignore')}</button>`
+        : `<button class="btn btn-secondary btn-sm" onclick="ackAlert(${args})">${t('system.alert.its_ok')}</button>`;
+    if (a.ignored) html = html.replace(/alert-danger/g, 'alert-info').replace(/badge-red/g, 'badge-blue');
+    // À la suite des boutons existants de l'alerte (la rangée ne contient que des boutons et des badges), sinon sa propre rangée
+    const row = html.lastIndexOf('<div class="alert-actions">');
+    const close = row >= 0 ? html.indexOf('</div>', row) : -1;
+    if (close >= 0) return `${html.slice(0, close)} ${extra}${html.slice(close)}`;
+    const end = html.lastIndexOf('</div>');
+    return end < 0 ? html + extra : `${html.slice(0, end)}<div class="alert-actions">${extra}</div>${html.slice(end)}`;
+}
+
 function renderAlerts(available = true) {
     const el = $('alertsList');
     $('alertsHint').textContent = available ? '' : t('system.alerts.unavailable');
@@ -1835,7 +1858,10 @@ function renderAlerts(available = true) {
         el.innerHTML = `<p class="text-muted">${t('system.alerts.none')}</p>`;
         return;
     }
-    el.innerHTML = alerts.map(a => {
+    el.innerHTML = alerts.map(a => decorateAlert(a, alertHtml(a))).join('');
+}
+
+function alertHtml(a) {
         if (a.kind === 'connection') {
             return `
         <div class="alert-item ${a.severity === 'danger' ? 'alert-danger' : 'alert-info'}">
@@ -1910,15 +1936,20 @@ function renderAlerts(available = true) {
         }
         if (a.kind === 'honeypot') {
             const who = a.host ? `${a.host} (${a.ip})` : (a.ip || '?');
+            // Appareil ignoré : ses balayages ne sont plus qu'une information (bleue), « Réafficher » le fait recompter
+            const hpInfo = a.ignored || a.severity === 'info';
+            const hpIgnore = a.ignored
+                ? `<span class="badge badge-green">${t('system.alert.ignored_badge')}</span> <button class="btn btn-secondary btn-sm" onclick="honeypotIgnore('${escapeJs(a.ip || '')}', true)">${t('honeypot.unignore')}</button> `
+                : `<button class="btn btn-secondary btn-sm" onclick="honeypotIgnore('${escapeJs(a.ip || '')}')">${t('security.ignore')}</button> `;
             return `
-        <div class="alert-item ${a.severity === 'danger' ? 'alert-danger' : 'alert-warn'}">
+        <div class="alert-item ${hpInfo ? 'alert-info' : a.severity === 'danger' ? 'alert-danger' : 'alert-warn'}">
             <div class="alert-head">
-                <span class="badge ${a.severity === 'danger' ? 'badge-red' : 'badge-amber'}">${t('system.alert.honeypot')}</span>
+                <span class="badge ${hpInfo ? 'badge-blue' : a.severity === 'danger' ? 'badge-red' : 'badge-amber'}">${t('system.alert.honeypot')}</span>
                 <span class="alert-program">${escapeHtml(who)}</span>
                 <span class="alert-meta">${formatDateTime(a.time)}${a.mac ? ` · ${escapeHtml(a.mac)}` : ''}${a.gateway ? ` · ${t('honeypot.source.gateway')}` : ''}</span>
             </div>
             <div class="alert-body">${t('popup.honeypot.body', { who: escapeHtml(who), n: (a.ports || []).length, ports: escapeHtml((a.ports || []).join(', ') || '—') })}${(a.fw_ports || []).length ? ` ${t('popup.honeypot.fw_ports', { ports: escapeHtml(a.fw_ports.join(', ')) })}` : ''}${(a.reasons || []).length ? ` — ${a.reasons.map(r => t(`alert.reason.${r}`)).join(', ')}` : ''}${(a.samples || []).length ? `<div class="honeypot-samples">${a.samples.map(x => escapeHtml(x)).join(' · ')}</div>` : ''}</div>
-            <div class="alert-actions">${a.gateway ? '' : `<button class="btn btn-danger btn-sm" onclick="honeypotBlock('${escapeJs(a.ip || '')}')">${t('honeypot.block')}</button> `}<button class="btn btn-secondary btn-sm" onclick="setViewMode('advanced'); switchTab('security'); scrollToHoneypot()">${t('popup.btn.details')}</button></div>
+            <div class="alert-actions">${a.gateway ? '' : `<button class="btn btn-danger btn-sm" onclick="honeypotBlock('${escapeJs(a.ip || '')}')">${t('honeypot.block')}</button> `}${hpIgnore}<button class="btn btn-secondary btn-sm" onclick="setViewMode('advanced'); switchTab('security'); scrollToHoneypot()">${t('popup.btn.details')}</button></div>
         </div>`;
         }
         if (GUARD_KINDS.includes(a.kind)) return renderGuardAlert(a);
@@ -1978,7 +2009,6 @@ function renderAlerts(available = true) {
             ${(a.sample || []).length ? `<details class="alert-sample"><summary>${t('system.alert.sample', { n: (a.sample || []).length })}</summary>${(a.sample || []).map(p => `<div>${escapeHtml(p)}</div>`).join('')}</details>` : ''}
             <div class="alert-actions"><button class="btn btn-secondary btn-sm" onclick="startScan('${escapeJs(a.top_dir || '/')}')">${t('popup.btn.scan_folder')}</button>${a.exe ? ` <button class="btn btn-secondary btn-sm" onclick="trustProgram('${escapeJs(a.exe)}','${escapeJs(a.comm || '')}')">${t('popup.btn.its_me')}</button>` : ''}${a.suspended ? ` <button class="btn btn-danger btn-sm" onclick="sendToBackend({action:'process_action', pid:${a.pid}, action:'kill'})">${t('popup.btn.kill')}</button> <button class="btn btn-secondary btn-sm" onclick="sendToBackend({action:'process_action', pid:${a.pid}, action:'continue'})">${t('popup.btn.resume')}</button>` : ''}</div>
         </div>`;
-    }).join('');
 }
 
 

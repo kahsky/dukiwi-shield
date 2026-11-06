@@ -43,6 +43,7 @@ MAX_PAYLOAD = 512
 SOURCES_MAX = 60
 EVENTS_MAX = 150
 ALERT_COOLDOWN = 600                      # s entre deux alertes pour la même source (sauf aggravation)
+IGNORED_ALERT_COOLDOWN = 6 * 3600         # s entre deux informations pour un appareil ignoré
 SCAN_WINDOW = 180                         # s : fenêtre dans laquelle plusieurs ports touchés = balayage
 FW_SCAN_WARN = 5                          # ports distincts (leurres + refus du pare-feu) → balayage
 FW_SCAN_DANGER = 15
@@ -494,8 +495,9 @@ class Honeypot(threading.Thread):
         now = time.time()
         with self.lock:
             src = self.sources.get(ip)
-            if not src or src.get("ignored"):
+            if not src:
                 return
+            ignored = bool(src.get("ignored"))
             recent = [k for k, ts in src["port_times"].items() if now - ts <= SCAN_WINDOW]
             hp_hits = [k for k in recent if not k.startswith("fw:")]
             fw_hits = [k for k in recent if k.startswith("fw:")]
@@ -512,11 +514,20 @@ class Honeypot(threading.Thread):
                 return                                    # refus isolés du pare-feu : bruit, pas (encore) un balayage
             danger = any(r in reasons for r in ("port_scan", "login_attempt", "exploit_attempt")) or len(fw_hits) >= FW_SCAN_DANGER
             severity = "danger" if danger else "warn"
-            src["severity"] = severity
+            # Appareil ignoré (imprimante, box, NAS… qui sonde le réseau par construction) : ses balayages de ports ne sont
+            # plus qu'une information de temps en temps, sans couleur du bouclier. Une tentative de connexion ou
+            # d'intrusion faite depuis qu'il est ignoré reste une alerte rouge.
+            base = src.get("ignored_intents") or {}
+            intrusion = any(int(src["intents"].get(k) or 0) > int(base.get(k) or 0) for k in ("login", "exploit"))
+            quiet = ignored and not intrusion
+            if quiet:
+                severity = "info"
+                reasons = [r for r in reasons if r not in ("login_attempt", "exploit_attempt")]   # tentatives d'avant « Ignorer »
+            src["severity"] = "" if quiet else severity
             escalated = severity == "danger" and src.get("alerted_severity") != "danger"
             if src.get("blocked"):
                 return
-            if now - float(src.get("alerted_at") or 0) < ALERT_COOLDOWN and not escalated:
+            if now - float(src.get("alerted_at") or 0) < (IGNORED_ALERT_COOLDOWN if quiet else ALERT_COOLDOWN) and not escalated:
                 return
             src["alerted_at"] = now
             src["alerted_severity"] = severity
@@ -532,7 +543,7 @@ class Honeypot(threading.Thread):
                      "ports": ports[:12], "fw_ports": fw_ports, "count": src["count"], "intents": intents,
                      "samples": list(src["samples"]), "reasons": reasons, "title": src.get("host") or ip,
                      "detail": (detail + (" · " + top if top else ""))[:200], "comm": "", "exe": "", "pid": 0, "user": "",
-                     "top_dir": "", "sample": [], "cmdline": ""}
+                     "top_dir": "", "sample": [], "cmdline": "", "ignored": quiet}
             self.dirty = True
         self.daemon.publish_alert(alert)
         try:
@@ -747,6 +758,10 @@ class Honeypot(threading.Thread):
             src["ignored"] = not remove
             if not remove:
                 src["severity"] = ""
+                # Tentatives de connexion / d'intrusion déjà vues : seules les suivantes rallumeront l'alerte rouge
+                src["ignored_intents"] = {k: int(v or 0) for k, v in (src.get("intents") or {}).items()}
+            else:
+                src.pop("ignored_intents", None)
             self.dirty = True
         self._wlog(f"honeypot: {'unignore' if remove else 'ignore'} {ip}")
         self._persist()
@@ -787,10 +802,12 @@ class Honeypot(threading.Thread):
     def summary(self):
         now = time.time()
         with self.lock:
-            recent = [s for s in self.sources.values() if now - _parse_iso(s.get("last")) <= 86400 and not s.get("ignored")]
+            recent_all = [s for s in self.sources.values() if now - _parse_iso(s.get("last")) <= 86400]
+            recent = [s for s in recent_all if not s.get("ignored")]
+            # Un appareil ignoré n'a une gravité que s'il a tenté une connexion ou une intrusion depuis : il compte alors
             return {"enabled": bool(self.daemon.settings.get("honeypot")), "active": bool(self.socks), "ports": sorted(self.socks),
                     "fw_log": self.fw_log, "sources_24h": len(recent),
-                    "danger_24h": sum(1 for s in recent if s.get("severity") == "danger" and not s.get("blocked")),
+                    "danger_24h": sum(1 for s in recent_all if s.get("severity") == "danger" and not s.get("blocked")),
                     "last": self.events[0]["t"] if self.events else None, "blocked": len(self.blocked),
                     "answered": bool(self.daemon.state.get("honeypot_answered"))}
 
