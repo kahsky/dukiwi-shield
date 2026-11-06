@@ -8,7 +8,7 @@
 set -e
 
 APP_NAME="dukiwi-shield"
-VERSION="2.7.11"
+VERSION="2.7.12"
 ARCH="all"
 PKG_DIR="${APP_NAME}_${VERSION}_${ARCH}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -65,6 +65,10 @@ cp "${SCRIPT_DIR}/dukiwi-shield-cli"                      "${PKG_DIR}/opt/${APP_
 cp "${SCRIPT_DIR}/dukiwi-shield-shred"                    "${PKG_DIR}/opt/${APP_NAME}/"
 mkdir -p "${PKG_DIR}/usr/bin"
 install -m 755 "${SCRIPT_DIR}/dukiwi-shield-launcher"     "${PKG_DIR}/usr/bin/dukiwi-shield"
+# Debian changelog, generated from the feature list of README.md (also served by the repository for "apt changelog")
+mkdir -p "${PKG_DIR}/usr/share/doc/${APP_NAME}"
+python3 "${SCRIPT_DIR}/tools/changelog.py" "${VERSION}" > "${PKG_DIR}/usr/share/doc/${APP_NAME}/changelog"
+gzip -9nf "${PKG_DIR}/usr/share/doc/${APP_NAME}/changelog"
 cp "${SCRIPT_DIR}/systemd/"*.service               "${PKG_DIR}/lib/systemd/system/"
 cp "${SCRIPT_DIR}/systemd/"*.timer                 "${PKG_DIR}/lib/systemd/system/"
 cp "${SCRIPT_DIR}/ui/index.html"                    "${PKG_DIR}/opt/${APP_NAME}/ui/"

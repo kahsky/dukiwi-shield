@@ -48,15 +48,15 @@ versions itself (popup or Security tab) and can install them on its own when the
 
 ### Direct download
 
-- Mint / Ubuntu: [dukiwi-shield_2.7.11_all.deb](https://www.dukiwi.com/repo/dukiwi-shield/dukiwi-shield_2.7.11_all.deb)
-- Fedora: [dukiwi-shield-2.7.11-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/dukiwi-shield-2.7.11-1.noarch.rpm)
+- Mint / Ubuntu: [dukiwi-shield_2.7.12_all.deb](https://www.dukiwi.com/repo/dukiwi-shield/dukiwi-shield_2.7.12_all.deb)
+- Fedora: [dukiwi-shield-2.7.12-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/dukiwi-shield-2.7.12-1.noarch.rpm)
 - All versions: [www.dukiwi.com/repo](https://www.dukiwi.com/repo)
 
 ### Installing a downloaded package by hand
 
 ```bash
-sudo apt install ./dukiwi-shield_2.7.11_all.deb          # Mint / Ubuntu
-sudo dnf install ./dukiwi-shield-2.7.11-1.noarch.rpm      # Fedora
+sudo apt install ./dukiwi-shield_2.7.12_all.deb          # Mint / Ubuntu
+sudo dnf install ./dukiwi-shield-2.7.12-1.noarch.rpm      # Fedora
 ```
 
 The installation enables the system service and the scheduler, then starts the initial scan:
@@ -78,6 +78,9 @@ sudo dnf remove dukiwi-shield   # Fedora
 
 ## Features
 
+- **2.7.12: changelog for the package manager** — the package now carries its changelog
+  (`/usr/share/doc/dukiwi-shield/changelog.gz`, built from this list), and the APT repository serves it, so
+  `apt changelog dukiwi-shield` shows what changed in each version.
 - **2.7.11: the built-in update works on Fedora** — versions were compared with dpkg, which Fedora does not have: the
   built-in update never saw a newer version there (installs through the dnf repository were not affected). Versions
   are now compared in Python with the same rules as dpkg, which also makes the vulnerability report faster (no program
@@ -810,8 +813,8 @@ python3 dukiwi-shield.py
 ## Building the packages
 
 ```bash
-./build-deb.sh        # dukiwi-shield_2.7.11_all.deb   (Mint / Ubuntu)
-./build-rpm.sh        # dukiwi-shield-2.7.11-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
+./build-deb.sh        # dukiwi-shield_2.7.12_all.deb   (Mint / Ubuntu)
+./build-rpm.sh        # dukiwi-shield-2.7.12-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
 ```
 
 Both packages share the same file tree (`build-deb.sh --stage-only`) and the same signed integrity manifest.

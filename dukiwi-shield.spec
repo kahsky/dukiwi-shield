@@ -161,6 +161,7 @@ udevadm control --reload-rules >/dev/null 2>&1 || true
 %{_datadir}/nemo/actions/dukiwi-shield-sandbox.nemo_action
 %{_datadir}/nemo/actions/dukiwi-shield-shred.nemo_action
 /usr/bin/dukiwi-shield
+%doc %{_docdir}/dukiwi-shield/changelog.gz
 %{_datadir}/polkit-1/actions/com.dukiwi.dukiwi-shield.policy
 %config(noreplace) %{_sysconfdir}/xdg/autostart/dukiwi-shield-autostart.desktop
 %config(noreplace) %{_sysconfdir}/yum.repos.d/dukiwi.repo
