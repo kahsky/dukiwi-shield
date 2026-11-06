@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Dukiwi Shield — hygiène de sécurité (service système).
+Dukiwi Shield — security hygiene (system service).
 
-1. Qualité des mots de passe : module pam_pwquality actif et longueur minimale (12 caractères, mots du dictionnaire
-   et nom d'utilisateur refusés) pour les nouveaux mots de passe ; fichier unique 90-dukiwi-shield.conf.
-2. Réglages de sécurité des navigateurs : Firefox (protection contre les sites trompeurs, mode HTTPS uniquement,
-   extensions signées) et Chrome/Chromium/Brave (navigation sécurisée). Correction : user.js de Firefox pour
-   l'utilisateur qui le demande, règles « recommandées » (modifiables par l'utilisateur) pour Chrome.
-3. Exposition sur Internet : le serveur Dukiwi essaie de joindre l'adresse publique (consentement à chaque test) ;
-   UPnP : le routeur répond-il, et quels ports a-t-il ouverts tout seul vers cet ordinateur ?
+1. Password quality: pam_pwquality module active and minimum length (12 characters, dictionary words
+   and user name rejected) for new passwords; single file 90-dukiwi-shield.conf.
+2. Browser security settings: Firefox (protection against deceptive sites, HTTPS-only mode,
+   signed extensions) and Chrome/Chromium/Brave (safe browsing). Fix: Firefox user.js for the
+   user who asks for it, "recommended" policies (changeable by the user) for Chrome.
+3. Internet exposure: the Dukiwi server tries to reach the public address (consent for each test);
+   UPnP: does the router answer, and which ports has it opened on its own to this computer?
 (c) 2026 Dukiwi SA - Estavayer-le-Lac
 """
 
@@ -34,7 +34,7 @@ FIREFOX_PREFS = {"browser.safebrowsing.malware.enabled": "true", "browser.safebr
 CHROME_POLICY_DIRS = ("/etc/opt/chrome/policies/recommended", "/etc/chromium/policies/recommended",
                       "/etc/chromium-browser/policies/recommended", "/etc/brave/policies/recommended", "/etc/opt/edge/policies/recommended")
 CHROME_POLICY_FILE = "dukiwi-shield-security.json"
-CHROME_POLICY = {"SafeBrowsingProtectionLevel": 1}        # Chrome passe déjà en HTTPS tout seul (HTTPS-Upgrades, v115+)
+CHROME_POLICY = {"SafeBrowsingProtectionLevel": 1}        # Chrome already switches to HTTPS on its own (HTTPS-Upgrades, v115+)
 EXPOSURE_URL = "https://www.dukiwi.com/repo/api/exposure.php"
 
 
@@ -53,9 +53,9 @@ def _read(path):
         return ""
 
 
-# ═══ 1. Qualité des mots de passe ═════════════════════════════════════════
+# ═══ 1. Password quality ══════════════════════════════════════════════════
 def password_policy():
-    """{module, minlen, dictcheck, ok} : pam_pwquality (ou pam_passwdqc) dans la pile PAM des mots de passe, et réglages."""
+    """{module, minlen, dictcheck, ok}: pam_pwquality (or pam_passwdqc) in the password PAM stack, and settings."""
     stack = "".join(_read(p) for p in ("/etc/pam.d/common-password", "/etc/pam.d/system-auth", "/etc/pam.d/password-auth",
                                        "/etc/pam.d/passwd"))
     active = [ln for ln in stack.splitlines() if not ln.strip().startswith("#")]
@@ -66,7 +66,7 @@ def password_policy():
             m = re.match(r"^\s*(\w+)\s*=\s*(\S+)", ln)
             if m:
                 conf[m.group(1)] = m.group(2)
-    for ln in active:                                   # options passées au module dans la pile PAM : prioritaires
+    for ln in active:                                   # options passed to the module in the PAM stack: take precedence
         if "pam_pwquality" in ln:
             conf.update(dict(re.findall(r"\b(minlen|dictcheck|usercheck)=(\S+)", ln)))
     try:
@@ -79,8 +79,8 @@ def password_policy():
 
 
 def password_policy_apply():
-    """Installe le module si besoin (Debian/Ubuntu/Mint : libpam-pwquality l'ajoute à common-password) puis écrit les
-    réglages. Ne touche jamais aux fichiers PAM eux-mêmes. Retourne (ok, erreur)."""
+    """Installs the module if needed (Debian/Ubuntu/Mint: libpam-pwquality adds it to common-password) then writes the
+    settings. Never touches the PAM files themselves. Returns (ok, error)."""
     if not password_policy()["module"]:
         if shutil.which("apt-get"):
             r = run(["apt-get", "install", "-y", "libpam-pwquality"], timeout=600,
@@ -100,7 +100,7 @@ def password_policy_apply():
     return pol["ok"], "" if pol["ok"] else "policy_not_active"
 
 
-# ═══ 2. Réglages de sécurité des navigateurs ══════════════════════════════
+# ═══ 2. Browser security settings ═════════════════════════════════════════
 def firefox_profiles(home):
     out = []
     for pattern in (".mozilla/firefox/*", "snap/firefox/common/.mozilla/firefox/*", ".var/app/org.mozilla.firefox/.mozilla/firefox/*"):
@@ -112,7 +112,7 @@ def firefox_profiles(home):
 
 def firefox_issues(profile):
     prefs = {}
-    for name in ("prefs.js", "user.js"):                # user.js l'emporte au démarrage
+    for name in ("prefs.js", "user.js"):                # user.js wins at startup
         for k, v in re.findall(r'user_pref\("([^"]+)",\s*([^)]+)\);', _read(os.path.join(profile, name))):
             prefs[k] = v.strip()
     issues = []
@@ -157,7 +157,7 @@ def chrome_issues(browser, profile):
 
 
 def browser_security(users):
-    """[{browser, user, profile, issues}] pour chaque profil trouvé."""
+    """[{browser, user, profile, issues}] for each profile found."""
     out = []
     for pw in users:
         if pw.pw_uid < 1000:
@@ -170,7 +170,7 @@ def browser_security(users):
 
 
 def firefox_harden(profile, pw):
-    """Bloc de réglages ajouté (ou remplacé) dans user.js, fichier de l'utilisateur ; Firefox le lit au démarrage."""
+    """Block of settings added (or replaced) in user.js, the user's file; Firefox reads it at startup."""
     path = os.path.join(profile, "user.js")
     text = _read(path)
     text = re.sub(re.escape(FIREFOX_MARK_BEGIN) + r".*?" + re.escape(FIREFOX_MARK_END) + r"\n?", "", text, flags=re.S)
@@ -208,9 +208,9 @@ def chrome_harden(browsers):
     return done
 
 
-# ═══ 3. Exposition sur Internet et UPnP ═══════════════════════════════════
+# ═══ 3. Internet exposure and UPnP ════════════════════════════════════════
 def exposure_test(ports, timeout=40):
-    """Demande au serveur Dukiwi de tester l'adresse publique de cet ordinateur. Retourne le JSON de la réponse."""
+    """Asks the Dukiwi server to test this computer's public address. Returns the JSON of the response."""
     body = json.dumps({"consent": True, "ports": sorted({int(p) for p in ports if 0 < int(p) < 65536})[:30]}).encode()
     req = urllib.request.Request(EXPOSURE_URL, data=body, headers={"Content-Type": "application/json", "User-Agent": "dukiwi-shield"})
     try:
@@ -234,7 +234,7 @@ def _local_ips():
 
 
 def upnp_discover(timeout=3.0):
-    """Routeur UPnP (InternetGatewayDevice) du réseau : adresse de description, ou None."""
+    """UPnP router (InternetGatewayDevice) of the network: description address, or None."""
     msg = ("M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: \"ssdp:discover\"\r\nMX: 2\r\n"
            "ST: urn:schemas-upnp-org:device:InternetGatewayDevice:1\r\n\r\n").encode()
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
@@ -258,9 +258,9 @@ def upnp_discover(timeout=3.0):
     return None
 
 
-# Adresses de description les plus courantes (FRITZ!Box, miniupnpd d'OpenWrt et de nombreux routeurs, Broadcom…) :
-# essayées en TCP vers la passerelle quand la réponse SSDP n'arrive pas (le pare-feu local la rejette souvent, car elle
-# vient de l'adresse du routeur et non de l'adresse multicast interrogée).
+# Most common description addresses (FRITZ!Box, miniupnpd from OpenWrt and many routers, Broadcom…):
+# tried over TCP to the gateway when the SSDP reply does not arrive (the local firewall often rejects it, because it
+# comes from the router's address and not from the queried multicast address).
 IGD_CANDIDATES = ((49000, "/igddesc.xml"), (5000, "/rootDesc.xml"), (1900, "/rootDesc.xml"), (49152, "/rootDesc.xml"),
                   (2189, "/rootDesc.xml"), (1780, "/InternetGatewayDevice.xml"), (52869, "/picsdesc.xml"), (80, "/rootDesc.xml"))
 
@@ -322,7 +322,7 @@ def upnp_mappings(max_entries=64):
             try:
                 xml = _soap(control, service, "GetGenericPortMappingEntry", f"<NewPortMappingIndex>{i}</NewPortMappingIndex>")
             except (OSError, urllib.error.HTTPError):
-                break                                   # fin de la liste (SpecifiedArrayIndexInvalid) ou refus
+                break                                   # end of the list (SpecifiedArrayIndexInvalid) or refusal
             vals = {el.tag.split("}")[-1]: (el.text or "") for el in ET.fromstring(xml).iter()}
             client = vals.get("NewInternalClient", "")
             out["mappings"].append({"external": vals.get("NewExternalPort", ""), "protocol": vals.get("NewProtocol", ""),

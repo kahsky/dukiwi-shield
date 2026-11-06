@@ -1,12 +1,12 @@
 #!/bin/bash
-# Construit les extensions « Contrôle des liens » (Firefox, Chrome/Chromium/Edge/Brave) et « Protection des courriels »
-# (Thunderbird) dans dist/extensions/ :
-#   urlguard-chromium/  urlguard-firefox/  mailguard-thunderbird/   (dossiers décompressés, installables à la main)
+# Builds the "Link Guard" (Firefox, Chrome/Chromium/Edge/Brave) and "E-mail Protection" (Thunderbird) extensions
+# in dist/extensions/:
+#   urlguard-chromium/  urlguard-firefox/  mailguard-thunderbird/   (unpacked folders, installable by hand)
 #   dukiwi-shield-urlguard-firefox.xpi  dukiwi-shield-mailguard.xpi  dukiwi-shield-urlguard-chromium.zip
-#   dukiwi-shield-urlguard-<version>.crx + urlguard-update.xml      (si Google Chrome est installé : empaquetage CRX)
-#   manifest-info.json (identifiant Chrome dérivé de la clé, identifiants Gecko, URL de mise à jour)
-# La clé privée Chrome (chrome-extension.pem) vit dans ../repo/keys/ (jamais dans git) ; générée si absente.
-# Usage : ./build-extensions.sh [--quiet]
+#   dukiwi-shield-urlguard-<version>.crx + urlguard-update.xml      (if Google Chrome is installed: CRX packing)
+#   manifest-info.json (Chrome ID derived from the key, Gecko IDs, update URL)
+# The Chrome private key (chrome-extension.pem) lives in ../repo/keys/ (never in git); generated if missing.
+# Usage: ./build-extensions.sh [--quiet]
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VERSION="$(sed -n 's/^VERSION="\(.*\)"/\1/p' "$SCRIPT_DIR/build-deb.sh" | head -1)"
@@ -22,7 +22,7 @@ mkdir -p "$OUT"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-# ── Clé Chrome : identifiant stable de l'extension (manifest "key") et signature du CRX ──
+# ── Chrome key: stable extension ID (manifest "key") and CRX signature ──
 if [ ! -f "$KEY" ]; then
     mkdir -p "$(dirname "$KEY")"
     openssl genrsa -out "$KEY" 2048 2>/dev/null
@@ -34,7 +34,7 @@ openssl rsa -in "$KEY" -pubout -outform DER -out "$PUB_DER" 2>/dev/null
 PUB_B64="$(base64 -w0 "$PUB_DER")"
 CHROME_ID="$(sha256sum "$PUB_DER" | head -c 32 | tr '0-9a-f' 'a-p')"
 
-# ── Icônes PNG : bouclier vert avec coche (PIL), aux tailles des manifestes ──
+# ── PNG icons: green shield with a check mark (PIL), at the manifest sizes ──
 mkdir -p "$TMP/icons"
 python3 - "$TMP/icons" <<'PY'
 import sys
@@ -73,12 +73,12 @@ build_dir urlguard-chromium chromium.json browser
 build_dir urlguard-firefox firefox.json browser
 build_dir mailguard-thunderbird thunderbird.json thunderbird
 
-# ── Archives : XPI (Firefox, Thunderbird) et ZIP (Chrome, « charger l'extension non empaquetée » ou boutique) ──
+# ── Archives: XPI (Firefox, Thunderbird) and ZIP (Chrome, "Load unpacked" or store) ──
 (cd "$OUT/urlguard-firefox" && zip -qr -X "$OUT/dukiwi-shield-urlguard-firefox.xpi" .)
 (cd "$OUT/mailguard-thunderbird" && zip -qr -X "$OUT/dukiwi-shield-mailguard.xpi" .)
 (cd "$OUT/urlguard-chromium" && zip -qr -X "$OUT/dukiwi-shield-urlguard-chromium.zip" .)
 
-# ── CRX signé avec la clé (empaqueteur CRX3 en Python) et update.xml pour l'installation par politique ──
+# ── CRX signed with the key (CRX3 packer in Python) and update.xml for installation by policy ──
 CRX_NAME="dukiwi-shield-urlguard-$VERSION.crx"
 CRX_OK=false
 if CRX_ID="$(python3 "$SCRIPT_DIR/crx3-pack.py" "$OUT/urlguard-chromium" "$KEY" "$OUT/$CRX_NAME" 2>/dev/null)" && [ -s "$OUT/$CRX_NAME" ]; then

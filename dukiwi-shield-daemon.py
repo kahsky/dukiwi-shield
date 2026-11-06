@@ -1,30 +1,30 @@
 #!/usr/bin/env python3
 """
-Dukiwi Shield — service système (root).
+Dukiwi Shield — system service (root).
 
-Tourne en permanence via systemd et écoute sur un socket Unix. Il permet à un
-utilisateur sans droits administrateur de demander :
-  - un scan complet du système (ou d'un répertoire système / de son home),
-  - une mise à jour des signatures (freshclam),
-sans saisir de mot de passe. Le GUI se rabat sur pkexec si le service est absent.
+Runs permanently via systemd and listens on a Unix socket. It lets a
+user without administrator rights request:
+  - a full system scan (or of a system directory / their home),
+  - a signature update (freshclam),
+without entering a password. The GUI falls back to pkexec if the service is missing.
 
-Il exécute aussi :
-  - le scan complet automatique après la première installation,
-  - les mises à jour planifiées (dukiwi-shield-update.timer : tous les jours
-    à 07:00 et 5 minutes après le démarrage),
-  - la surveillance des rafales d'écritures (fanotify) : un programme qui modifie
-    beaucoup de fichiers est signalé (info), ou marqué "danger potentiel" s'il
-    est inconnu du système, s'exécute depuis un dossier temporaire/personnel,
-    ou si clamd reconnaît son exécutable,
-  - l'analyse des supports USB avant leur mise à disposition (udev + montage
-    privé) — les disques durs USB volumineux font l'objet d'une question,
-  - le relevé de l'état du système : mises à jour de sécurité en attente et
-    CVE corrigées par celles-ci (apt).
+It also runs:
+  - the automatic full scan after the first installation,
+  - scheduled updates (dukiwi-shield-update.timer: every day
+    at 07:00 and 5 minutes after boot),
+  - write-burst monitoring (fanotify): a program that modifies
+    many files is reported (info), or marked "potential danger" if it
+    is unknown to the system, runs from a temporary/personal folder,
+    or if clamd recognizes its executable,
+  - scanning of USB media before they are made available (udev + private
+    mount) — large USB hard drives trigger a question,
+  - the system status report: pending security updates and
+    the CVEs they fix (apt).
 
-Usage :
-  dukiwi-shield-daemon.py                 # mode daemon (root)
-  dukiwi-shield-daemon.py --request update      # client : demander une MàJ et attendre
-  dukiwi-shield-daemon.py --request scan [/chemin]
+Usage:
+  dukiwi-shield-daemon.py                 # daemon mode (root)
+  dukiwi-shield-daemon.py --request update      # client: request an update and wait
+  dukiwi-shield-daemon.py --request scan [/path]
   dukiwi-shield-daemon.py --request status
   dukiwi-shield-daemon.py --request system-status
 
@@ -94,7 +94,7 @@ MANIFEST_URL = os.environ.get("DUKIWI_SHIELD_MANIFEST_URL",
                               "https://www.dukiwi.com/repo/dukiwi-shield/manifest.json")
 UPDATES_DIR = os.path.join(SYSTEM_STATE_DIR, "updates")
 POLICY_DIR = "/etc/dukiwi-shield"
-POLICY_FILE = os.path.join(POLICY_DIR, "policy.json")          # déployé par dukiwi-kit (root)
+POLICY_FILE = os.path.join(POLICY_DIR, "policy.json")          # deployed by dukiwi-kit (root)
 ALLOWLIST_URL = os.environ.get("DUKIWI_SHIELD_ALLOWLIST_URL", "https://www.dukiwi.com/repo/api/allowlist.json")
 TELEMETRY_URL = os.environ.get("DUKIWI_SHIELD_TELEMETRY_URL", "https://www.dukiwi.com/repo/api/telemetry.php")
 ALLOWLIST_FILE = os.path.join(SYSTEM_STATE_DIR, "allowlist.json")
@@ -106,10 +106,10 @@ BLOCKLIST_URLS = {
 OSV_BATCH_URL = "https://api.osv.dev/v1/querybatch"
 OSV_VULN_URL = "https://api.osv.dev/v1/vulns/"
 GEOIP_FIELDS = "status,country,countryCode,org,isp,query"
-GEOIP_FREE_URL = "http://ip-api.com/batch?fields=" + GEOIP_FIELDS        # gratuit : HTTP seulement, 15 requêtes groupées/min
-GEOIP_PRO_URL = "https://pro.ip-api.com/batch?key={key}&fields=" + GEOIP_FIELDS   # offre Pro : HTTPS, sans limite
-GEOIP_MIN_INTERVAL = 5          # secondes entre deux requêtes groupées (≤ 12/min, sous la limite gratuite)
-GEOIP_CACHE_MAX = 2000          # adresses gardées en cache (24 h), persistées dans l'état du service
+GEOIP_FREE_URL = "http://ip-api.com/batch?fields=" + GEOIP_FIELDS        # free: HTTP only, 15 batched requests/min
+GEOIP_PRO_URL = "https://pro.ip-api.com/batch?key={key}&fields=" + GEOIP_FIELDS   # Pro plan: HTTPS, no limit
+GEOIP_MIN_INTERVAL = 5          # seconds between two batched requests (≤ 12/min, under the free limit)
+GEOIP_CACHE_MAX = 2000          # addresses kept in cache (24 h), persisted in the service state
 
 
 def geoip_url(key):
@@ -119,23 +119,23 @@ UNLOCK_TTL = 900
 ADMIN_GROUPS = ("sudo", "admin", "wheel")
 USER_AGENT = f"dukiwi-shield/{VERSION}"
 LOG_MAX_BYTES = 5 * 1024 * 1024
-PROGRESS_INTERVAL = 0.25      # secondes entre deux événements de progression
-PROGRESS_SAVE_INTERVAL = 2.0  # secondes entre deux sauvegardes du fichier de reprise
+PROGRESS_INTERVAL = 0.25      # seconds between two progress events
+PROGRESS_SAVE_INTERVAL = 2.0  # seconds between two saves of the resume file
 CLAMD_CONF = distro.clamd_conf()                       # Debian : /etc/clamav/clamd.conf ; Fedora : /etc/clamd.d/scan.conf
-USB_MANIFEST = ".dukiwi-shield"   # manifeste caché à la racine d'un support amovible déjà analysé
-USB_MANIFEST_LEGACY = ".clamav"   # nom des versions précédentes : relu, remplacé à la prochaine analyse
-SCAN_BATCH = 100               # fichiers par appel clamdscan (un worker = une connexion clamd)
+USB_MANIFEST = ".dukiwi-shield"   # hidden manifest at the root of an already scanned removable drive
+USB_MANIFEST_LEGACY = ".clamav"   # name used by previous versions: read back, replaced at the next scan
+SCAN_BATCH = 100               # files per clamdscan call (one worker = one clamd connection)
 SCAN_WORKERS_MAX = 8
 MANIFEST_MAX_FILES = 200000
 HISTORY_MAX = 20
 ALERTS_MAX = 30
-SYSTEM_STATUS_MIN_INTERVAL = 300   # secondes entre deux relevés apt à la demande
+SYSTEM_STATUS_MIN_INTERVAL = 300   # seconds between two on-demand apt checks
 TEST_MODE = os.geteuid() != 0 and "DUKIWI_SHIELD_SOCKET" in os.environ
 
-# Sorties d'outils analysées en anglais quelle que soit la langue du système : systemd donne au service la locale
-# de /etc/default/locale (LANG=fr_CH.UTF-8 → « ufw status » répond « État : actif », « Partout »…) et l'analyse
-# croyait alors le pare-feu inactif après une activation réussie. Les messages propres au programme sont traduits
-# par l'interface, pas par la locale du service.
+# Tool output parsed in English whatever the system language: systemd gives the service the locale from
+# /etc/default/locale (LANG=fr_CH.UTF-8 → "ufw status" answers "État : actif", "Partout"…) and the parser then
+# believed the firewall inactive after a successful activation. The program's own messages are translated by the
+# interface, not by the service locale.
 os.environ["LC_ALL"] = "C.UTF-8"
 os.environ["LANG"] = "C.UTF-8"
 os.environ.pop("LANGUAGE", None)
@@ -146,7 +146,7 @@ def now_iso():
 
 
 def log(msg):
-    """Journal du daemon (journald via stdout)."""
+    """Daemon log (journald via stdout)."""
     print(f"[{now_iso()}] {msg}", flush=True)
 
 
@@ -158,7 +158,7 @@ def run_quiet(cmd, timeout=60):
 
 
 def http_get(url, timeout=60, data=None, headers=None):
-    """GET/POST simple (urllib) avec User-Agent ; retourne bytes ; lève en cas d'erreur."""
+    """Simple GET/POST (urllib) with User-Agent; returns bytes; raises on error."""
     req = urllib.request.Request(url, data=data, headers={"User-Agent": USER_AGENT, **(headers or {})})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return resp.read()
@@ -173,7 +173,7 @@ def sha256_file(path):
 
 
 def gpg_verify(sig_path, data_path):
-    """Vérifie une signature détachée avec la clé publique Dukiwi embarquée."""
+    """Verifies a detached signature with the embedded Dukiwi public key."""
     if not os.path.exists(KEYRING):
         return False, "no_keyring"
     if not shutil.which("gpgv"):
@@ -270,9 +270,9 @@ def is_public_ip(ip):
 
 
 def ubuntu_osv_ecosystem():
-    """Écosystème OSV de l'Ubuntu sous-jacente : « Ubuntu:24.04:LTS » (Ubuntu 24.04, Linux Mint 22), « Ubuntu:26.04:LTS »,
-    « Ubuntu:25.10 »… Vide si la version n'est pas connue : l'inventaire est alors « non pris en charge » plutôt que
-    construit sur les paquets d'une autre version (noyau 6.8 de 24.04 signalé sur un 26.04 en 7.0, par exemple)."""
+    """OSV ecosystem of the underlying Ubuntu: "Ubuntu:24.04:LTS" (Ubuntu 24.04, Linux Mint 22), "Ubuntu:26.04:LTS",
+    "Ubuntu:25.10"… Empty if the version is unknown: the inventory is then "unsupported" rather than
+    built on the packages of another version (24.04 kernel 6.8 reported on a 26.04 running 7.0, for example)."""
     rel = distro.ubuntu_release()
     if not rel:
         return ""
@@ -280,7 +280,7 @@ def ubuntu_osv_ecosystem():
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# État persistant
+# Persistent state
 # ═══════════════════════════════════════════════════════════════════════════
 
 class State:
@@ -324,7 +324,7 @@ class State:
 
 
 class Settings:
-    """Réglages système (page Paramètres), persistés dans settings.json."""
+    """System settings (Settings page), persisted in settings.json."""
 
     def __init__(self):
         self.lock = threading.Lock()
@@ -360,7 +360,7 @@ class Settings:
 # Jobs
 # ═══════════════════════════════════════════════════════════════════════════
 
-# ── Moteur : clamd (base en mémoire, multi-thread) ───────────────────────
+# ── Engine: clamd (database in memory, multi-threaded) ───────────────────
 def clamd_socket_path():
     try:
         with open(CLAMD_CONF, encoding="utf-8", errors="replace") as f:
@@ -374,8 +374,8 @@ def clamd_socket_path():
 
 
 def clamd_enable_local_socket():
-    """Fedora livre /etc/clamd.d/scan.conf avec « #LocalSocket /run/clamd.scan/clamd.sock » commenté : sans socket,
-    clamd@scan ne sert à rien et l'antivirus retomberait sur clamscan (lent). Décommenté une fois, en root."""
+    """Fedora ships /etc/clamd.d/scan.conf with "#LocalSocket /run/clamd.scan/clamd.sock" commented out: without a
+    socket, clamd@scan is useless and the antivirus would fall back to clamscan (slow). Uncommented once, as root."""
     if not distro.is_rpm() or os.geteuid() != 0:
         return False
     try:
@@ -398,7 +398,7 @@ def clamd_enable_local_socket():
 
 
 def clamd_ping(timeout=5):
-    """clamd répond-il sur son socket ? (PING → PONG)"""
+    """Does clamd answer on its socket? (PING → PONG)"""
     try:
         s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         s.settimeout(timeout)
@@ -412,8 +412,8 @@ def clamd_ping(timeout=5):
 
 
 def ensure_clamd(wait=90):
-    """clamd garde la base de signatures en mémoire et analyse plusieurs fichiers en parallèle : c'est le moteur
-    rapide. Démarré si nécessaire (clamscan recharge la base à chaque lancement)."""
+    """clamd keeps the signature database in memory and scans several files in parallel: it is the fast
+    engine. Started if needed (clamscan reloads the database on every run)."""
     if clamd_ping():
         return True
     if os.geteuid() != 0 or not shutil.which("clamdscan"):
@@ -434,7 +434,7 @@ _DB_VERSION = {"v": "", "at": 0.0}
 
 
 def signature_db_version():
-    """Version de la base quotidienne (pour dater les manifestes), lue au plus toutes les 10 min."""
+    """Version of the daily database (to date the manifests), read at most every 10 min."""
     if time.time() - _DB_VERSION["at"] < 600:
         return _DB_VERSION["v"]
     v = ""
@@ -459,7 +459,7 @@ def parse_find_line(line):
         return parts[0], 0, 0, 0, 0
 
     def micro(x):
-        if "." not in x:                      # déjà en microsecondes (liste de travail relue)
+        if "." not in x:                      # already in microseconds (work list read back)
             return int(x)
         s, _, f = x.partition(".")
         return int(s) * 1000000 + int((f + "000000")[:6])
@@ -470,8 +470,8 @@ def parse_find_line(line):
 
 
 class ScanCache:
-    """Fichiers déjà vérifiés sains : empreinte (taille, mtime, ctime, inode) → pas relus tant qu'ils n'ont pas
-    changé, pendant `days` jours. SQLite dans /var/lib/dukiwi-shield/scan-cache.db (des millions d'entrées)."""
+    """Files already verified clean: fingerprint (size, mtime, ctime, inode) → not reread as long as they have not
+    changed, for `days` days. SQLite in /var/lib/dukiwi-shield/scan-cache.db (millions of entries)."""
 
     def __init__(self, path, days):
         self.days = int(days or 0)
@@ -483,7 +483,7 @@ class ScanCache:
         self.lock = threading.Lock()
 
     def lookup(self, entries):
-        """Chemins de `entries` (tuples find) connus sains, inchangés et assez récents."""
+        """Paths of `entries` (find tuples) known to be clean, unchanged and recent enough."""
         if not self.days or not entries:
             return set()
         since = int(time.time()) - self.days * 86400
@@ -528,9 +528,9 @@ class ScanCache:
                 pass
 
 
-# ── Manifeste .clamav d'un support amovible ───────────────────────────────
+# ── .clamav manifest of a removable drive ─────────────────────────────────
 def usb_secret():
-    """Secret HMAC de l'installation (jamais copié sur la clé) : un manifeste forgé par la clé est ignoré."""
+    """HMAC secret of the installation (never copied to the key): a manifest forged by the key is ignored."""
     try:
         with open(SYSTEM_SECRET_FILE, "rb") as f:
             s = f.read()
@@ -554,8 +554,8 @@ def manifest_sign(data):
 
 
 def usb_manifest_read(mountpoint):
-    """Manifeste .clamav d'un support déjà analysé ; None s'il manque, s'il est illisible ou s'il n'est pas signé
-    par cette installation."""
+    """.clamav manifest of an already scanned medium; None if it is missing, unreadable or not signed
+    by this installation."""
     path = os.path.join(mountpoint, USB_MANIFEST)
     if not os.path.exists(path) and os.path.exists(os.path.join(mountpoint, USB_MANIFEST_LEGACY)):
         path = os.path.join(mountpoint, USB_MANIFEST_LEGACY)
@@ -582,7 +582,7 @@ def manifest_fresh(manifest, days):
 
 
 def usb_manifest_write(mountpoint, files, db_version, infected):
-    """Écrit .clamav (caché) à la racine : fichiers sains {chemin relatif: [taille, mtime_µs]}, signés."""
+    """Writes .clamav (hidden) at the root: clean files {relative path: [size, mtime_µs]}, signed."""
     data = {"format": 1, "app": "dukiwi-shield", "version": VERSION, "scanned_at": now_iso(), "db": db_version,
             "files": files, "infected": sorted(infected)[:1000]}
     data["hmac"] = manifest_sign(data)
@@ -602,20 +602,20 @@ def usb_manifest_write(mountpoint, files, db_version, infected):
         return False
 
 
-# ── Analyse rapide : dossiers personnels + emplacements où les logiciels malveillants s'installent ──
+# ── Quick scan: home folders + locations where malware installs itself ──
 QUICK_SCAN = "quick"
 QUICK_SCAN_DIRS = ("/tmp", "/var/tmp", "/dev/shm", "/etc/cron.d", "/etc/cron.hourly", "/etc/cron.daily", "/etc/cron.weekly",
                    "/etc/cron.monthly", "/var/spool/cron", "/etc/systemd/system", "/etc/xdg/autostart", "/etc/profile.d",
                    "/etc/init.d", "/etc/rc.local", "/etc/ld.so.preload", "/usr/local/bin", "/usr/local/sbin", "/usr/local/lib",
                    "/usr/local/share", "/opt", "/var/www", "/srv", "/root")
-# /dev/shm et /run/user font partie de l'analyse rapide : les autres exclusions du scan complet restent
+# /dev/shm and /run/user are part of the quick scan: the other full-scan exclusions remain
 QUICK_SCAN_EXCLUDE = [e for e in SCAN_EXCLUDE if e not in ("/dev/*", "/run/*")]
 SYSTEM_EXE_PREFIXES = ("/usr/", "/bin/", "/sbin/", "/lib/", "/lib64/", "/snap/", "/app/", "/var/lib/flatpak/", "/opt/dukiwi-shield/")
 
 
 def quick_scan_paths():
-    """Dossiers personnels, dossiers temporaires, démarrage automatique et tâches planifiées, logiciels installés à la
-    main (/usr/local, /opt), sites web locaux, et les programmes en cours d'exécution qui ne viennent pas du système."""
+    """Home folders, temporary folders, autostart and scheduled tasks, software installed by hand
+    (/usr/local, /opt), local websites, and running programs that do not come from the system."""
     roots = [p for p in QUICK_SCAN_DIRS if os.path.exists(p)]
     roots += [pw.pw_dir for pw in human_users() if pw.pw_uid >= 1000 and os.path.isdir(pw.pw_dir)]
     for pid in os.listdir("/proc"):
@@ -630,7 +630,7 @@ def quick_scan_paths():
     out = []
     for p in sorted(set(roots), key=len):
         if not any(p == r or p.startswith(r.rstrip("/") + "/") for r in out):
-            out.append(p)                                   # déjà couvert par un dossier parent : pas repris
+            out.append(p)                                   # already covered by a parent folder: not added
     return sorted(out)
 
 
@@ -644,36 +644,36 @@ class Job:
             self.id = Job._counter
         self.kind = kind            # 'scan' | 'update'
         self.path = path
-        self.paths = paths          # analyse rapide : liste des emplacements (path vaut alors "quick")
+        self.paths = paths          # quick scan: list of locations (path is then "quick")
         self.resume = resume
-        self.auto = auto            # lancé par le système (première installation, reprise)
-        self.usb = usb              # dict décrivant le support USB analysé, ou None
-        self.integrity = integrity  # analyse complète : vérification d'intégrité (rootkits, paquets) AVANT le scan
-        self.skipped = 0            # fichiers système vérifiés par debsums, ignorés par l'antivirus
-        self.cached = 0             # fichiers inchangés déjà vérifiés sains (cache ou manifeste .clamav), non relus
+        self.auto = auto            # started by the system (first install, resume)
+        self.usb = usb              # dict describing the scanned USB drive, or None
+        self.integrity = integrity  # full scan: integrity check (rootkits, packages) BEFORE the scan
+        self.skipped = 0            # system files verified by debsums, skipped by the antivirus
+        self.cached = 0             # unchanged files already verified clean (cache or .clamav manifest), not re-read
         self.use_cache = use_cache
         self.engine = ""            # clamd | clamscan
-        self.paused = False         # mis en pause pour analyser une clé USB, reprise ensuite
+        self.paused = False         # paused to scan a USB key, resumed afterwards
         self.pause_event = threading.Event()
         self.procs = []             # workers clamdscan en cours
         self.count_lock = threading.Lock()
         self.manifest_keep = {}     # support amovible : fichiers sains {relatif: [taille, mtime]}
         self.usb_infected = set()
-        self.found_sigs = {}        # chemin infecté → signature (pour l'index de quarantaine)
+        self.found_sigs = {}        # infected path → signature (for the quarantine index)
         self.integrity_warnings = None
         self.requested_by = requested_by
         self.created_at = time.time()
         self.started_at = None
         self.cancel_event = threading.Event()
         self.cancelled_by_user = False
-        self.result = None          # (status, msg_key, msg_params) une fois terminé
+        self.result = None          # (status, msg_key, msg_params) once finished
         self.proc = None
         self.proc_lock = threading.Lock()
         # progression
         self.phase = "queued"       # queued | prepare | counting | scanning | updating | done
         self.scanned = 0
         self.total = 0
-        self.found = 0              # fichiers trouvés pendant l'inventaire
+        self.found = 0              # files found during the inventory
         self.infected = 0
         self.denied = 0
         self.errors = 0
@@ -718,7 +718,7 @@ class Job:
                         pass
 
     def pause(self):
-        """Clé USB insérée : le scan en cours s'arrête (workers suspendus), reprend après l'analyse de la clé."""
+        """USB key inserted: the running scan stops (workers suspended), resumes after the key has been scanned."""
         self.paused = True
         self.pause_event.set()
         self._signal_procs(signal.SIGSTOP)
@@ -743,7 +743,7 @@ class Job:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Moniteur d'activité (fanotify) — rafales d'écritures par processus
+# Activity monitor (fanotify) — write bursts per process
 # ═══════════════════════════════════════════════════════════════════════════
 
 FAN_CLOEXEC = 0x01
@@ -757,10 +757,10 @@ O_LARGEFILE = 0o100000
 FAN_EVENT = struct.Struct("=IBBHQii")   # event_len, vers, reserved, metadata_len, mask, fd, pid
 
 TRUSTED_EXE_PREFIXES = ("/usr/", "/bin/", "/sbin/", "/lib", "/opt/", "/snap/", "/var/lib/flatpak/", "/app/")
-# Outils de maintenance connus pour écrire beaucoup de fichiers d'un coup (gestionnaires de paquets, caches, images de
-# démarrage, sauvegardes) : leurs rafales sont attendues, aucun popup d'information (télémétrie : 24 alertes « burst » en
-# une semaine pour fc-cache du snap Firefox, utilisateurs qui approuvent dpkg, flatpak-system-helper, update-mime-database).
-# Seulement pour un exécutable de confiance (emplacement système, snap, flatpak) : un « dpkg » sous /tmp reste surveillé.
+# Maintenance tools known to write many files at once (package managers, caches, boot images, backups): their
+# bursts are expected, no information popup (telemetry: 24 "burst" alerts in one week for fc-cache from the
+# Firefox snap, users approving dpkg, flatpak-system-helper, update-mime-database).
+# Only for a trusted executable (system location, snap, flatpak): a "dpkg" under /tmp stays monitored.
 QUIET_BURST_BASENAMES = frozenset({
     "dpkg", "apt", "apt-get", "aptd", "unattended-upgrade", "synaptic", "mintupdate", "mintupdate-cli", "packagekitd", "gnome-software",
     "plasma-discover", "rpm", "dnf", "dnf5", "yum", "flatpak", "flatpak-system-helper", "revokefs-fuse", "snapd", "snap", "snap-update-ns",
@@ -768,26 +768,26 @@ QUIET_BURST_BASENAMES = frozenset({
     "ldconfig.real", "update-initramfs", "mkinitramfs", "dracut", "dkms", "depmod", "timeshift", "rsync", "rclone", "borg", "restic",
 })
 UNTRUSTED_EXE_PREFIXES = ("/tmp/", "/var/tmp/", "/dev/shm/", "/run/user/", "/home/", "/root/", "/media/", "/mnt/")
-# Gestionnaires de paquets et outils de mise à jour : ce qu'ils lancent (scripts d'installation, caches, compilation de
-# modules…) écrit beaucoup de fichiers parce que l'utilisateur ou le système a demandé une installation ; une rafale d'un
-# programme qui en descend est attendue. Jamais « flatpak » ni « snap », dont descendent les applications elles-mêmes.
+# Package managers and update tools: what they launch (install scripts, caches, module compilation…) writes many
+# files because the user or the system requested an installation; a burst from a program descending from them is
+# expected. Never "flatpak" or "snap", from which the applications themselves descend.
 PACKAGE_TOOLS = frozenset({
     "dpkg", "apt", "apt-get", "aptd", "aptitude", "nala", "unattended-upgrade", "unattended-upgrades", "synaptic", "mintupdate",
     "mintupdate-cli", "mintinstall", "update-manager", "do-release-upgrade", "packagekitd", "gnome-software", "plasma-discover",
     "rpm", "dnf", "dnf5", "yum", "flatpak-system-helper", "snapd", "dkms", "update-initramfs", "mkinitramfs", "dracut",
 })
 SCRIPT_INTERPRETERS = ("python", "perl", "bash", "dash", "sh")
-BURST_IDENTIFY_AT = 3                    # écritures d'un programme avant de relever qui il est (il peut finir avant l'évaluation)
-HABIT_LEARNED_AT = 2                     # « C'est OK » sur la même rafale avant qu'elle soit ignorée d'office
-# Dossiers qui appartiennent à une application (en plus des motifs ~/ de la liste blanche centrale) : une rafale qui
-# n'écrit que là est une application qui s'installe ou se met à jour, pas un rançongiciel (qui vise les documents).
+BURST_IDENTIFY_AT = 3                    # writes by a program before recording who it is (it may finish before the evaluation)
+HABIT_LEARNED_AT = 2                     # "It's OK" on the same burst before it is ignored automatically
+# Folders that belong to an application (in addition to the ~/ patterns of the central whitelist): a burst that
+# only writes there is an application installing or updating itself, not ransomware (which targets documents).
 APP_DATA_DIRS = ("/home/*/.local/share/Steam/*", "/home/*/.steam/*", "/home/*/.var/app/*", "/home/*/snap/*",
                  "/home/*/.local/share/flatpak/*", "/home/*/.vscode/extensions/*", "/home/*/.cursor/*",
                  "/home/*/.local/share/JetBrains/*", "/home/*/.cache/*")
 
 
 def package_tool(names):
-    """Nom d'un gestionnaire de paquets parmi `names` (le nom d'un processus est tronqué à 15 caractères), sinon ""."""
+    """Name of a package manager among `names` (a process name is truncated to 15 characters), otherwise ""."""
     for n in sorted(names):
         if n in PACKAGE_TOOLS or (len(n) == 15 and any(t.startswith(n) for t in PACKAGE_TOOLS)):
             return n
@@ -795,8 +795,8 @@ def package_tool(names):
 
 
 def load_policy():
-    """Politique d'entreprise (/etc/dukiwi-shield/policy.json) : fichier root, non modifiable par les autres,
-    signature détachée facultative (policy.json.sig, clé policy-key.gpg du même dossier ou clé Dukiwi)."""
+    """Enterprise policy (/etc/dukiwi-shield/policy.json): root-owned file, not writable by others,
+    optional detached signature (policy.json.sig, policy-key.gpg key in the same folder or Dukiwi key)."""
     try:
         st = os.stat(POLICY_FILE)
     except OSError:
@@ -824,8 +824,8 @@ def load_policy():
     return policy
 
 
-# Ce qui désigne une personne ou une session dans un chemin, où qu'il soit dans le texte (une clé comme
-# « autostart:/home/<nom>/… » ne commence pas par /home) : dossier personnel, crontab, supports montés, montage AppImage.
+# What identifies a person or a session in a path, wherever it is in the text (a key such as
+# "autostart:/home/<name>/…" does not start with /home): home folder, crontab, mounted drives, AppImage mount.
 _ANON_RES = (
     (re.compile(r"(/home/)[^/\s:\"']+"), r"\1~"),
     (re.compile(r"(/var/spool/cron/crontabs/)[^/\s:\"']+"), r"\1~"),
@@ -837,7 +837,7 @@ _ANON_RES = (
 
 
 def anonymize_path(path):
-    """Chemin (ou texte) sans nom de compte ni identifiant de session, pour la télémétrie."""
+    """Path (or text) without account name or session identifier, for telemetry."""
     text = str(path or "")
     for rx, repl in _ANON_RES:
         text = rx.sub(repl, text)
@@ -845,21 +845,21 @@ def anonymize_path(path):
 
 
 def anonymize_list(values, limit=50):
-    """Liste anonymisée sans doublons (dix montages d'une même AppImage deviennent une seule ligne)."""
+    """Anonymized list without duplicates (ten mounts of the same AppImage become a single line)."""
     return list(dict.fromkeys(anonymize_path(v) for v in values if v))[:limit]
 
 
-# Programme lancé depuis une AppImage : le dossier de montage change à chaque lancement (/tmp/.mount_<nom><6 car.>),
-# la confiance porte donc sur le contenu du fichier, pas sur son chemin.
+# Program launched from an AppImage: the mount folder changes at every launch (/tmp/.mount_<name><6 chars>),
+# so trust is based on the file's content, not on its path.
 APPIMAGE_MOUNT_RE = re.compile(r"^/tmp/\.mount_[^/]+/")
 APPIMAGE_HASH_MAX = 512 << 20
 
 
 class TrustedPrograms:
-    """Programmes approuvés (« C'est moi ») : par chemin, et par empreinte pour ceux d'une AppImage. S'utilise comme
-    un ensemble de chemins (`exe in trusted`)."""
+    """Approved programs ("It's me"): by path, and by fingerprint for those from an AppImage. Used like
+    a set of paths (`exe in trusted`)."""
 
-    _digests = {}                        # (chemin, inode, taille, mtime) → sha256, partagé entre reconstructions
+    _digests = {}                        # (path, inode, size, mtime) → sha256, shared between rebuilds
 
     def __init__(self, programs):
         programs = [p for p in programs or [] if p.get("exe")]
@@ -901,7 +901,7 @@ class TrustedPrograms:
 
 
 def normalize_exe(exe):
-    """Chemin de l'exécutable sans le suffixe « (deleted) » (binaire remplacé par une mise à jour pendant l'exécution)."""
+    """Executable path without the "(deleted)" suffix (binary replaced by an update while running)."""
     exe = (exe or "").strip()
     if exe.endswith(" (deleted)"):
         exe = exe[:-len(" (deleted)")]
@@ -909,7 +909,7 @@ def normalize_exe(exe):
 
 
 class ActivityMonitor(threading.Thread):
-    """Détecte les processus qui modifient beaucoup de fichiers en peu de temps."""
+    """Detects processes that modify many files in a short time."""
 
     def __init__(self, daemon):
         super().__init__(daemon=True, name="activity-monitor")
@@ -917,7 +917,7 @@ class ActivityMonitor(threading.Thread):
         self.fd = None
         self.active = False
         self.tracks = {}            # pid -> dict
-        self.reported = {}          # pid -> timestamp du dernier signalement
+        self.reported = {}          # pid -> timestamp of the last report
         self.last_report = 0
         self.dpkg_cache = {}
         self.self_pid = os.getpid()
@@ -976,10 +976,10 @@ class ActivityMonitor(threading.Thread):
                             self.record(pid, path)
                             onaccess = getattr(self.daemon_ref, "onaccess", None)
                             if onaccess:
-                                onaccess.consider(pid, path)      # analyse à l'arrivée (téléchargements, bureau, supports)
+                                onaccess.consider(pid, path)      # on-arrival scan (downloads, desktop, drives)
                             guard = getattr(self.daemon_ref, "guard", None)
                             if guard:
-                                guard.consider(pid, path)         # leurres anti-rançongiciel
+                                guard.consider(pid, path)         # anti-ransomware decoys
                 finally:
                     try:
                         os.close(fd)
@@ -1010,7 +1010,7 @@ class ActivityMonitor(threading.Thread):
         if track is None or now - track["first"] > window:
             track = {"first": now, "paths": set(), "home": 0, "count": 0}
             self.tracks[pid] = track
-            if len(self.tracks) > 2000:      # limiter la mémoire : purger les vieux suivis
+            if len(self.tracks) > 2000:      # limit memory: purge old tracks
                 cutoff = now - window
                 self.tracks = {p: tr for p, tr in self.tracks.items() if tr["first"] >= cutoff}
         if path in track["paths"]:
@@ -1019,8 +1019,8 @@ class ActivityMonitor(threading.Thread):
             track["paths"].add(path)
         track["count"] += 1
         if track["count"] == BURST_IDENTIFY_AT:
-            # Qui écrit : relevé dès les premières écritures. Un installeur qui vit une seconde a fini avant l'évaluation
-            # (25e ou 50e écriture) et l'alerte nommait alors « ? », traité comme un programme inconnu.
+            # Who writes: recorded from the first writes. An installer that lives one second has finished before the
+            # evaluation (25th or 50th write) and the alert then named "?", treated as an unknown program.
             track["info"] = self.process_info(pid)
         if path.startswith("/home/") or path.startswith("/root/"):
             track["home"] += 1
@@ -1029,7 +1029,7 @@ class ActivityMonitor(threading.Thread):
         if track["count"] in (danger_th, info_th, 150, 500, 2000):
             self.evaluate(pid, track, now)
 
-    # ── Évaluation ───────────────────────────────────────────────────────
+    # ── Evaluation ───────────────────────────────────────────────────────
     def process_info(self, pid):
         info = {"pid": pid, "comm": "?", "exe": "", "cmdline": "", "uid": None, "user": "", "ppid": 0}
         try:
@@ -1061,7 +1061,7 @@ class ActivityMonitor(threading.Thread):
         return info
 
     def exe_trusted(self, exe):
-        """Exécutable connu du système (paquet dpkg / emplacement système) ou approuvé par l'utilisateur (« C'est moi ») ?"""
+        """Executable known to the system (dpkg package / system location) or approved by the user ("It's me")?"""
         exe = normalize_exe(exe)
         if not exe:
             return False
@@ -1084,7 +1084,7 @@ class ActivityMonitor(threading.Thread):
 
     @staticmethod
     def clamd_check(paths):
-        """Analyse rapide via clamd (clamdscan --fdpass). Retourne la liste des FOUND."""
+        """Quick scan via clamd (clamdscan --fdpass). Returns the list of FOUND."""
         found = []
         if not shutil.which("clamdscan") or not paths:
             return found
@@ -1099,13 +1099,13 @@ class ActivityMonitor(threading.Thread):
             return
         info = self.process_info(pid)
         if not info["exe"] and (track.get("info") or {}).get("exe"):
-            info = track["info"]              # programme déjà terminé : identité relevée à ses premières écritures
+            info = track["info"]              # program already finished: identity recorded at its first writes
         if info["comm"] in ("clamscan", "clamd", "clamdscan", "freshclam", "find") and \
                 info["exe"].startswith("/usr/"):
             return
         exe_path = normalize_exe(info["exe"])
         if exe_path and exe_path in self.daemon_ref.user_trusted():
-            self.reported[pid] = now          # programme approuvé : plus aucune alerte
+            self.reported[pid] = now          # approved program: no more alerts
             return
         trusted = self.exe_trusted(info["exe"])
         if trusted and os.path.basename(exe_path) in QUIET_BURST_BASENAMES:
@@ -1122,7 +1122,7 @@ class ActivityMonitor(threading.Thread):
         if infected_files:
             severity = "danger"
             reasons.append("files_infected")
-        # Dossier le plus touché (pour proposer une analyse ciblée, et pour reconnaître une rafale déjà déclarée normale)
+        # Most affected folder (to offer a targeted scan, and to recognize a burst already declared normal)
         dirs = {}
         for p in sample:
             d = os.path.dirname(p)
@@ -1130,10 +1130,9 @@ class ActivityMonitor(threading.Thread):
         top_dir = max(dirs, key=dirs.get) if dirs else "/"
         if severity == "info" and self.daemon_ref.settings.get("auto_ignore_known") is not False \
                 and not exe_path.startswith(("/tmp/", "/var/tmp/", "/dev/shm/")):
-            # Rien d'infecté : ce qui est connu est ignoré d'office (réglage « Apprendre de mes choix »), une ligne du
-            # journal en garde la trace. Dans l'ordre : action lancée par un gestionnaire de paquets (apt upgrade,
-            # mise à jour du système…), application qui n'écrit que dans son propre dossier, rafale que l'utilisateur
-            # a déjà déclarée normale.
+            # Nothing infected: what is known is ignored automatically ("Learn from my choices" setting), a log line
+            # keeps a record of it. In order: action launched by a package manager (apt upgrade, system update…),
+            # application that only writes in its own folder, burst the user has already declared normal.
             why = self.launched_by(info)
             if why:
                 why = f"launched by {why}"
@@ -1170,8 +1169,8 @@ class ActivityMonitor(threading.Thread):
         self.daemon_ref.publish_alert(alert)
 
     def launched_by(self, info):
-        """Gestionnaire de paquets ou outil de mise à jour dont descend ce programme (« apt », « dpkg », « mintupdate »…),
-        "" sinon. Remonte les parents à partir de celui relevé avec l'identité ; il faut un exécutable du système."""
+        """Package manager or update tool this program descends from ("apt", "dpkg", "mintupdate"…),
+        "" otherwise. Walks up the parents from the one recorded with the identity; a system executable is required."""
         ppid = int(info.get("ppid") or 0)
         for _ in range(8):
             if ppid <= 1:
@@ -1193,7 +1192,8 @@ class ActivityMonitor(threading.Thread):
             base = os.path.basename(normalize_exe(exe))
             names = {base.lower(), comm.lower()}
             if base.startswith(SCRIPT_INTERPRETERS):
-                # /usr/bin/python3 /usr/bin/unattended-upgrade, …/mintUpdate/mintUpdate.py : le script, pas l'interpréteur
+                # /usr/bin/python3 /usr/bin/unattended-upgrade, …/mintUpdate/mintUpdate.py:
+                # the script, not the interpreter
                 names |= {os.path.splitext(os.path.basename(a))[0].lower() for a in argv[1:3] if a.startswith(("/usr/", "/opt/"))}
             tool = package_tool(names)
             if tool and self.exe_trusted(exe):
@@ -1202,15 +1202,15 @@ class ActivityMonitor(threading.Thread):
         return ""
 
     def app_data_path(self, path):
-        """Fichier dans le dossier propre à une application connue (Steam, Flatpak, extensions d'éditeur, motifs ~/ de
-        la liste blanche centrale) ?"""
+        """File in the folder belonging to a known application (Steam, Flatpak, editor extensions, ~/ patterns of
+        the central allowlist)?"""
         if any(fnmatch.fnmatch(path, pat) for pat in APP_DATA_DIRS):
             return True
         return any(pat.startswith("/home/*/") and fnmatch.fnmatch(path, pat) for pat in getattr(self.daemon_ref, "central_patterns", ()))
 
     def note_auto_ignored(self, why, comm, count, top_dir, now):
-        """Trace des rafales ignorées d'office : une ligne du journal par minute au plus (une mise à jour du système en
-        produit des dizaines), avec le décompte par motif."""
+        """Log of bursts ignored automatically: at most one log line per minute (a system update produces
+        dozens of them), with the count per reason."""
         pending = getattr(self, "auto_ignored", None)
         if pending is None:
             pending = self.auto_ignored = {"since": now, "n": {}, "last": ""}
@@ -1223,14 +1223,14 @@ class ActivityMonitor(threading.Thread):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Surveillance du volume envoyé vers Internet (/proc/net/dev)
+# Monitoring of the volume sent to the Internet (/proc/net/dev)
 # ═══════════════════════════════════════════════════════════════════════════
 
 IGNORED_IFACE_PREFIXES = ("lo", "docker", "veth", "br-", "virbr", "vboxnet", "lxc", "lxdbr", "cni")
 
 
 def read_tx_bytes():
-    """Octets transmis, cumulés sur les interfaces physiques/VPN (hors loopback et ponts locaux)."""
+    """Bytes transmitted, summed over physical/VPN interfaces (excluding loopback and local bridges)."""
     total = 0
     per_iface = {}
     try:
@@ -1251,7 +1251,7 @@ def read_tx_bytes():
 
 
 def outbound_processes(limit=8):
-    """Processus ayant des connexions sortantes établies (via ss)."""
+    """Processes with established outbound connections (via ss)."""
     procs = {}
     r = run_quiet(["ss", "-Htnp", "state", "established"], timeout=10)
     for line in (r.stdout or "").splitlines():
@@ -1268,10 +1268,10 @@ USER_DIR_DEFAULTS = ("Downloads", "Téléchargements", "Desktop", "Bureau", "Sca
 
 
 class OnAccessScanner(threading.Thread):
-    """Analyse à l'arrivée : un fichier fermé après écriture dans un dossier de téléchargement, sur le bureau ou sur un support
-    amovible (événement fanotify du moniteur d'activité) passe par clamd ; infecté → mis en quarantaine avant d'être ouvert,
-    popup rouge, alerte, courrier. Les navigateurs écrivent d'abord un fichier .part / .crdownload : c'est lui qui est analysé,
-    le téléchargement échoue donc proprement si le fichier est infecté."""
+    """On-arrival scan: a file closed after writing in a download folder, on the desktop or on removable
+    media (fanotify event from the activity monitor) goes through clamd; infected → quarantined before being
+    opened, red popup, alert, email. Browsers first write a .part / .crdownload file: that is the file scanned,
+    so the download fails cleanly if the file is infected."""
 
     def __init__(self, daemon):
         super().__init__(daemon=True, name="onaccess-scanner")
@@ -1283,7 +1283,7 @@ class OnAccessScanner(threading.Thread):
         self.stats = {"scanned": 0, "infected": 0, "last": ""}
 
     def watched_dirs(self):
-        """Dossiers de téléchargement et bureaux de chaque utilisateur (XDG user-dirs.dirs, sinon noms usuels), rafraîchis toutes les 5 min."""
+        """Download folders and desktops of each user (XDG user-dirs.dirs, otherwise usual names), refreshed every 5 min."""
         now = time.time()
         if now - self.dirs_at < 300:
             return self.dirs
@@ -1380,7 +1380,7 @@ class OnAccessScanner(threading.Thread):
 
 
 class NetworkMonitor(threading.Thread):
-    """Alerte quand le volume envoyé dépasse le seuil configuré dans la fenêtre configurée."""
+    """Alerts when the volume sent exceeds the configured threshold within the configured window."""
 
     INTERVAL = 15
 
@@ -1411,7 +1411,7 @@ class NetworkMonitor(threading.Thread):
         while len(self.samples) > 1 and now - self.samples[0][0] > window:
             self.samples.popleft()
         oldest_t, oldest_tx = self.samples[0]
-        sent = max(0, total - oldest_tx)       # un compteur qui repart (reboot) donne 0
+        sent = max(0, total - oldest_tx)       # a counter that restarts (reboot) gives 0
         self.current_gb = sent / 1e9
         if not settings.get("upload_monitor"):
             return
@@ -1430,7 +1430,7 @@ class NetworkMonitor(threading.Thread):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Sécurité réseau : pare-feu UFW et service SSH
+# Network security: UFW firewall and SSH service
 # ═══════════════════════════════════════════════════════════════════════════
 
 def ssh_port():
@@ -1450,10 +1450,10 @@ TIMESHIFT_CRON = "/etc/cron.d/timeshift-hourly"
 
 
 def timeshift_best_practice_config(existing=None):
-    """Configuration Timeshift recommandée : instantanés du système sur le disque principal, quotidiens (5),
-    hebdomadaires (3), mensuels (2) ; mode btrfs si la racine est un sous-volume @, sinon rsync en excluant tout le
-    contenu des dossiers personnels (réglage par défaut de Timeshift : les données cachées — Flatpak, Steam,
-    navigateurs — pèsent des dizaines de Go). Les documents relèvent de la sauvegarde."""
+    """Recommended Timeshift configuration: system snapshots on the main disk, daily (5),
+    weekly (3), monthly (2); btrfs mode if the root is an @ subvolume, otherwise rsync excluding all the
+    contents of home folders (Timeshift default setting: hidden data — Flatpak, Steam,
+    browsers — weighs tens of GB). Documents belong to the backup."""
     r = run_quiet(["findmnt", "-no", "FSTYPE,UUID,OPTIONS", "/"], timeout=10)
     parts = (r.stdout or "").split()
     fstype, uuid_root, options = (parts + ["", "", ""])[:3]
@@ -1479,7 +1479,7 @@ def timeshift_write_config(cfg):
     os.replace(tmp, TIMESHIFT_CONF)
 
 
-TIMESHIFT_MIN_FREE = 10 * 1024 ** 3        # sous ce seuil, les instantanés planifiés sont suspendus
+TIMESHIFT_MIN_FREE = 10 * 1024 ** 3        # below this threshold, scheduled snapshots are suspended
 TIMESHIFT_GUARD_CRON = ("SHELL=/bin/sh\nPATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin\n"
                         "# Dukiwi Shield : instantane planifie seulement s'il reste au moins 10 Go sur le disque principal\n"
                         "@hourly root a=$(df -k --output=avail / | tail -n1 | tr -d ' '); [ \"${a:-0}\" -ge 10485760 ] && timeshift --check\n")
@@ -1488,8 +1488,8 @@ DU_EXCLUDES = ["/home", "/root", "/timeshift", "/timeshift-btrfs", "/dev", "/pro
 
 
 def estimate_system_size(timeout=900):
-    """Taille du système tel que Timeshift le copie en mode rsync (sans les dossiers personnels), en octets ;
-    None si du échoue. Une à deux minutes sur un gros système, en priorité basse."""
+    """Size of the system as Timeshift copies it in rsync mode (without home folders), in bytes;
+    None if du fails. One to two minutes on a large system, at low priority."""
     cmd = []
     if shutil.which("nice"):
         cmd += ["nice", "-n", "19"]
@@ -1502,14 +1502,14 @@ def estimate_system_size(timeout=900):
 
 
 def timeshift_space_needed(size, btrfs=False):
-    """Espace libre exigé avant d'activer : 1,2 × le système + 10 Go (première copie complète, puis incréments) ;
-    en btrfs les instantanés ne copient rien, seul le seuil minimal s'applique."""
+    """Free space required before enabling: 1.2 × the system + 10 GB (first full copy, then increments);
+    with btrfs the snapshots copy nothing, only the minimum threshold applies."""
     return TIMESHIFT_MIN_FREE if btrfs else int(size * 1.2) + TIMESHIFT_MIN_FREE
 
 
 def timeshift_free_bytes(cfg=None):
-    """Espace libre (et point de montage) du disque qui reçoit les instantanés : le périphérique configuré s'il est
-    monté, le disque principal sinon ; (None, "") si le disque configuré est un disque dédié non monté."""
+    """Free space (and mount point) of the disk receiving the snapshots: the configured device if it is
+    mounted, otherwise the main disk; (None, "") if the configured disk is an unmounted dedicated disk."""
     uuid = (cfg or {}).get("backup_device_uuid") or ""
     path = "/"
     if uuid:
@@ -1527,9 +1527,9 @@ def timeshift_free_bytes(cfg=None):
 
 
 def timeshift_restore_test(sample=20):
-    """Test mensuel : quelques fichiers système du dernier instantané Timeshift (rsync) relus en entier et comparés au
-    système quand ils n'ont pas changé depuis (même taille, même date). En btrfs, les instantanés ne sont montés que par
-    Timeshift lui-même : test ignoré."""
+    """Monthly test: a few system files from the last Timeshift snapshot (rsync) read in full and compared with the
+    system when they have not changed since (same size, same date). With btrfs, snapshots are only mounted by
+    Timeshift itself: test skipped."""
     import random
     res = {"date": now_iso(), "ok": False, "checked": 0, "restored": 0, "compared": 0, "identical": 0, "failed": [], "error": ""}
     try:
@@ -1586,7 +1586,7 @@ def timeshift_restore_test(sample=20):
 
 
 def collect_timeshift_status(list_snapshots=True):
-    """Instantanés système Timeshift : installé, configuré, planification, dernier instantané (lecture root)."""
+    """Timeshift system snapshots: installed, configured, schedule, last snapshot (root read)."""
     ts = {"checked_at": now_iso(), "installed": shutil.which("timeshift") is not None, "configured": False,
           "schedule": [], "mode": "", "device": "", "snapshots": None, "last": None, "error": ""}
     if not ts["installed"]:
@@ -1607,7 +1607,7 @@ def collect_timeshift_status(list_snapshots=True):
     ts["low_space"] = free is not None and free < TIMESHIFT_MIN_FREE
     try:
         with open(TIMESHIFT_CRON, encoding="utf-8") as f:
-            ts["managed"] = "df " in f.read()          # planification posée par l'application (garde-fou d'espace)
+            ts["managed"] = "df " in f.read()          # schedule set up by the application (space safeguard)
     except OSError:
         ts["managed"] = False
     if ts["configured"] and list_snapshots and os.geteuid() == 0:
@@ -1623,7 +1623,7 @@ def collect_timeshift_status(list_snapshots=True):
 
 
 def collect_security_status():
-    """État du pare-feu UFW et du service SSH."""
+    """State of the UFW firewall and the SSH service."""
     ufw = firewalld_status() if distro.firewall_backend() == "firewalld" else \
         {"installed": shutil.which("ufw") is not None, "active": False, "enabled": False,
          "default_incoming": "", "default_outgoing": "", "rules": [], "error": "", "backend": "ufw"}
@@ -1643,7 +1643,7 @@ def collect_security_status():
             else:
                 ufw["error"] = (r.stderr or r.stdout or "").strip()[:200]
             if not ufw["active"] and ufw["enabled"] and ufw_chains_loaded():
-                ufw["active"] = True                    # sortie de ufw non analysable : les chaînes font foi
+                ufw["active"] = True                    # ufw output not parsable: the chains are authoritative
             ufw["conflicts"] = firewall_conflicts()
             ufw["unit_enabled"] = unit_enabled("ufw")
         else:
@@ -1664,7 +1664,7 @@ def collect_security_status():
 
 VALID_PROTO = ("tcp", "udp", "any")
 FIREWALL_PROFILES = ("home", "public", "enterprise")
-PROFILE_TAG = "cav-profile"                     # commentaire des règles gérées par le profil réseau
+PROFILE_TAG = "cav-profile"                     # comment of the rules managed by the network profile
 PROFILE_PRIVATE_NETS = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fe80::/10"]
 
 
@@ -1679,12 +1679,12 @@ def unit_enabled(name):
 
 
 MINT_AUTOMATION = "/usr/bin/mintupdate-automation"                                  # Linux Mint
-MINT_AUTO_UPGRADE_FLAG = "/var/lib/linuxmint/mintupdate-automatic-upgrades-enabled"  # témoin lu par le Gestionnaire
+MINT_AUTO_UPGRADE_FLAG = "/var/lib/linuxmint/mintupdate-automatic-upgrades-enabled"  # flag file read by the Update Manager
 APT_AUTO_CONF = "/etc/apt/apt.conf.d/20auto-upgrades"                                # unattended-upgrades (autres Debian/Ubuntu)
 
 
 def local_subnets():
-    """Sous-réseaux IPv4 directement connectés (ip -j route, scope link), hors interfaces virtuelles."""
+    """Directly connected IPv4 subnets (ip -j route, scope link), excluding virtual interfaces."""
     r = run_quiet(["ip", "-j", "route"], timeout=10)
     nets = set()
     try:
@@ -1698,7 +1698,7 @@ def local_subnets():
 
 
 def profile_services(profile):
-    """Services autorisés depuis le réseau local par le profil, selon ce qui est installé sur la machine."""
+    """Services allowed from the local network by the profile, depending on what is installed on the machine."""
     if profile == "public":
         return []
     svc = []
@@ -1725,7 +1725,7 @@ def profile_nets(profile):
 
 
 def profile_rules(profile):
-    """Arguments ufw des règles du profil : autorisations limitées au réseau local, taguées PROFILE_TAG."""
+    """ufw arguments of the profile rules: permissions limited to the local network, tagged PROFILE_TAG."""
     ports = {"ssh": [(str(ssh_port()), "tcp")], "cups": [("631", "tcp")], "samba": [("139,445", "tcp"), ("137,138", "udp")],
              "mdns": [("5353", "udp")], "kdeconnect": [("1714:1764", "tcp"), ("1714:1764", "udp")]}
     rules = []
@@ -1767,7 +1767,7 @@ def graphical_sessions():
 
 
 def session_age(sid):
-    """Secondes depuis l'ouverture de la session (loginctl TimestampMonotonic vs uptime), None si inconnu."""
+    """Seconds since the session was opened (loginctl TimestampMonotonic vs uptime), None if unknown."""
     r = run_quiet(["loginctl", "show-session", sid, "-p", "TimestampMonotonic", "--value"], timeout=10)
     try:
         started = int((r.stdout or "").strip()) / 1e6
@@ -1781,8 +1781,8 @@ TRAY_PROCESS_RE = r"^(/usr/bin/)?python3(\.[0-9]+)? /opt/dukiwi-shield/dukiwi-sh
 
 
 def network_identity():
-    """Réseau courant : {key, name, type, device}. Clé stable = connexion NetworkManager qui porte la route par défaut
-    (uuid), sinon adresse MAC de la passerelle. None hors ligne."""
+    """Current network: {key, name, type, device}. Stable key = NetworkManager connection carrying the default
+    route (uuid), otherwise the gateway MAC address. None when offline."""
     r = run_quiet(["ip", "-j", "route", "show", "default"], timeout=10)
     try:
         routes = json.loads(r.stdout or "[]")
@@ -1806,8 +1806,8 @@ def network_identity():
 
 
 def gateway_mac(gw):
-    """Adresse matérielle de la passerelle (table des voisins). Un changement sur un réseau connu = routeur remplacé,
-    ou appareil qui se fait passer pour lui (empoisonnement ARP, homme du milieu)."""
+    """Hardware address of the gateway (neighbour table). A change on a known network = router replaced,
+    or a device impersonating it (ARP poisoning, man in the middle)."""
     r = run_quiet(["ip", "-j", "neigh", "show", gw], timeout=10)
     try:
         return next((x.get("lladdr", "").lower() for x in json.loads(r.stdout or "[]") if x.get("lladdr")), "")
@@ -1816,7 +1816,7 @@ def gateway_mac(gw):
 
 
 def wifi_security(device=""):
-    """Chiffrement du Wi-Fi actif : « open » (aucun), « wep » (cassé), « secured », ou « » si inconnu."""
+    """Encryption of the active Wi-Fi: "open" (none), "wep" (broken), "secured", or "" if unknown."""
     if not shutil.which("nmcli"):
         return ""
     r = run_quiet(["nmcli", "-t", "-f", "ACTIVE,SECURITY,SSID", "dev", "wifi"] + (["ifname", device] if device else []), timeout=15)
@@ -1831,7 +1831,7 @@ def wifi_security(device=""):
 
 
 def vpn_active():
-    """Un VPN est-il actif (connexion NetworkManager vpn/wireguard, ou interface tun/wg/tap/ppp montée) ?"""
+    """Is a VPN active (NetworkManager vpn/wireguard connection, or tun/wg/tap/ppp interface up)?"""
     if shutil.which("nmcli"):
         r = run_quiet(["nmcli", "-t", "-f", "NAME,TYPE", "connection", "show", "--active"], timeout=10)
         for ln in (r.stdout or "").splitlines():
@@ -1846,18 +1846,18 @@ def vpn_active():
 
 UFW_RULE_COMMANDS = ("allow", "deny", "reject", "limit", "insert", "prepend")
 FEATURES_OPT_IN = ("honeypot",)
-URLGUARD_DIR = os.path.join(SYSTEM_STATE_DIR, "urlguard")          # index des listes de sites malveillants
-MAIL_TMP_PREFIX = "/tmp/dukiwi-shield-mail-"                       # pièces jointes déposées par l'hôte natif (par uid)
+URLGUARD_DIR = os.path.join(SYSTEM_STATE_DIR, "urlguard")          # index of the malicious site lists
+MAIL_TMP_PREFIX = "/tmp/dukiwi-shield-mail-"                       # attachments dropped by the native host (per uid)
 BROWSER_BINARIES = {"thunderbird": ("thunderbird",), "firefox": ("firefox", "firefox-esr"), "chrome": ("google-chrome", "google-chrome-stable"),
-                    "chromium": ("chromium", "chromium-browser"), "edge": ("microsoft-edge", "microsoft-edge-stable"), "brave": ("brave-browser", "brave")}               # protections avancées proposées à l'utilisateur (jamais activées d'office)
+                    "chromium": ("chromium", "chromium-browser"), "edge": ("microsoft-edge", "microsoft-edge-stable"), "brave": ("brave-browser", "brave")}               # advanced protections offered to the user (never enabled automatically)
 
 
 UFW_INIT = os.environ.get("DUKIWI_SHIELD_UFW_INIT") or next((p for p in ("/lib/ufw/ufw-init", "/usr/lib/ufw/ufw-init") if os.path.exists(p)), "/lib/ufw/ufw-init")
 
 
 def ufw_chains_loaded():
-    """Les chaînes UFW existent dans le noyau (même test que ufw-init : « Firewall already started »),
-    indépendant de la langue et de ufw.conf. Root seulement ; False si iptables est absent."""
+    """The UFW chains exist in the kernel (same test as ufw-init: "Firewall already started"),
+    independent of the language and of ufw.conf. Root only; False if iptables is missing."""
     if os.geteuid() != 0 and not os.environ.get("DUKIWI_SHIELD_UFW_INIT"):
         return False
     r = run_quiet(["iptables", "-L", "ufw-user-input", "-n"], timeout=15)
@@ -1865,8 +1865,8 @@ def ufw_chains_loaded():
 
 
 def firewall_running():
-    """True si les chaînes UFW sont réellement chargées : « Status: active », ou chaînes présentes (secours si la
-    sortie de ufw n'est pas analysable)."""
+    """True if the UFW chains are actually loaded: "Status: active", or chains present (fallback if the
+    ufw output cannot be parsed)."""
     r = run_quiet(["ufw", "status"], timeout=20)
     if r.returncode == 0 and parse_ufw_verbose(r.stdout).get("active"):
         return True
@@ -1893,8 +1893,8 @@ def firewalld_zone():
 
 
 def firewalld_rules(zone):
-    """Services, ports et règles riches de la zone, dans le format des règles ufw (to / action / from / comment)
-    pour l'interface et ufw_port_allowed ; kind/spec servent à la suppression."""
+    """Services, ports and rich rules of the zone, in the ufw rule format (to / action / from / comment)
+    for the interface and ufw_port_allowed; kind/spec are used for deletion."""
     rules = []
 
     def add(to, action, frm, comment, kind, spec):
@@ -1947,7 +1947,7 @@ def firewalld_status():
 
 
 def firewall_conflicts():
-    """Autres gestionnaires de pare-feu susceptibles d'effacer les règles (au démarrage ou à la volée)."""
+    """Other firewall managers likely to wipe the rules (at boot or on the fly)."""
     out = []
     backend = distro.firewall_backend()
     if backend == "firewalld" and systemd_is_active("ufw"):
@@ -1967,8 +1967,8 @@ def firewall_conflicts():
 
 
 def firewall_unit_persist(log_fn):
-    """ufw.service démasquée, activée et démarrée : les règles sont rechargées au démarrage et
-    « systemctl is-active ufw » reflète l'état réel."""
+    """ufw.service unmasked, enabled and started: the rules are reloaded at boot and
+    "systemctl is-active ufw" reflects the actual state."""
     if TEST_MODE and not os.environ.get("DUKIWI_SHIELD_UFW_INIT"):
         return
     r = run_quiet(["systemctl", "is-enabled", "ufw"], timeout=10)
@@ -1979,14 +1979,14 @@ def firewall_unit_persist(log_fn):
         run_quiet(["systemctl", "enable", "ufw"], timeout=30)
         log_fn(f"ufw.service was {st or 'unknown'}: enabled at boot")
     if not systemd_is_active("ufw"):
-        run_quiet(["systemctl", "start", "ufw"], timeout=60)       # ufw-init start quiet : sans effet si déjà chargé
+        run_quiet(["systemctl", "start", "ufw"], timeout=60)       # ufw-init start quiet: no effect if already loaded
 
 
 def firewall_enable_checked(ufw, log_fn):
-    """« Activer le pare-feu » vérifié. `ufw enable` répond 0 avec « Firewall is active » même quand ufw-init échoue,
-    dès que ufw.conf disait déjà ENABLED=yes (frontend.set_enabled ne remonte l'erreur que si l'état a changé) :
-    le pare-feu paraît activé mais reste inactif. On contrôle donc l'état réel ; s'il n'est pas chargé, on force
-    disable → enable (l'erreur réelle apparaît), puis ufw-init start, et on rend l'erreur à l'utilisateur."""
+    """Verified "Enable the firewall". `ufw enable` returns 0 with "Firewall is active" even when ufw-init fails,
+    as soon as ufw.conf already said ENABLED=yes (frontend.set_enabled only reports the error if the state
+    changed): the firewall looks enabled but stays inactive. So we check the actual state; if it is not loaded,
+    we force disable → enable (the real error shows up), then ufw-init start, and return the error to the user."""
     ok, text = ufw("enable")
     if ok and firewall_running():
         firewall_unit_persist(log_fn)
@@ -2010,9 +2010,9 @@ def firewall_enable_checked(ufw, log_fn):
 
 
 def ufw_args(args):
-    """Arguments complets d'un appel ufw. ufw n'insère le mot-clé implicite « rule » que si la commande est en
-    première position : « ufw --force allow … » répond « Invalid syntax » (frontend.parse_command). On écrit donc
-    « rule » explicitement pour les commandes de règle ; « delete N » (par numéro) reste tel quel."""
+    """Full arguments of a ufw call. ufw only inserts the implicit "rule" keyword if the command comes
+    first: "ufw --force allow …" answers "Invalid syntax" (frontend.parse_command). So we write
+    "rule" explicitly for rule commands; "delete N" (by number) stays as is."""
     args = [str(a) for a in args]
     if args and (args[0] in UFW_RULE_COMMANDS or (args[0] == "delete" and len(args) > 1 and not args[1].isdigit())):
         args = ["rule"] + args
@@ -2020,12 +2020,12 @@ def ufw_args(args):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Surveillance des supports USB (udev)
+# USB device monitoring (udev)
 # ═══════════════════════════════════════════════════════════════════════════
 
 def usb_identity(info):
-    """Identité stable d'un support USB pour « Faire confiance à cette clé » : numéro de série et UUID du système de
-    fichiers (l'un ou l'autre peut manquer selon le support)."""
+    """Stable identity of a USB medium for "Trust this key": serial number and file system UUID
+    (either one may be missing depending on the medium)."""
     serial, uuid = (info or {}).get("serial") or "", (info or {}).get("uuid") or ""
     return f"{serial}|{uuid}" if (serial or uuid) else ""
 
@@ -2034,18 +2034,18 @@ HID_POINTER_PROPS = ("ID_INPUT_MOUSE", "ID_INPUT_TOUCHPAD", "ID_INPUT_POINTINGST
 
 
 class HidGuard(threading.Thread):
-    """BadUSB : une clé piégée se présente comme un clavier et tape des commandes à la place de l'utilisateur. Tout nouveau
-    périphérique USB qui se déclare clavier (udev : ID_INPUT_KEYBOARD) est coupé dès son apparition (« authorized » = 0,
-    le noyau le retire) et un popup demande s'il faut l'autoriser ; accord mémorisé (identifiant vendeur:produit:série).
-    Garde-fous pour ne jamais enfermer l'utilisateur : seul clavier de l'ordinateur, ou récepteur clavier+souris sans autre
-    pointeur → autorisé d'office (popup d'information). Les claviers présents au démarrage du service sont connus."""
+    """BadUSB: a rigged key presents itself as a keyboard and types commands in place of the user. Any new USB
+    device declaring itself a keyboard (udev: ID_INPUT_KEYBOARD) is cut off as soon as it appears ("authorized" = 0,
+    the kernel removes it) and a popup asks whether to allow it; consent remembered (vendor:product:serial id).
+    Safeguards so the user is never locked out: the computer's only keyboard, or a keyboard+mouse receiver with no
+    other pointer → allowed automatically (information popup). Keyboards present when the service starts are known."""
 
     def __init__(self, daemon):
         super().__init__(daemon=True, name="hid-guard")
         self.daemon_ref = daemon
         self.active = False
-        self.pending = {}            # ident -> info (claviers coupés, en attente de décision)
-        self.session_seen = set()    # claviers présents au démarrage du service
+        self.pending = {}            # ident -> info (keyboards disabled, awaiting decision)
+        self.session_seen = set()    # keyboards present when the service started
         self.lock = threading.Lock()
         self.ctx = None
 
@@ -2135,7 +2135,8 @@ class HidGuard(threading.Thread):
         self.decide(self.describe(usb))
 
     def decide(self, info):
-        """Clavier USB qui vient d'apparaître : connu → rien ; seul clavier ou seul pointeur → autorisé (information) ; sinon coupé."""
+        """USB keyboard that just appeared: known → nothing; only keyboard or only pointer → allowed (information);
+otherwise cut off."""
         if self.daemon_ref.settings.get("usb_keyboard_guard") is False:
             return "off"
         ident = info["id"]
@@ -2169,7 +2170,7 @@ class HidGuard(threading.Thread):
         return "blocked"
 
     def allow(self, ident, remember=True):
-        """« Autoriser ce clavier » : réactivé (le noyau le ré-énumère) et mémorisé."""
+        """"Allow this keyboard": re-enabled (the kernel re-enumerates it) and remembered."""
         with self.lock:
             info = self.pending.pop(ident, None)
         if info is None:
@@ -2187,14 +2188,14 @@ class HidGuard(threading.Thread):
 
 
 class UsbWatcher(threading.Thread):
-    """Analyse les clés USB avant leur montage ; demande pour les disques durs USB."""
+    """Scans USB keys before mounting them; asks for USB hard drives."""
 
     def __init__(self, daemon):
         super().__init__(daemon=True, name="usb-watcher")
         self.daemon_ref = daemon
         self.active = False
-        self.pending = {}           # devnode -> info (disques volumineux en attente de décision)
-        self.mounted = {}           # devnode -> mountpoint (montages privés du daemon)
+        self.pending = {}           # devnode -> info (large disks awaiting decision)
+        self.mounted = {}           # devnode -> mountpoint (daemon private mounts)
         self.lock = threading.Lock()
 
     def run(self):
@@ -2224,7 +2225,7 @@ class UsbWatcher(threading.Thread):
         self.active = False
 
     def describe(self, device):
-        """Informations utiles sur une partition/un disque USB portant un système de fichiers."""
+        """Useful information about a USB partition/disk carrying a file system."""
         settings = self.daemon_ref.settings
         max_bytes = int(settings.get("usb_auto_scan_max_gib")) * 1024 ** 3
         auto = bool(settings.get("usb_auto_scan"))
@@ -2270,7 +2271,7 @@ class UsbWatcher(threading.Thread):
                 f"{info['size'] // 2**20} MiB, {info['kind']}{', de confiance' if info['trusted'] else ''})")
             self.daemon_ref.broadcast({"event": "usb_added", "usb": info})
             if info["trusted"]:
-                # « Faire confiance à cette clé » : remise à l'utilisateur sans analyse (choix révocable dans Paramètres)
+                # "Trust this key": handed to the user without scanning (choice revocable in Settings)
                 self.daemon_ref.write_log(f"USB trusted, mounted without scan: {devnode} ({info['label'] or info['model']})")
                 self.daemon_ref.broadcast({"event": "usb_trusted", "usb": info})
             elif info["kind"] == "key":
@@ -2290,7 +2291,7 @@ class UsbWatcher(threading.Thread):
             self.unmount(devnode)
             self.daemon_ref.broadcast({"event": "usb_removed", "devnode": devnode, "usb": info})
 
-    # ── Montage privé ────────────────────────────────────────────────────
+    # ── Private mount ────────────────────────────────────────────────────
     def mount(self, info):
         devnode = info["devnode"]
         mountpoint = os.path.join(USB_MOUNT_ROOT, os.path.basename(devnode))
@@ -2299,9 +2300,9 @@ class UsbWatcher(threading.Thread):
         if info["fstype"] in ("vfat", "exfat", "ntfs"):
             opts += ",umask=077"
         if info["fstype"] in ("vfat", "iso9660"):
-            # Noms de fichiers en UTF-8, comme le montage du bureau. Sans cette option le noyau les rend en ISO 8859-1 :
-            # « é » devient l'octet 0xE9, invalide en UTF-8, et l'inventaire du support échouait (« Internal error:
-            # 'utf-8' codec can't decode byte 0xe9 »), ce qui laissait la clé inaccessible.
+            # File names in UTF-8, like the desktop mount. Without this option the kernel returns them in ISO 8859-1:
+            # "é" becomes byte 0xE9, invalid in UTF-8, and the drive inventory failed ("Internal error:
+            # 'utf-8' codec can't decode byte 0xe9"), which left the key inaccessible.
             opts += ",utf8"
         r = run_quiet(["mount", "-o", opts, devnode, mountpoint], timeout=60)
         if r.returncode != 0:
@@ -2343,7 +2344,7 @@ class UsbWatcher(threading.Thread):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# État du système : mises à jour de sécurité et CVE (apt)
+# System status: security updates and CVEs (apt)
 # ═══════════════════════════════════════════════════════════════════════════
 
 CVE_RE = re.compile(r"CVE-\d{4}-\d{4,}")
@@ -2351,8 +2352,8 @@ CHANGELOG_HEADER_RE = re.compile(r"^(\S+) \(([^)]+)\) ([^;]+); urgency=", re.M)
 
 
 def parse_changelog_cves(text, installed_version, compare):
-    """CVE mentionnées dans les entrées de changelog plus récentes que la version installée.
-    Retourne {cve: titre}."""
+    """CVEs mentioned in changelog entries newer than the installed version.
+    Returns {cve: title}."""
     cves = {}
     entries = list(CHANGELOG_HEADER_RE.finditer(text))
     for i, m in enumerate(entries):
@@ -2370,7 +2371,7 @@ def parse_changelog_cves(text, installed_version, compare):
                     title = title.split(":", 1)[1].strip()
                 in_title = True
             elif in_title and stripped and not stripped.startswith("- "):
-                title = f"{title} {stripped}"          # suite du titre sur la ligne suivante
+                title = f"{title} {stripped}"          # title continues on the next line
             else:
                 in_title = False
             for cve in CVE_RE.findall(stripped):
@@ -2380,7 +2381,7 @@ def parse_changelog_cves(text, installed_version, compare):
 
 
 def collect_system_status(previous=None):
-    """Relevé de l'état du système : paquets à mettre à jour, sécurité, CVE, redémarrage."""
+    """System status report: packages to update, security, CVEs, reboot."""
     status = {
         "checked_at": now_iso(), "ok": True, "error": "",
         "os": "", "kernel": "", "reboot_required": False, "reboot_pkgs": [],
@@ -2410,7 +2411,7 @@ def collect_system_status(previous=None):
 
     if distro.is_rpm():
         status["reboot_required"] = False
-        return distro.pending_updates(status)          # dnf check-update + updateinfo (avis de sécurité et CVE)
+        return distro.pending_updates(status)          # dnf check-update + updateinfo (security advisories and CVEs)
     try:
         import apt
         import apt_pkg
@@ -2421,7 +2422,7 @@ def collect_system_status(previous=None):
         status["error"] = f"python3-apt: {e}"
         return status
     try:
-        cache.upgrade(dist_upgrade=False)   # simulation en mémoire (rien n'est installé) : ce qu'« apt upgrade » installerait vraiment
+        cache.upgrade(dist_upgrade=False)   # in-memory simulation (nothing is installed): what "apt upgrade" would really install
         sim_ok = True
     except Exception:  # noqa: BLE001
         sim_ok = False
@@ -2437,7 +2438,7 @@ def collect_system_status(previous=None):
                 security = any((o.archive or "").endswith("-security") or (o.label or "") == "Debian-Security"
                                for o in origins)
                 phase = cand.record.get("Phased-Update-Percentage") if cand else None
-                # « apt upgrade » ne l'installerait pas : décalé (phasing) ou retenu (dépendances, « kept back »)
+                # "apt upgrade" would not install it: deferred (phasing) or held (dependencies, "kept back")
                 held = sim_ok and not pkg.marked_upgrade
                 category = "security" if security else "recommended"
                 if held:
@@ -2449,7 +2450,7 @@ def collect_system_status(previous=None):
                     "archive": origins[0].archive if origins else "", "cves": {},
                 })
                 continue
-            # Mise à jour "décalée" (phased) : une version plus récente existe mais apt la retient
+            # "Phased" update: a newer version exists but apt holds it back
             for ver in pkg.versions:
                 if ver > pkg.installed and ver != pkg.candidate and ver.record.get("Phased-Update-Percentage") is not None:
                     origins = ver.origins
@@ -2463,12 +2464,12 @@ def collect_system_status(previous=None):
         except Exception:  # noqa: BLE001
             continue
     status["upgradable"] = sum(1 for p in packages if p["category"] in ("security", "recommended"))   # installables maintenant
-    status["security"] = sum(1 for p in packages if p["security"] and p["category"] != "phased")       # y compris retenus (à surveiller)
+    status["security"] = sum(1 for p in packages if p["security"] and p["category"] != "phased")       # including held ones (to watch)
     status["recommended"] = sum(1 for p in packages if p["category"] == "recommended")
     status["phased"] = sum(1 for p in packages if p["category"] == "phased")
     status["held"] = sum(1 for p in packages if p["category"] == "held")
 
-    # CVE : changelog des paquets de sécurité (et du noyau), limité pour rester raisonnable
+    # CVE: changelog of security packages (and the kernel), limited to stay reasonable
     prev_pkgs = {p["name"]: p for p in ((previous or {}).get("packages") or [])}
     targets = [p for p in packages if p["security"] or p["name"].startswith("linux-image")][:40]
     env = dict(os.environ, APT_PAGER="cat", LC_ALL="C")
@@ -2499,7 +2500,7 @@ def collect_system_status(previous=None):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Mises à jour de l'application (manifeste signé) et intégrité des fichiers
+# Application updates (signed manifest) and file integrity
 # ═══════════════════════════════════════════════════════════════════════════
 
 class UpdateChecker:
@@ -2508,7 +2509,7 @@ class UpdateChecker:
         self.lock = threading.Lock()
 
     def check(self, force=False):
-        """Télécharge manifest.json + .sig, vérifie la signature, prépare le .deb si plus récent."""
+        """Downloads manifest.json + .sig, checks the signature, prepares the .deb if newer."""
         with self.lock:
             os.makedirs(UPDATES_DIR, exist_ok=True)
             info = {"checked_at": now_iso(), "current": VERSION, "available": False, "verified": False,
@@ -2573,7 +2574,7 @@ class UpdateChecker:
             return info
 
     def install(self, info):
-        """Installe le .deb vérifié dans une unité transitoire (survit au redémarrage du daemon)."""
+        """Installs the verified .deb in a transient unit (survives a restart of the daemon)."""
         path = info.get("path", "")
         if not (info.get("available") and info.get("verified") and path and os.path.exists(path)):
             return False, "not_ready"
@@ -2590,7 +2591,7 @@ class UpdateChecker:
 
 
 def app_integrity():
-    """Compare les fichiers installés au manifeste d'intégrité livré dans le paquet."""
+    """Compares the installed files with the integrity manifest shipped in the package."""
     result = {"checked_at": now_iso(), "available": os.path.exists(INTEGRITY_FILE), "signed": False,
               "verified": False, "modified": [], "missing": [], "count": 0, "version": ""}
     if not result["available"]:
@@ -2618,14 +2619,14 @@ def app_integrity():
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Inventaire des failles ouvertes (OSV.dev, écosystème Ubuntu) + Flatpak/Snap
+# Inventory of open vulnerabilities (OSV.dev, Ubuntu ecosystem) + Flatpak/Snap
 # ═══════════════════════════════════════════════════════════════════════════
 
 PRIORITY_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3, "negligible": 4, "untriaged": 5, "": 6}
 
 
 def installed_sources():
-    """{source_package: {"version": source_version, "binaries": [...]}} des paquets installés."""
+    """{source_package: {"version": source_version, "binaries": [...]}} of the installed packages."""
     r = run_quiet(["dpkg-query", "-W", "-f", "${Package}\t${source:Package}\t${source:Version}\t${Version}\t${db:Status-Status}\n"], timeout=60)
     sources = {}
     for line in (r.stdout or "").splitlines():
@@ -2635,8 +2636,8 @@ def installed_sources():
         binary, source, sversion, version = parts[0], parts[1] or parts[0], parts[2] or parts[3], parts[3]
         entry = sources.setdefault(source, {"version": sversion, "binaries": []})
         entry["binaries"].append(binary)
-        # Plusieurs versions d'une même source peuvent coexister (noyaux linux-image-6.8.0-101/-139…) :
-        # la version qui compte est la plus récente, sinon des failles déjà corrigées ressortent.
+        # Several versions of the same source can coexist (kernels linux-image-6.8.0-101/-139…):
+        # the version that counts is the newest, otherwise already fixed vulnerabilities show up.
         if sversion != entry["version"] and version_gt(sversion, entry["version"]):
             entry["version"] = sversion
     return sources
@@ -2646,7 +2647,7 @@ KERNEL_SOURCE_RE = re.compile(r"^linux(-signed)?(-(hwe|oem|lowlatency|generic|aw
 
 
 def running_kernel_source(sources):
-    """Paquet source du noyau en cours d'exécution (uname -r), ex. linux (6.8 GA) ou linux-hwe-7.0."""
+    """Source package of the running kernel (uname -r), e.g. linux (6.8 GA) or linux-hwe-7.0."""
     release = os.uname().release
     r = run_quiet(["dpkg-query", "-W", "-f", "${source:Package}", f"linux-image-{release}"], timeout=15)
     src = (r.stdout or "").strip()
@@ -2662,13 +2663,13 @@ def running_kernel_source(sources):
 
 
 def hwe_version_key(name):
-    """linux-hwe-6.14 → (6, 14) : tri numérique des noyaux HWE (6.8 avant 6.11, 7.0 après)."""
+    """linux-hwe-6.14 → (6, 14): numeric sort of HWE kernels (6.8 before 6.11, 7.0 after)."""
     m = re.search(r"(\d+)\.(\d+)$", name)
     return (int(m.group(1)), int(m.group(2))) if m else (0, 0)
 
 
 def osv_query(sources, ecosystem, skip=()):
-    """Interroge OSV par lots, avec pagination (un noyau dépasse les 1000 fiches d'une page) ; {source: [ids]}."""
+    """Queries OSV in batches, with pagination (a kernel exceeds the 1000 records of a page); {source: [ids]}."""
     names = sorted(n for n in sources if n not in skip)
     found = {}
     for i in range(0, len(names), 1000):
@@ -2694,7 +2695,7 @@ def osv_query(sources, ecosystem, skip=()):
 
 
 def osv_details(ids, cache, ecosystem, max_workers=8):
-    """Détails OSV (mis en cache par id). Retourne {id: detail_simplifié}."""
+    """OSV details (cached by id). Returns {id: simplified_detail}."""
     def fetch(vid):
         try:
             d = json.loads(http_get(OSV_VULN_URL + vid, timeout=30))
@@ -2706,8 +2707,8 @@ def osv_details(ids, cache, ecosystem, max_workers=8):
                 priority = str(sev.get("score", "")).lower()
             elif sev.get("type", "").startswith("CVSS") and not cvss:
                 cvss = sev.get("score", "")
-        # Une fiche OSV Ubuntu couvre plusieurs paquets sources (linux, linux-aws, linux-hwe-6.11…) :
-        # la version corrigée et la disponibilité (Ubuntu Pro) se lisent PAR PAQUET, jamais globalement.
+        # An Ubuntu OSV record covers several source packages (linux, linux-aws, linux-hwe-6.11…):
+        # the fixed version and availability (Ubuntu Pro) are read PER PACKAGE, never globally.
         fixed_by_pkg, pro_by_pkg = {}, {}
         for aff in d.get("affected") or []:
             pkg = aff.get("package", {})
@@ -2733,7 +2734,7 @@ def osv_details(ids, cache, ecosystem, max_workers=8):
                      "published": d.get("published", ""), "priority": priority, "cvss": cvss,
                      "fixed_by_pkg": fixed_by_pkg, "pro_by_pkg": pro_by_pkg, "summary": summary[:240]}
 
-    usable = lambda vid: vid in cache and "fixed_by_pkg" in cache[vid]      # anciens caches (< 1.8.4) : re-téléchargés
+    usable = lambda vid: vid in cache and "fixed_by_pkg" in cache[vid]      # old caches (< 1.8.4): re-downloaded
     todo = [vid for vid in ids if not usable(vid)]
     out = {vid: cache[vid] for vid in ids if usable(vid)}
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
@@ -2749,7 +2750,7 @@ ENGINE_TERMS = re.compile(r"\b(SpiderMonkey|JavaScript engine|JS engine|JIT|garb
 
 
 def embedded_engine_users(binaries):
-    """Paquets installés qui dépendent du moteur (apt-cache rdepends), pour l'explication à l'utilisateur."""
+    """Installed packages that depend on the engine (apt-cache rdepends), for the explanation to the user."""
     def rdepends(pkg):
         r = run_quiet(["apt-cache", "rdepends", "--installed", pkg], timeout=30)
         return {ln.strip().lstrip("|").strip() for ln in (r.stdout or "").splitlines()[2:]
@@ -2759,17 +2760,17 @@ def embedded_engine_users(binaries):
         if b.startswith("libmozjs"):
             direct |= rdepends(b)
     users = {u for u in direct if not u.startswith("lib")}
-    for lib in [u for u in direct if u.startswith("lib")]:      # libcjs0 → cjs, cinnamon… (un niveau de plus)
+    for lib in [u for u in direct if u.startswith("lib")]:      # libcjs0 → cjs, cinnamon… (one more level)
         users |= {u for u in rdepends(lib) if not u.startswith("lib")}
     return sorted(users or direct)[:12]
 
 
-# Failles célèbres sans correctif possible (défaut de conception) : explication intégrée, usage réel vérifié
+# Famous vulnerabilities with no possible fix (design flaw): built-in explanation, actual usage checked
 CVE_KNOWLEDGE = {"CVE-2024-3661": "tunnelvision"}
 
 
 def vpn_connections():
-    """Connexions VPN configurées dans NetworkManager (noms), pour dire si TunnelVision concerne cet ordinateur."""
+    """VPN connections configured in NetworkManager (names), to tell whether TunnelVision affects this computer."""
     r = run_quiet(["nmcli", "-t", "-f", "NAME,TYPE", "connection", "show"], timeout=15)
     out = []
     for ln in (r.stdout or "").splitlines():
@@ -2780,7 +2781,7 @@ def vpn_connections():
 
 
 def annotate_vulns(vulns):
-    """Notes intégrées par CVE (clé de traduction) et contexte machine (VPN configurés)."""
+    """Built-in notes per CVE (translation key) and machine context (configured VPNs)."""
     for it in vulns.get("items") or []:
         note = CVE_KNOWLEDGE.get(it.get("cve") or "")
         if note:
@@ -2794,8 +2795,8 @@ VULN_ACK_MAX = 20000
 
 
 def apply_vuln_acks(vulns, acks):
-    """« Ignorer » : les CVE approuvées par l'utilisateur ne comptent plus (tray, score, vue simple) mais restent
-    listées dans une section repliée. Recalcule les compteurs et la répartition par priorité à partir des éléments."""
+    """"Ignore": CVEs approved by the user no longer count (tray, score, simple view) but remain
+    listed in a collapsed section. Recomputes the counters and the breakdown by priority from the items."""
     out = dict(vulns or {})
     acks = acks or {}
     items = []
@@ -2831,8 +2832,8 @@ def apply_vuln_acks(vulns, acks):
 
 
 def reclassify_vulns(vulns):
-    """Relevé enregistré par une version précédente : applique la classification « non applicable » (moteur intégré)
-    sans réseau, au démarrage, pour que l'affichage soit juste tout de suite."""
+    """Report saved by a previous version: applies the "not applicable" classification (embedded engine)
+    without network, at startup, so that the display is right immediately."""
     out = dict(vulns or {})
     counts = dict(out.get("counts") or {})
     counts.setdefault("not_applicable", 0)
@@ -2862,11 +2863,11 @@ def reclassify_vulns(vulns):
         elif it.get("status") in ("unfixed", "pro_only") and KERNEL_SOURCE_RE.match(it.get("package") or "") \
                 and it["package"] not in image_sources and it["package"].replace("linux-signed", "linux") not in image_sources:
             counts[it["status"]] = max(0, int(counts.get(it["status"]) or 0) - 1)
-            it["status"] = "not_applicable"     # en-têtes / outils seulement : ce noyau n'est pas installé
+            it["status"] = "not_applicable"     # headers / tools only: this kernel is not installed
             counts["not_applicable"] += 1
             headers[it["package"]] = it.get("installed") or ""
         if it.get("hwe_fixed") and (it.get("package") != "linux" or running != "linux" or it.get("status") not in ("unfixed", "kernel_pending")):
-            it["hwe_fixed"] = ""                # conseil HWE seulement quand le noyau d'origine tourne vraiment
+            it["hwe_fixed"] = ""                # HWE advice only when the original kernel is actually running
         if it.get("status") not in ("kernel_pending", "not_applicable") and not it.get("dormant"):
             pr = it.get("priority") or "untriaged"
             by_priority[pr] = by_priority.get(pr, 0) + 1
@@ -2880,7 +2881,7 @@ def reclassify_vulns(vulns):
 
 
 def collect_vulnerabilities(previous=None):
-    """Failles connues affectant les paquets installés : sans correctif, correctif Pro, ou correctif disponible."""
+    """Known vulnerabilities affecting installed packages: no fix, Pro fix, or fix available."""
     ecosystem = ubuntu_osv_ecosystem()
     result = {"checked_at": now_iso(), "ok": True, "error": "", "ecosystem": ecosystem,
               "sources": 0, "items": [], "counts": {"unfixed": 0, "pro_only": 0, "fix_available": 0, "kernel_pending": 0, "not_applicable": 0, "na_embedded": 0, "na_vendor": 0,
@@ -2889,24 +2890,25 @@ def collect_vulnerabilities(previous=None):
               "running_kernel": {}, "dormant_kernels": [],
               "by_priority": {}, "flatpak": [], "snap": [], "cache": {}}
     if distro.is_rpm() or not ecosystem:
-        # OSV ne couvre pas Fedora (les avis CVE viennent de dnf updateinfo, État du système) ; sans version d'Ubuntu
-        # connue (LMDE, Debian…), pas d'inventaire plutôt qu'un inventaire fait pour une autre version.
+        # OSV does not cover Fedora (CVE advisories come from dnf updateinfo, System status); without a known
+        # Ubuntu version (LMDE, Debian…), no inventory rather than an inventory made for another version.
         result.update(ecosystem="unsupported", unsupported=True)
         return result
     try:
         sources = installed_sources()
         result["sources"] = len(sources)
-        # Noyaux installés mais non démarrés (ex. linux 6.8 GA alors que linux-hwe-7.0 tourne) : leurs failles
-        # ne concernent pas le système en cours ; ils ne sont ni interrogés, ni comptés, ni affichés.
+        # Kernels installed but not booted (e.g. linux 6.8 GA while linux-hwe-7.0 is running): their
+        # vulnerabilities do not affect the running system; they are neither queried, counted nor displayed.
         running_src, release = running_kernel_source(sources)
-        def kernel_family(name):              # linux-signed-hwe-7.0 et linux-hwe-7.0 : même noyau
+        def kernel_family(name):              # linux-signed-hwe-7.0 and linux-hwe-7.0: same kernel
             return "linux" + name[len("linux-signed"):] if name.startswith("linux-signed") else name
         kernel_sources = {n for n, info in sources.items() if n.startswith("linux")
                           and any(re.match(r"linux-(image|modules)(-unsigned)?-\d", b) for b in info.get("binaries", []))}
         dormant = {n for n in kernel_sources if running_src and kernel_family(n) != kernel_family(running_src)}
-        # Source noyau présente seulement par ses en-têtes ou outils (linux-libc-dev, linux-headers, linux-tools) : aucune image
-        # de ce noyau n'est installée (Mint livré en HWE 6.14 : « linux » 6.8 n'existe que par linux-libc-dev). Ses failles
-        # visent un noyau qui ne tourne pas ici → non applicables, et surtout pas de conseil « installer le noyau HWE ».
+        # Kernel source present only through its headers or tools (linux-libc-dev, linux-headers, linux-tools): no
+        # image of this kernel is installed (Mint shipped with HWE 6.14: "linux" 6.8 only exists through
+        # linux-libc-dev). Its vulnerabilities target a kernel that does not run here → not applicable, and above
+        # all no "install the HWE kernel" advice.
         headers_only = {n for n in sources if KERNEL_SOURCE_RE.match(n) and n not in kernel_sources}
         ubuntu_rel = distro.ubuntu_release()
         result["running_kernel"] = {"release": release, "source": running_src,
@@ -2916,8 +2918,8 @@ def collect_vulnerabilities(previous=None):
         hwe_sources = set()
         found = osv_query(sources, ecosystem, skip=dormant)
         ids = sorted({vid for lst in found.values() for vid in lst})
-        # Les détails en cache (versions corrigées, Ubuntu Pro) sont propres à un écosystème : relevé d'une autre
-        # version d'Ubuntu (mise à niveau, ou 24.04 pris par défaut avant 1.24.3) → tout re-télécharger.
+        # Cached details (fixed versions, Ubuntu Pro) are specific to one ecosystem: data from another Ubuntu
+        # version (upgrade, or 24.04 assumed by default before 1.24.3) → re-download everything.
         cache = ((previous or {}).get("cache") or {}) if (previous or {}).get("ecosystem") == ecosystem else {}
         details = osv_details(ids, cache, ecosystem)
         result["cache"] = details
@@ -2929,30 +2931,31 @@ def collect_vulnerabilities(previous=None):
                     continue
                 fixed = (d.get("fixed_by_pkg") or {}).get(source, "")
                 if fixed and not version_gt(fixed, installed):
-                    continue                    # déjà corrigée dans la version installée : ne pas l'afficher
+                    continue                    # already fixed in the installed version: do not show it
                 if (d.get("pro_by_pkg") or {}).get(source):
-                    status = "pro_only"         # correctif réservé à Ubuntu Pro (esm)
+                    status = "pro_only"         # fix reserved for Ubuntu Pro (esm)
                 elif fixed:
-                    status = "fix_available"    # une mise à jour l'installe
+                    status = "fix_available"    # an update installs it
                 else:
-                    status = "unfixed"          # aucun correctif publié par Ubuntu pour ce paquet
+                    status = "unfixed"          # no fix published by Ubuntu for this package
                 if status == "unfixed" and running_src and kernel_family(source) == kernel_family(running_src):
-                    status = "kernel_pending"   # noyau en cours : correctif attendu d'Ubuntu, livré par les mises à jour
+                    status = "kernel_pending"   # running kernel: fix expected from Ubuntu, delivered by updates
                 elif status in ("unfixed", "pro_only") and source in headers_only:
-                    status = "not_applicable"   # en-têtes / outils seulement : ce noyau n'est pas installé
+                    status = "not_applicable"   # headers / tools only: this kernel is not installed
                     result["counts"]["na_headers"] += 1
                     result["headers"][source] = installed
                 elif status == "unfixed" and EMBEDDED_ENGINE_RE.match(source) and not ENGINE_TERMS.search(d.get("summary") or ""):
-                    # Moteur JavaScript extrait de Firefox : Ubuntu y rattache toutes les failles du navigateur (« needed »)
-                    # sans jamais les corriger ; celles qui décrivent le navigateur (contenu web, médias, onglets…) ne
-                    # s'appliquent pas au moteur seul. Les failles propres au moteur (JIT, wasm, GC) restent « unfixed ».
+                    # JavaScript engine extracted from Firefox: Ubuntu attaches all the browser's vulnerabilities to
+                    # it ("needed") without ever fixing them; those describing the browser (web content, media,
+                    # tabs…) do not apply to the engine alone. Vulnerabilities specific to the engine (JIT, wasm, GC)
+                    # stay "unfixed".
                     status = "not_applicable"
                     result["counts"]["na_embedded"] += 1
                     if source not in result["embedded"]:
                         result["embedded"][source] = {"users": embedded_engine_users(sources[source].get("binaries", []))}
                 elif status == "unfixed" and "linuxmint" in installed:
-                    # Paquet construit par Linux Mint (Firefox, Thunderbird…) : le suivi CVE d'Ubuntu vise SA version,
-                    # pas celle-ci ; Mint livre les versions Mozilla à jour.
+                    # Package built by Linux Mint (Firefox, Thunderbird…): Ubuntu's CVE tracking targets ITS version,
+                    # not this one; Mint ships up-to-date Mozilla versions.
                     status = "not_applicable"
                     result["counts"]["na_vendor"] += 1
                     result["vendor"][source] = installed
@@ -2961,12 +2964,13 @@ def collect_vulnerabilities(previous=None):
                     result["counts"]["dormant"] += 1
                 else:
                     result["counts"][status] += 1
-                # Noyau d'origine de la version (source « linux », ex. 6.8 sur 24.04) : la faille est souvent déjà corrigée
-                # dans un noyau HWE de la même version d'Ubuntu (linux-hwe-6.14, linux-hwe-7.0…) ; une version sans HWE
-                # (26.04 en 7.0 aujourd'hui) n'a rien de tel, la fiche OSV ne cite que ses propres paquets.
+                # Original kernel of the release (source "linux", e.g. 6.8 on 24.04): the vulnerability is often
+                # already fixed in an HWE kernel of the same Ubuntu release (linux-hwe-6.14, linux-hwe-7.0…); a
+                # release without HWE (26.04 on 7.0 today) has nothing of the kind, the OSV record only lists its own
+                # packages.
                 hwe = ""
                 if status in ("unfixed", "kernel_pending") and source == "linux" and not is_dormant \
-                        and kernel_family(running_src) == "linux":          # seulement si le noyau d'origine tourne vraiment
+                        and kernel_family(running_src) == "linux":          # only if the original kernel is actually running
                     fixed_hwe = {k: v for k, v in (d.get("fixed_by_pkg") or {}).items() if k.startswith("linux-hwe-") and v}
                     if fixed_hwe:
                         k = min(fixed_hwe, key=hwe_version_key)
@@ -2986,7 +2990,7 @@ def collect_vulnerabilities(previous=None):
     except Exception as e:  # noqa: BLE001
         result["ok"] = False
         result["error"] = str(e)[:200]
-    # Flatpak / Snap : mises à jour disponibles
+    # Flatpak / Snap: available updates
     if shutil.which("flatpak"):
         r = run_quiet(["flatpak", "remote-ls", "--updates", "--app", "--columns=application,version,name"], timeout=120)
         for line in (r.stdout or "").splitlines():
@@ -3004,7 +3008,7 @@ def collect_vulnerabilities(previous=None):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Checklist de sécurité et score
+# Security checklist and score
 # ═══════════════════════════════════════════════════════════════════════════
 
 KNOWN_PORTS = {22: "ssh", 25: "smtp", 53: "dns", 67: "dhcp", 68: "dhcp", 80: "http", 110: "pop3", 111: "rpcbind", 139: "samba", 143: "imap", 443: "https", 465: "smtps", 587: "submission", 993: "imaps",
@@ -3014,8 +3018,8 @@ KNOWN_PORTS = {22: "ssh", 25: "smtp", 53: "dns", 67: "dhcp", 68: "dhcp", 80: "ht
 
 
 def sudoers_file_origin(path):
-    """(paquet, modifié) pour un fichier sudoers : livré par un paquet dpkg (mintupdate, mintdrivers, mintsystem…)
-    et, en root, vérifié inchangé par rapport au paquet (dpkg -V)."""
+    """(package, modified) for a sudoers file: shipped by a dpkg package (mintupdate, mintdrivers, mintsystem…)
+    and, as root, verified unchanged compared with the package (dpkg -V)."""
     if distro.is_rpm():
         return distro.owner_verify(path)
     r = run_quiet(["dpkg", "-S", path], timeout=15)
@@ -3033,13 +3037,13 @@ def sudoers_file_origin(path):
 
 
 def ufw_port_allowed(rules, port, proto):
-    """Une règle ALLOW IN couvre-t-elle ce port ? (« 22/tcp », « 80,443/tcp », « 8000:8100/udp », « 22 », « Anywhere »)."""
+    """Does an ALLOW IN rule cover this port? ("22/tcp", "80,443/tcp", "8000:8100/udp", "22", "Anywhere")."""
     for r in rules:
         action = (r.get("action") or "").upper()
         if not action.startswith("ALLOW") or "OUT" in action:
             continue
         to = (r.get("to") or "").strip()
-        spec = to.split()[-1] if to else ""          # « 192.168.1.5 22/tcp » → « 22/tcp »
+        spec = to.split()[-1] if to else ""          # "192.168.1.5 22/tcp" → "22/tcp"
         if spec.lower() in ("anywhere", "anywhere (v6)", ""):
             return True
         if "/" in spec:
@@ -3063,8 +3067,8 @@ def ufw_port_allowed(rules, port, proto):
 
 
 def port_key(p):
-    """Clé d'un port à l'écoute pour « Ignorer » : port, protocole et programme (un autre programme sur le même port
-    est de nouveau signalé)."""
+    """Key of a listening port for "Ignore": port, protocol and program (another program on the same port
+    is reported again)."""
     return f"{p.get('port')}/{p.get('proto')}:{p.get('process') or p.get('service') or ''}"
 
 
@@ -3101,7 +3105,7 @@ def listening_ports():
 
 
 def human_users():
-    """Comptes humains avec un dossier personnel (uid ≥ 1000 sous /home, et root)."""
+    """Human accounts with a home folder (uid ≥ 1000 under /home, and root)."""
     out = []
     for pw in pwd.getpwall():
         if (pw.pw_uid >= 1000 or pw.pw_uid == 0) and pw.pw_dir.startswith(("/home/", "/root")) and os.path.isdir(pw.pw_dir):
@@ -3110,8 +3114,8 @@ def human_users():
 
 
 def autologin_users(root="/"):
-    """Connexion automatique sans mot de passe : LightDM (autologin-user), GDM (AutomaticLoginEnable), SDDM ([Autologin] User).
-    Un portable volé s'ouvre alors tout seul sur le bureau."""
+    """Automatic login without a password: LightDM (autologin-user), GDM (AutomaticLoginEnable), SDDM ([Autologin] User).
+    A stolen laptop then opens straight to the desktop."""
     users = []
     j = lambda p: os.path.join(root, p.lstrip("/"))
     for path in [j("etc/lightdm/lightdm.conf")] + sorted(glob.glob(j("etc/lightdm/lightdm.conf.d/*.conf"))) + sorted(glob.glob(j("usr/share/lightdm/lightdm.conf.d/*.conf"))):
@@ -3134,7 +3138,7 @@ def autologin_users(root="/"):
 
 
 def dconf_read(pw, key):
-    """Valeur dconf d'un utilisateur (lecture directe de sa base, sans bus de session) ; « » = valeur par défaut."""
+    """dconf value of a user (read directly from their database, without a session bus); "" = default value."""
     if not shutil.which("dconf"):
         return ""
     if os.geteuid() == 0 and pw.pw_uid != 0:
@@ -3148,8 +3152,8 @@ def dconf_read(pw, key):
 
 
 def screen_lock_off_users(users):
-    """Utilisateurs dont l'écran ne se verrouille pas tout seul : Cinnamon / GNOME (dconf : lock-enabled false ou idle-delay 0),
-    KDE (kscreenlockerrc Autolock=false). Valeur par défaut (clé absente) = verrouillage actif."""
+    """Users whose screen does not lock by itself: Cinnamon / GNOME (dconf: lock-enabled false or idle-delay 0),
+    KDE (kscreenlockerrc Autolock=false). Default value (key missing) = lock enabled."""
     off = []
     for pw in users:
         if not os.path.isdir(os.path.join(pw.pw_dir, ".config")):
@@ -3171,8 +3175,8 @@ def screen_lock_off_users(users):
 
 
 def thunderbolt_security(root="/"):
-    """Niveau de sécurité Thunderbolt / USB4 (domain*/security) : « none » = tout périphérique branché a accès direct à la
-    mémoire (attaque DMA), sauf si l'IOMMU protège (iommu_dma_protection). None sans contrôleur."""
+    """Thunderbolt / USB4 security level (domain*/security): "none" = any plugged-in device has direct memory
+    access (DMA attack), unless the IOMMU protects it (iommu_dma_protection). None without a controller."""
     levels = []
     for p in sorted(glob.glob(os.path.join(root, "sys/bus/thunderbolt/devices/domain*/security"))):
         level = _read_text(p)
@@ -3188,8 +3192,8 @@ SECRET_FILES = ((".netrc", "netrc"), (".aws/credentials", "aws"), (".git-credent
 
 
 def secrets_exposure(users):
-    """Secrets en clair dans les dossiers personnels : clés SSH privées sans phrase de passe, clés ou ~/.ssh lisibles par
-    les autres comptes, .netrc, identifiants AWS / git / Docker en clair. {utilisateur: [{name, kind}]}."""
+    """Plain-text secrets in home folders: private SSH keys without a passphrase, keys or ~/.ssh readable by
+    other accounts, .netrc, plain-text AWS / git / Docker credentials. {user: [{name, kind}]}."""
     found = {}
     for pw in users:
         items = []
@@ -3227,8 +3231,8 @@ def secrets_exposure(users):
 
 
 def login_failures(hours=24):
-    """Échecs d'authentification des dernières heures d'après le journal : PAM (« authentication failure » : connexion,
-    sudo, écran de verrouillage), SSH (« Failed password », « Invalid user »)."""
+    """Authentication failures over the last hours according to the journal: PAM ("authentication failure": login,
+    sudo, lock screen), SSH ("Failed password", "Invalid user")."""
     counts = {"sudo": 0, "ssh": 0, "login": 0}
     if not shutil.which("journalctl"):
         return counts
@@ -3242,7 +3246,8 @@ def login_failures(hours=24):
 
 
 def firmware_updates():
-    """Mises à jour de firmware disponibles (fwupd, dépôt LVFS) : [{name, version, new}] ; None si fwupd est absent ou injoignable."""
+    """Available firmware updates (fwupd, LVFS repository): [{name, version, new}]; None if fwupd is missing or
+unreachable."""
     if not shutil.which("fwupdmgr"):
         return None
     r = run_quiet(["fwupdmgr", "get-updates", "--json", "--no-unreported-check", "--no-metadata-check"], timeout=120)
@@ -3260,7 +3265,7 @@ def firmware_updates():
     return out
 
 
-# Catégories du journal de sécurité (lignes du journal du service, par mots-clés)
+# Security log categories (lines of the service log, by keywords)
 JOURNAL_RULES = [
     ("privacy", ("privacy:",)), ("network", ("⚠ certificate", "⚠ redirect")),
     ("integrity", ("⚠ extension", "⚠ ssh key", "⚠ suid", "ssh key", "suid", "malicious pypi", "malicious npm")),
@@ -3291,8 +3296,8 @@ def journal_category(text):
 
 
 def security_journal(daemon, days=30):
-    """Alertes (structurées) et actions du journal du service (pare-feu, approbations, durcissement, analyses, mises à
-    jour…) des `days` derniers jours, du plus récent au plus ancien."""
+    """Alerts (structured) and actions from the service log (firewall, approvals, hardening, scans,
+    updates…) over the last `days` days, newest first."""
     cutoff = datetime.fromtimestamp(time.time() - days * 86400).isoformat(timespec="seconds")
     events = []
     for a in daemon.state.get("alerts") or []:
@@ -3315,7 +3320,7 @@ def security_journal(daemon, days=30):
             continue
         text = m.group(2).strip()
         if not text or text.startswith("WARNING:") or any(n in text for n in JOURNAL_NOISE):
-            continue                                       # avertissements techniques du moteur d'analyse : pas des événements
+            continue                                       # technical warnings from the scan engine: not events
         sev = "info" if text.startswith("⚠ info:") else ("danger" if text.startswith("⚠ danger") else ("warn" if text.startswith("⚠") else "info"))
         events.append({"t": m.group(1), "src": "log", "kind": "", "cat": journal_category(text), "sev": sev, "text": text.lstrip("⚠✔✘⏸ ").strip()[:400]})
     events.sort(key=lambda e: e["t"], reverse=True)
@@ -3323,8 +3328,8 @@ def security_journal(daemon, days=30):
 
 
 def user_backup_states(states):
-    """États de sauvegarde des fichiers transmis par l'application des utilisateurs, limités aux comptes qui existent
-    encore : {uid: {"state": ok | none | missing | old, "last", "at"}}."""
+    """File backup states sent by the users' application, limited to accounts that still exist:
+    {uid: {"state": ok | none | missing | old, "last", "at"}}."""
     out = {}
     for uid, b in (states or {}).items():
         try:
@@ -3337,7 +3342,7 @@ def user_backup_states(states):
 
 
 def collect_checklist(daemon):
-    """Liste de contrôles pondérés → score 0-100."""
+    """List of weighted checks → score 0-100."""
     items = []
     settings = daemon.settings
     sec = daemon.security or {}
@@ -3349,7 +3354,7 @@ def collect_checklist(daemon):
     def add(key, status, weight, detail="", params=None):
         items.append({"key": key, "status": status, "weight": weight, "detail": str(detail)[:200]})
         if params:
-            items[-1]["params"] = params           # textes hint / fix paramétrés ({kernel}, {pkg}…)
+            items[-1]["params"] = params           # parameterized hint / fix texts ({kernel}, {pkg}…)
 
     add("firewall", "ok" if ufw.get("active") else ("fail" if ufw.get("installed") else "warn"), 15,
         f"{ufw.get('default_incoming', '')}/{ufw.get('default_outgoing', '')}" if ufw.get("active") else "")
@@ -3357,7 +3362,7 @@ def collect_checklist(daemon):
         add("ssh", "ok" if (ufw.get("active") and ssh.get("allowed_by_firewall")) else "warn", 6, f"port {ssh.get('port')}")
     else:
         add("ssh", "ok", 6, "off")
-    # Chiffrement du disque
+    # Disk encryption
     r = run_quiet(["lsblk", "-rno", "TYPE,FSTYPE"], timeout=10)
     encrypted = any("crypt" in line or "LUKS" in line for line in (r.stdout or "").splitlines())
     if not encrypted:
@@ -3372,22 +3377,22 @@ def collect_checklist(daemon):
     elif not os.path.isdir("/sys/firmware/efi"):
         sb = "na"
     add("secure_boot", sb, 5)
-    # Contrôle d'accès obligatoire : AppArmor (Debian/Mint) ou SELinux (Fedora)
+    # Mandatory access control: AppArmor (Debian/Mint) or SELinux (Fedora)
     mac_name, mac_on = distro.mac()
     add(mac_name, "ok" if mac_on else "warn", 6)
-    # Mises à jour automatiques
+    # Automatic updates
     auto = False
     try:
         with open("/etc/apt/apt.conf.d/20auto-upgrades") as f:
             auto = 'Unattended-Upgrade "1"' in f.read()
     except OSError:
         pass
-    # Linux Mint : automatisation du Gestionnaire de mises à jour (timer systemd + fichier témoin)
+    # Linux Mint: Update Manager automation (systemd timer + flag file)
     auto = auto or unit_enabled("mintupdate-automation-upgrade.timer") or os.path.exists(MINT_AUTO_UPGRADE_FLAG) or distro.auto_updates_enabled()
     add("auto_updates", "ok" if auto else "warn", 6)
     add("security_updates", "ok" if not sysst.get("security") else "fail", 12, sysst.get("security", 0))
     add("reboot", "ok" if not sysst.get("reboot_required") else "warn", 3)
-    # Comptes sans mot de passe / sudo sans mot de passe (root uniquement)
+    # Accounts without a password / passwordless sudo (root only)
     if os.geteuid() == 0:
         empty = []
         try:
@@ -3410,14 +3415,14 @@ def collect_checklist(daemon):
                 continue
             if not has_rule:
                 continue
-            # Fichier déployé par le système (paquet dpkg : mintupdate, mintdrivers…) et inchangé : normal.
-            # Fichier ajouté à la main, ou modifié depuis le paquet : risque à signaler.
+            # File deployed by the system (dpkg package: mintupdate, mintdrivers…) and unchanged: normal.
+            # File added by hand, or modified since the package: risk to report.
             pkg, modified = sudoers_file_origin(path) if path != "/etc/sudoers" else ("", False)
             if pkg and not modified:
                 mint_ok.append(f"{os.path.basename(path)} ({pkg})")
                 continue
-            # « Ignorer » : règle voulue (raccourci clavier, script maison…) approuvée par l'utilisateur pour CE contenu ;
-            # toute modification du fichier la fait réapparaître
+            # "Ignore": intended rule (keyboard shortcut, home-made script…) approved by the user for THIS content;
+            # any change to the file makes it reappear
             digest = hashlib.sha256(raw).hexdigest()
             if (sudo_acks.get(path) or {}).get("sha256") == digest:
                 sudo_ignored.append(os.path.basename(path))
@@ -3434,23 +3439,23 @@ def collect_checklist(daemon):
     else:
         add("empty_passwords", "unknown", 10)
         add("nopasswd_sudo", "unknown", 5)
-    # Ports exposés
+    # Exposed ports
     ports = listening_ports()
     filtering = bool(ufw.get("active")) and (ufw.get("default_incoming") or "").lower().startswith("deny")
     for p in ports:
         if not p["exposed"]:
             p["verdict"] = "local"
         elif filtering and not ufw_port_allowed(ufw.get("rules") or [], p["port"], p["proto"]):
-            p["verdict"] = "filtered"           # à l'écoute, mais bloqué par le pare-feu : injoignable depuis le réseau
+            p["verdict"] = "filtered"           # listening, but blocked by the firewall: unreachable from the network
         else:
             p["verdict"] = "reachable"
     acks = daemon.state.get("acknowledged_ports") or {}
     hp_ports = set(daemon.honeypot.ports)
     for p in ports:
         if p["port"] in hp_ports and p["proto"] == "tcp" and (p["pid"] == os.getpid() or not p["pid"]):
-            p["verdict"] = "honeypot"                   # leurre du pot de miel : voulu, surveillé
+            p["verdict"] = "honeypot"                   # honeypot decoy: intended, monitored
         p["key"] = port_key(p)
-        p["acknowledged"] = p["verdict"] == "reachable" and p["key"] in acks     # « Ignorer » : port voulu (développement web…)
+        p["acknowledged"] = p["verdict"] == "reachable" and p["key"] in acks     # "Ignore": intended port (web development…)
     exposed = [p for p in ports if p["verdict"] == "reachable" and not p["acknowledged"] and p["port"] not in (5353, 68, 546, 67)]
     acknowledged = [p for p in ports if p["acknowledged"]]
     filtered = [p for p in ports if p["verdict"] == "filtered"]
@@ -3460,7 +3465,7 @@ def collect_checklist(daemon):
         items[-1].update(detail_key="check.open_ports.acknowledged", detail_params={"n": len(acknowledged)})
     elif not exposed and filtered:
         items[-1].update(detail_key="check.open_ports.filtered", detail_params={"n": len(filtered)})
-    # Services exposés courants (joignables)
+    # Common exposed services (reachable)
     exposed_services = sorted({p["service"] or p["process"] for p in exposed if p["port"] in (139, 445, 631, 5900, 5901, 3389, 3306, 5432, 27017)})
     add("exposed_services", "ok" if not exposed_services else "warn", 5, ", ".join(exposed_services))
     # ld.so.preload (persistance de rootkit)
@@ -3481,18 +3486,19 @@ def collect_checklist(daemon):
     counts = vulns.get("counts") or {}
     high = len({it.get("cve") or it.get("id") for it in vulns.get("items", [])
                 if it.get("status") == "unfixed" and it.get("priority") in ("critical", "high")
-                and not it.get("acknowledged")})   # CVE distinctes, hors failles ignorées par l'utilisateur
+                and not it.get("acknowledged")})   # distinct CVEs, excluding vulnerabilities ignored by the user
     add("open_vulns", "na" if vulns.get("unsupported") else ("unknown" if not vulns else ("ok" if not high else "warn")), 6,
         f"{counts.get('unfixed', 0)} unfixed, {high} high/critical")
     # Persistance inconnue
     unknown = [it for it in persistence.get("items", []) if not it.get("trusted")]
     add("persistence", "ok" if not unknown else "warn", 4, f"{len(unknown)}")
-    # Durcissement du système (indice Lynis 0-100, relevé lors de la vérification d'intégrité)
+    # System hardening (Lynis index 0-100, recorded during the integrity check)
     lynis = (daemon.state.get("integrity") or {}).get("lynis") or {}
     idx = lynis.get("index")
     add("hardening", "unknown" if idx is None else ("ok" if idx >= 65 else ("warn" if idx >= 45 else "fail")), 5,
         f"{idx}/100" if idx is not None else "")
-    # Noyau GA : failles déjà corrigées dans un noyau HWE (indication seulement, la distribution gère le déploiement)
+    # GA kernel: vulnerabilities already fixed in an HWE kernel (information only, the distribution handles
+    # deployment)
     hwe_fixed = ((vulns or {}).get("counts") or {}).get("kernel_hwe_fixed") or 0
     rk = (vulns or {}).get("running_kernel") or {}
     ubuntu_rel = rk.get("ubuntu") or distro.ubuntu_release()
@@ -3500,30 +3506,30 @@ def collect_checklist(daemon):
         f"{hwe_fixed}" if hwe_fixed else "",
         params={"kernel": rk.get("release") or os.uname().release, "release": ubuntu_rel,
                 "hwe": ", ".join(rk.get("hwe_sources") or []) or "HWE", "pkg": rk.get("hwe_package") or f"linux-generic-hwe-{ubuntu_rel}"})
-    # Connexion automatique sans mot de passe (LightDM, GDM, SDDM) : un portable volé s'ouvre tout seul
+    # Automatic login without a password (LightDM, GDM, SDDM): a stolen laptop opens by itself
     auto_users = autologin_users()
     add("autologin", "warn" if auto_users else "ok", 6, ", ".join(auto_users))
     users = human_users()
-    # Verrouillage de l'écran après inactivité (par utilisateur)
+    # Screen lock after inactivity (per user)
     unlocked = daemon.cached("screen_lock", 600, lambda: screen_lock_off_users(users))
     add("screen_lock", "warn" if unlocked else "ok", 4, ", ".join(unlocked))
-    # Firmware (fwupd / LVFS) : relevé quotidien, « Régler » lance fwupdmgr update
+    # Firmware (fwupd / LVFS): daily check, "Fix" runs fwupdmgr update
     fw = daemon.state.get("firmware") or {}
     add("firmware", "na" if not fw or fw.get("available") is None or fw.get("available") is False else ("warn" if fw.get("updates") else "ok"), 3,
         ", ".join(u.get("name", "?") for u in (fw.get("updates") or [])[:4]))
-    # Thunderbolt / USB4 : accès direct à la mémoire par un périphérique branché
+    # Thunderbolt / USB4: direct memory access by a plugged-in device
     tb = thunderbolt_security()
     add("thunderbolt", "na" if tb is None else ("warn" if tb == "none" else "ok"), 2, tb or "")
-    # Secrets en clair dans les dossiers personnels
+    # Plaintext secrets in home folders
     secrets = daemon.cached("secrets", 600, lambda: secrets_exposure(users))
     add("secrets", "warn" if secrets else "ok", 4, str(sum(len(v) for v in secrets.values())) if secrets else "",
         params={"secrets": [dict(s, user=u) for u, lst in secrets.items() for s in lst][:12]})
-    # Échecs d'authentification des 24 dernières heures (connexion, sudo, SSH)
+    # Authentication failures in the last 24 hours (login, sudo, SSH)
     fails = daemon.cached("login_failures", 600, login_failures)
     total = sum(fails.values())
     add("login_failures", "warn" if total >= 5 else "ok", 3, str(total) if total else "",
         params={"n": total, "sudo": fails.get("sudo", 0), "ssh": fails.get("ssh", 0), "login": fails.get("login", 0)})
-    # Nouveau compte utilisateur : signalé (alerte), liste mémorisée
+    # New user account: reported (alert), list remembered
     names = sorted(pw.pw_name for pw in users if pw.pw_uid >= 1000)
     known = daemon.state.get("known_users")
     if known is None:
@@ -3535,17 +3541,17 @@ def collect_checklist(daemon):
                 daemon.publish_alert({"kind": "account", "severity": "warn", "time": now_iso(), "title": n, "detail": "",
                                       "pid": 0, "comm": "", "exe": "", "count": 0, "top_dir": "", "reasons": ["new_account"], "sample": []})
         daemon.state.update(known_users=names)
-    # Qualité des nouveaux mots de passe (pam_pwquality)
+    # Quality of new passwords (pam_pwquality)
     pol = daemon.cached("password_policy", 600, hygiene.password_policy)
     add("password_policy", "ok" if pol["ok"] else "warn", 2, f"pam_{pol['module']} · minlen {pol['minlen']}" if pol["module"] else "pam_pwquality —",
         params={"minlen": hygiene.PWQ_MINLEN})
-    # Réglages de sécurité des navigateurs
+    # Browser security settings
     browsers = daemon.cached("browser_security", 600, lambda: hygiene.browser_security(users))
     issues = [b for b in browsers if b["issues"]]
     add("browser_security", "na" if not browsers else ("warn" if issues else "ok"), 3,
         ", ".join(f"{b['browser']} ({b['user']}): " + "/".join(b["issues"]) for b in issues[:4]),
         params={"browsers": [{k: b[k] for k in ("browser", "user", "profile", "issues")} for b in issues[:10]]})
-    # Exposition sur Internet (test sur demande) et UPnP (ports ouverts par le routeur vers cet ordinateur)
+    # Internet exposure (test on demand) and UPnP (ports opened by the router to this computer)
     expo = daemon.state.get("exposure") or {}
     upnp = daemon.state.get("upnp") or {}
     mine = [m for m in (upnp.get("mappings") or []) if m.get("this_host") and m.get("enabled")]
@@ -3554,9 +3560,9 @@ def collect_checklist(daemon):
     add("internet_exposure", "fail" if sensitive else ("warn" if open_ports or mine else ("ok" if expo.get("ok") else "unknown")), 4,
         ", ".join([f"{p_}/tcp" for p_ in open_ports[:8]] + [f"UPnP {m['external']}/{m['protocol']} → {m['internal']}" for m in mine[:4]]),
         params={"open": open_ports, "upnp": mine[:8], "tested_at": expo.get("at")})
-    # Disponibilité : instantanés du système (Timeshift) et sauvegarde des fichiers personnels (relevée par l'application
-    # de chaque utilisateur, backup_state_report). « Ignorer » le rappel rend le bouclier vert, mais le score en tient
-    # toujours compte : ne pas avoir de sauvegarde reste un risque, qu'on veuille ou non en entendre parler.
+    # Availability: system snapshots (Timeshift) and backup of personal files (reported by each user's application,
+    # backup_state_report). "Ignore" on the reminder turns the shield green, but the score still takes it into
+    # account: having no backup remains a risk, whether or not one wants to hear about it.
     ts = daemon.state.get("timeshift") or {}
     if not ts.get("checked_at"):
         snap = "unknown"
@@ -3578,7 +3584,7 @@ def collect_checklist(daemon):
     add("file_backups", files, 5)
     if files in ("warn", "fail") and settings.get("backup_check") is False:
         items[-1]["detail_key"] = "check.reminder_ignored"
-    # Test de restauration : instantanés Timeshift (service) et sauvegardes de fichiers (application de chaque utilisateur)
+    # Restore test: Timeshift snapshots (service) and file backups (each user's application)
     tests = [t for t in [daemon.state.get("timeshift_test")] + list((daemon.state.get("backup_tests") or {}).values())
              if t and t.get("error") not in ("btrfs", "not_configured", "device_unmounted")]
 
@@ -3592,17 +3598,17 @@ def collect_checklist(daemon):
     has_backups = bool((daemon.state.get("timeshift") or {}).get("snapshots"))
     add("restore_test", ("warn" if bad or stale else "ok") if tests else ("unknown" if has_backups else "na"), 3,
         ", ".join(t_.get("dest_label") or "Timeshift" for t_ in bad) if bad else "")
-    # DNS filtré (domaines malveillants bloqués avant la connexion)
+    # Filtered DNS (malicious domains blocked before the connection)
     dns = protect.dns_status()
     dns_state = daemon.state.get("dns_filter") or {}
     add("filtered_dns", "na" if not dns["usable"] and not dns["active"] else ("ok" if dns["active"] or dns_state.get("suspended") else "warn"), 2,
         dns["provider"] or ("enterprise" if dns_state.get("suspended") else ""))
-    # Conteneurs : socket Docker ouvert, groupes docker/lxd (équivalent administrateur), conteneurs privilégiés
+    # Containers: open Docker socket, docker/lxd groups (administrator equivalent), privileged containers
     cont = daemon.cached("containers", 600, lambda: audit.container_audit(users))
     c_issues = [i for i in cont["issues"] if i["level"] != "info"]
     add("containers", "na" if not cont["available"] and not c_issues else ("fail" if any(i["level"] == "fail" for i in c_issues) else ("warn" if c_issues else "ok")), 3,
         ", ".join(f"{i['key']}: {i['detail']}" for i in c_issues[:5]), params={"issues": cont["issues"][:12]})
-    # Applications Flatpak qui sortent de leur bac à sable (tout le disque, service Flatpak)
+    # Flatpak applications that leave their sandbox (whole disk, Flatpak service)
     fp_apps = daemon.flatpak_status()
     fp_bad = [a for a in fp_apps if not a["acknowledged"] and set(a["risks"]) & {"fs_host", "sandbox_escape"}]
     add("flatpak_permissions", "na" if not shutil.which("flatpak") else ("warn" if fp_bad else "ok"), 2,
@@ -3613,22 +3619,22 @@ def collect_checklist(daemon):
         ", ".join(f"{m['name']} {m['version']} ({m['ecosystem']}) — " + (f"npm uninstall -g {m['name']}" if m["ecosystem"] == "npm" else f"pip uninstall {m['name']}")
                   for m in (devp.get("malicious") or [])[:5]),
         params={"counts": devp.get("counts") or {}, "malicious": (devp.get("malicious") or [])[:10]})
-    # Fichiers SUID / SGID qu'aucun paquet ne livre (porte dérobée classique pour redevenir root)
+    # SUID / SGID files that no package ships (classic backdoor to become root again)
     suid = daemon.suid_status()
     unowned = [u for u in suid.get("unowned") or [] if not u.get("acknowledged")]
     bad_place = [u for u in unowned if u["path"].startswith(("/tmp/", "/var/tmp/", "/dev/shm/", "/home/", "/run/"))]
     add("suid_files", "unknown" if not suid.get("checked_at") else ("fail" if bad_place else ("warn" if unowned else "ok")), 4,
         ", ".join(u["path"] for u in unowned[:6]), params={"files": [{k: u.get(k) for k in ("path", "owner", "suid", "sgid", "mtime")} for u in unowned[:12]]})
-    # Certificats racine ajoutés (interception HTTPS possible) et détournement réseau (hosts, proxy, DNS)
+    # Added root certificates (HTTPS interception possible) and network hijacking (hosts, proxy, DNS)
     certs = [c for c in daemon.guard.root_cas() if not c["acknowledged"]]
     add("root_ca", "warn" if certs else "ok", 4, ", ".join(c["name"] for c in certs[:6]),
         params={"certs": [{k: c.get(k) for k in ("fp", "name", "stores", "until")} for c in certs[:12]]})
     redirects = [r for r in daemon.guard.redirects() if not r["acknowledged"]]
     add("network_redirect", "warn" if redirects else "ok", 4, ", ".join(r["value"] for r in redirects[:6]),
         params={"redirects": [{k: r.get(k) for k in ("key", "type", "value", "where")} for r in redirects[:12]]})
-    # Réponse automatique
+    # Automatic response
     add("auto_response", "ok" if settings.get("auto_response") else "warn", 2)
-    # Dossiers protégés : seuls les programmes approuvés écrivent dans Documents, Images, Bureau (rançongiciel bloqué)
+    # Protected folders: only approved programs write to Documents, Pictures, Desktop (ransomware blocked)
     add("protected_folders", "ok" if settings.get("protected_folders") else "warn", 4)
 
     applicable = [it for it in items if it["status"] in ("ok", "warn", "fail")]
@@ -3641,7 +3647,7 @@ def collect_checklist(daemon):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Connexions sortantes : programmes inconnus, IP malveillantes, géolocalisation
+# Outgoing connections: unknown programs, malicious IPs, geolocation
 # ═══════════════════════════════════════════════════════════════════════════
 
 class ConnectionMonitor(threading.Thread):
@@ -3657,7 +3663,7 @@ class ConnectionMonitor(threading.Thread):
         self.blocklist_loaded = 0
         self.geo = {ip: v for ip, v in (daemon.state.get("geo_cache") or {}).items()
                     if isinstance(v, dict) and time.time() - v.get("ts", 0) < 86400}   # ip -> {country, countryCode, org, ts}
-        self.geo_requests = []     # horodatages des requêtes (24 h glissantes)
+        self.geo_requests = []     # request timestamps (rolling 24 h)
         self.geo_last_request = 0.0
         self.geo_backoff_until = 0.0
         self.geo_last_error = ""
@@ -3702,7 +3708,7 @@ class ConnectionMonitor(threading.Thread):
         now = time.time()
         todo = [ip for ip in ips if is_public_ip(ip) and (ip not in self.geo or now - self.geo[ip]["ts"] > 86400)]
         if not todo or now < self.geo_backoff_until or now - self.geo_last_request < GEOIP_MIN_INTERVAL:
-            return                      # les adresses restantes seront traitées au prochain passage
+            return                      # the remaining addresses will be handled on the next pass
         self.geo_last_request = now
         self.geo_requests = [t for t in self.geo_requests if now - t < 86400] + [now]
         try:
@@ -3715,7 +3721,7 @@ class ConnectionMonitor(threading.Thread):
             self.geo_last_error = ""
         except urllib.error.HTTPError as e:
             self.geo_last_error = f"HTTP {e.code}"
-            self.geo_backoff_until = now + (300 if e.code in (401, 403) else 60)   # 429 : quota dépassé → pause 1 min
+            self.geo_backoff_until = now + (300 if e.code in (401, 403) else 60)   # 429: quota exceeded → pause 1 min
             log(f"GeoIP : HTTP {e.code} (pause)")
         except Exception as e:  # noqa: BLE001
             self.geo_last_error = str(e)[:120]
@@ -3723,7 +3729,7 @@ class ConnectionMonitor(threading.Thread):
         if len(self.geo) > GEOIP_CACHE_MAX:
             for ip in sorted(self.geo, key=lambda k: self.geo[k]["ts"])[:len(self.geo) - GEOIP_CACHE_MAX]:
                 self.geo.pop(ip, None)
-        if now - self.geo_last_saved > 300:     # cache persisté (survit au redémarrage du service)
+        if now - self.geo_last_saved > 300:     # persisted cache (survives a service restart)
             self.geo_last_saved = now
             self.daemon_ref.state.update(geo_cache=self.geo)
 
@@ -3798,7 +3804,7 @@ class ConnectionMonitor(threading.Thread):
                 r["org"] = g.get("org", "")
         with self.lock:
             self.current = {"checked_at": now_iso(), "processes": sorted(procs.values(), key=lambda p: (p["trusted"] is not False, p["comm"]))}
-        # Alertes : programme inconnu qui se connecte, ou IP malveillante
+        # Alerts: unknown program connecting, or malicious IP
         for c in new_pairs:
             p = procs.get(c["pid"])
             if not p:
@@ -3819,7 +3825,7 @@ class ConnectionMonitor(threading.Thread):
             self.daemon_ref.publish_alert(alert)
 
     def mark_trusted(self, exe):
-        """Marque immédiatement comme approuvé un programme de la liste courante."""
+        """Immediately marks a program of the current list as approved."""
         with self.lock:
             for p in (self.current.get("processes") or []):
                 if normalize_exe(p.get("exe")) == exe:
@@ -3831,11 +3837,11 @@ class ConnectionMonitor(threading.Thread):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Persistance (démarrages automatiques, cron, unités) et extensions de navigateur
+# Persistence (autostarts, cron, units) and browser extensions
 # ═══════════════════════════════════════════════════════════════════════════
 
 def dpkg_owners(paths):
-    """{path: paquet} pour une liste de chemins, en un seul appel dpkg -S par lot (rpm -qf sur Fedora)."""
+    """{path: package} for a list of paths, in a single dpkg -S call per batch (rpm -qf on Fedora)."""
     if distro.is_rpm():
         return distro.owners(paths)
     owners = {}
@@ -3859,8 +3865,8 @@ ALL_SITES = ("<all_urls>", "*://*/*", "http://*/*", "https://*/*", "*://*/", "ht
 
 
 def extension_risks(perms):
-    """Permissions sensibles d'une extension : « all_sites » (lire et modifier toutes les pages) et la liste des
-    permissions puissantes (messages vers un programme de l'ordinateur, débogage, proxy, cookies…)."""
+    """Sensitive permissions of an extension: "all_sites" (read and change all pages) and the list of
+    powerful permissions (messages to a program on the computer, debugging, proxy, cookies…)."""
     out = {p_ for p_ in perms if p_ in RISKY_EXT_PERMS}
     if any(p_ in ALL_SITES for p_ in perms):
         out.add("all_sites")
@@ -3879,8 +3885,8 @@ def desktop_exec(path):
 
 
 def user_homes():
-    """(nom, dossier) des comptes humains dont le dossier personnel est lisible maintenant (un dossier chiffré eCryptfs non
-    monté, avant l'ouverture de session, est laissé de côté : il paraîtrait vide)."""
+    """(name, folder) of human accounts whose home folder is readable now (an unmounted eCryptfs encrypted folder,
+    before login, is left out: it would look empty)."""
     homes = []
     for pw in pwd.getpwall():
         if (pw.pw_uid >= 1000 or pw.pw_uid == 0) and pw.pw_dir.startswith(("/home/", "/root")) and os.path.isdir(pw.pw_dir) and home_mounted(pw):
@@ -3889,20 +3895,20 @@ def user_homes():
 
 
 def pending_homes():
-    """Comptes dont le dossier personnel chiffré n'est pas monté : leurs relevés précédents sont conservés tels quels."""
+    """Accounts whose encrypted home folder is not mounted: their previous reports are kept as-is."""
     return sorted(pw.pw_name for pw in pwd.getpwall() if pw.pw_uid >= 1000 and pw.pw_dir.startswith("/home/") and not home_mounted(pw))
 
 
-# Applications Dukiwi (DukiwiLink, Gleeder, Dukiwi Shield, OpenVPN GUI) : reconnues d'office, sans approbation ni liste
-# blanche centrale. Emplacements système seulement — jamais un dossier personnel, où n'importe quel programme écrit.
+# Dukiwi applications (DukiwiLink, Gleeder, Dukiwi Shield, OpenVPN GUI): recognized automatically, without approval
+# or central whitelist. System locations only — never a home folder, where any program can write.
 DUKIWI_PROGRAMS = ("/usr/bin/dukiwilink-*", "/usr/lib/dukiwilink*/*", "/opt/dukiwilink*/*",
                    "/opt/gleeder-*/*", "/usr/bin/gleeder-*",
                    "/opt/dukiwi-*/*", "/usr/bin/dukiwi-*", "/usr/bin/openvpn-gui")
 
 
 def dukiwi_program(path):
-    """Programme d'une application Dukiwi : chemin connu, fichier présent, à root, non modifiable par les autres comptes
-    (son dossier non plus) — un chemin connu ne suffit pas si n'importe qui peut y déposer un fichier."""
+    """Program of a Dukiwi application: known path, file present, owned by root, not writable by other accounts
+    (nor its folder) — a known path is not enough if anyone can drop a file there."""
     path = os.path.normpath(path or "")
     if not path.startswith("/") or not any(fnmatch.fnmatch(path, pat) for pat in DUKIWI_PROGRAMS):
         return False
@@ -3917,8 +3923,8 @@ def dukiwi_program(path):
 
 
 def startup_program(kind, path, exec_line=""):
-    """Programme lancé par une entrée de démarrage : premier mot de Exec= (.desktop) ou de ExecStart= (unité systemd).
-    "" si ce n'est pas un chemin absolu (commande passée à un shell, variable…)."""
+    """Program launched by a startup entry: first word of Exec= (.desktop) or of ExecStart= (systemd unit).
+    "" if it is not an absolute path (command passed to a shell, variable…)."""
     line = exec_line or ""
     if kind in ("system_unit", "user_unit"):
         line = ""
@@ -3976,7 +3982,7 @@ def collect_persistence():
     for p in safe_glob("/etc/systemd/system", "*.timer"):
         if p.is_file() and not p.is_symlink():
             add("system_timer", str(p), p.stem)
-    # Tâches « at » en attente (exécution unique différée)
+    # Pending "at" jobs (deferred one-time execution)
     for d in ("/var/spool/cron/atjobs", "/var/spool/at"):
         for p in safe_glob(d, "*"):
             if p.is_file() and not p.name.startswith("."):
@@ -3998,8 +4004,8 @@ def collect_persistence():
         if it["trusted"] is None:
             it["owner"] = owners.get(it["path"], "")
             it["trusted"] = bool(it["owner"])
-    # Démarrage automatique d'une application Dukiwi (DukiwiLink dans la session, agent Gleeder…) : reconnu d'office,
-    # sans alerte « nouveau démarrage automatique » ni approbation à donner.
+    # Autostart of a Dukiwi application (DukiwiLink in the session, Gleeder agent…): recognized automatically,
+    # without a "new autostart" alert or approval to give.
     for it in items:
         if not it["trusted"] and it["kind"] in ("autostart", "user_unit", "system_unit") \
                 and dukiwi_program(startup_program(it["kind"], it["path"], it["exec"])):
@@ -4083,12 +4089,12 @@ def collect_persistence():
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Intégrité : Lynis, unhide, chkrootkit, debsums + fichiers de l'application
+# Integrity: Lynis, unhide, chkrootkit, debsums + application files
 # ═══════════════════════════════════════════════════════════════════════════
 
 def debsums_verified_paths(failed_lines):
-    """Empreintes (hash) des fichiers de paquets dont debsums a confirmé l'intégrité :
-    entrées de /var/lib/dpkg/info/*.md5sums, moins les conffiles (non vérifiés sans -a) et les fichiers signalés."""
+    """Hashes of the package files whose integrity debsums confirmed:
+    entries of /var/lib/dpkg/info/*.md5sums, minus conffiles (not checked without -a) and reported files."""
     failed = set()
     for ln in failed_lines or []:
         for m in re.finditer(r"(/[^\s]+)", ln):
@@ -4123,17 +4129,17 @@ def debsums_verified_paths(failed_lines):
     return verified
 
 
-INTEGRITY_TOOLS = {"kernel": "uname", "processes": "ps",            # contrôles intégrés (toujours disponibles)
+INTEGRITY_TOOLS = {"kernel": "uname", "processes": "ps",            # built-in checks (always available)
                    "lynis": "lynis", "unhide": "unhide", "unhide-tcp": "unhide-tcp", "chkrootkit": "chkrootkit"}
-INTEGRITY_TOOLS["rpmverify" if distro.is_rpm() else "debsums"] = "rpm" if distro.is_rpm() else "debsums"   # vérification des paquets
+INTEGRITY_TOOLS["rpmverify" if distro.is_rpm() else "debsums"] = "rpm" if distro.is_rpm() else "debsums"   # package verification
 RPM_VERIFY_RE = re.compile(r"^(missing|[S.M5DLUGTP?]{9})\s+(?:([cdglr])\s+)?(/.*)$")
 RPM_VERIFY_RULES_VERSION = 1
 
 
 def rpm_verify_analysis(lines):
-    """Sortie de rpm -Va → {warnings, benign, notes}. Fichiers de configuration modifiés (attribut c, ou sous /etc) :
-    normal (bénin) ; documentation / fantômes : ignorés ; horodatage seul : ignoré ; contenu modifié (5, S, L, M, U, G)
-    ou fichier manquant : à vérifier."""
+    """rpm -Va output → {warnings, benign, notes}. Modified configuration files (attribute c, or under /etc):
+    normal (benign); documentation / ghosts: ignored; timestamp only: ignored; content changed (5, S, L, M, U, G)
+    or missing file: to check."""
     warnings, benign, notes = [], [], {}
     for raw in lines:
         m = RPM_VERIFY_RE.match(raw.strip())
@@ -4141,7 +4147,7 @@ def rpm_verify_analysis(lines):
             continue
         flags, attr, path = m.group(1), m.group(2) or "", m.group(3)
         if attr in ("d", "g", "r", "l") or path.startswith(("/usr/share/doc/", "/usr/share/man/", "/usr/share/info/", "/usr/share/locale/", "/usr/share/licenses/")):
-            continue                                   # documentation, fantômes, licences : sans intérêt
+            continue                                   # documentation, ghosts, licenses: of no interest
         is_conf = attr == "c" or path.startswith("/etc/")
         if flags == "missing":
             if is_conf:
@@ -4151,7 +4157,7 @@ def rpm_verify_analysis(lines):
                 notes[raw.strip()] = [{"path": path, "verdict": "unknown", "reason": "missing_file"}]
             continue
         if not any(ch in flags for ch in "5SLMUG"):
-            continue                                   # seuls l'horodatage ou les capacités diffèrent
+            continue                                   # only the timestamp or capabilities differ
         if is_conf:
             benign.append({"text": raw.strip(), "notes": [{"path": path, "verdict": "benign", "reason": "config_modified"}]})
         elif path.endswith((".pyc", ".pyo")) and "5" in flags:
@@ -4180,7 +4186,7 @@ def loaded_modules():
 
 
 def sysfs_live_modules():
-    """Modules chargeables vivants vus par sysfs (les modules intégrés au noyau n'ont pas d'initstate)."""
+    """Live loadable modules seen by sysfs (modules built into the kernel have no initstate)."""
     out = set()
     try:
         names = os.listdir("/sys/module")
@@ -4193,7 +4199,7 @@ def sysfs_live_modules():
 
 
 def modules_dep_index(release):
-    """nom de module normalisé ('-' → '_') → chemin relatif du fichier .ko pour ce noyau (modules.dep)."""
+    """normalized module name ('-' → '_') → relative path of the .ko file for this kernel (modules.dep)."""
     idx = {}
     for ln in _read_text(f"/lib/modules/{release}/modules.dep").splitlines():
         rel = ln.split(":", 1)[0].strip()
@@ -4209,9 +4215,9 @@ def modules_dep_index(release):
 
 
 def kernel_check():
-    """Contrôle du noyau : module caché (vivant dans /sys/module mais absent de la liste /proc/modules — signature
-    d'un rootkit LKM), module chargé sans fichier pour ce noyau (injecté depuis la mémoire), modules hors arbre
-    (DKMS : bénin, listés), taint « chargé de force », état lockdown / signature / modules_disabled."""
+    """Kernel check: hidden module (alive in /sys/module but missing from the /proc/modules list — signature
+    of an LKM rootkit), module loaded without a file for this kernel (injected from memory), out-of-tree modules
+    (DKMS: benign, listed), "force-loaded" taint, lockdown / signature / modules_disabled state."""
     release = os.uname().release
     loaded = loaded_modules()
     hidden = sorted(sysfs_live_modules() - loaded)
@@ -4231,7 +4237,7 @@ def kernel_check():
         warnings.append(text)
         notes[text] = [{"path": n, "verdict": "unknown", "reason": "module_hidden"} for n in hidden]
     if nofile:
-        if not dep or len(nofile) > 10:          # arbre de modules absent ou d'un autre noyau : pas une injection
+        if not dep or len(nofile) > 10:          # module tree missing or from another kernel: not an injection
             text = f"Module tree for the running kernel {release} is missing or stale ({len(nofile)} loaded module(s) without file): reboot after the kernel update"
             benign.append({"text": text, "notes": [{"path": release, "verdict": "benign", "reason": "module_tree_stale"}]})
         else:
@@ -4264,8 +4270,8 @@ STEAM_PRELOAD_RE = re.compile(r"/(\.steam|\.local/share/Steam|Steam)/")
 
 
 def preload_digest(lib, procs):
-    """12 premiers caractères du sha256 d'une bibliothèque préchargée, lue comme la voit un des processus qui la portent
-    (espace de montage d'un conteneur, d'un Flatpak…), sinon par son chemin. "" si elle est illisible ou énorme."""
+    """First 12 characters of the sha256 of a preloaded library, read as seen by one of the processes that carry it
+    (mount namespace of a container, a Flatpak…), otherwise by its path. "" if it is unreadable or huge."""
     for cand in [f"/proc/{p.split(' ', 1)[0]}/root{lib}" for p in procs[:3]] + [lib]:
         try:
             if os.path.isfile(cand) and os.path.getsize(cand) <= 64 << 20:
@@ -4276,11 +4282,11 @@ def preload_digest(lib, procs):
 
 
 def process_check(trusted=None):
-    """Balayage de /proc (comportement) : exécutable supprimé du disque, exécution depuis un dossier temporaire,
-    bibliothèque injectée par LD_PRELOAD, processus suivi par ptrace. Verdicts intégrés : programme mis à jour
-    (fichier remplacé), AppImage, bibliothèque livrée par un paquet / Steam / magasin, débogueur connu → bénins.
-    `trusted` {exe: nom} (« Faire confiance ») : programme de confiance par chemin, ou par nom quand le chemin de
-    confiance est lui-même un dossier temporaire (binaire de test recompilé sous /tmp à chaque fois)."""
+    """Scan of /proc (behaviour): executable deleted from disk, execution from a temporary folder,
+    library injected via LD_PRELOAD, process traced by ptrace. Built-in verdicts: updated program
+    (file replaced), AppImage, library shipped by a package / Steam / store, known debugger → benign.
+    `trusted` {exe: name} ("Trust"): program trusted by path, or by name when the trusted path is
+    itself a temporary folder (test binary recompiled under /tmp every time)."""
     findings = {"exe_deleted": [], "exe_upgraded": [], "exe_tmp": [], "exe_appimage": [], "exe_trusted": []}
     preload_libs, tracers = {}, {}
     trusted = trusted or {}
@@ -4293,7 +4299,7 @@ def process_check(trusted=None):
         try:
             exe = os.readlink(f"{base}/exe")
         except OSError:
-            continue                                   # thread noyau, ou processus déjà terminé
+            continue                                   # kernel thread, or process already finished
         scanned += 1
         comm = _read_text(f"{base}/comm") or "?"
         deleted = exe.endswith(" (deleted)")
@@ -4302,7 +4308,7 @@ def process_check(trusted=None):
         is_trusted = path in trusted or (path.startswith(TMP_EXE_DIRS) and comm in tmp_trusted_names)
         if deleted:
             if os.path.exists(path) or path.startswith(SYSTEM_EXE_DIRS):
-                findings["exe_upgraded"].append(label)     # programme mis à jour (ou paquet retiré) pendant qu'il tourne
+                findings["exe_upgraded"].append(label)     # program updated (or package removed) while it is running
             elif is_trusted:
                 findings["exe_trusted"].append(label)
             else:
@@ -4357,9 +4363,9 @@ def process_check(trusted=None):
             elif not lib.startswith("/") or lib.startswith(("/snap/", "/var/lib/flatpak/", "/app/", "/usr/lib/", "/lib/")):
                 ns_b.append({"path": path, "verdict": "benign", "reason": "preload_app"})
             else:
-                # Un avertissement par bibliothèque inconnue, identifié par son chemin et son contenu, jamais par la liste
-                # des programmes (elle change à chaque application lancée, voir integrity_warning_norm) : « C'est normal »
-                # tient d'un passage à l'autre, et tombe si le fichier est remplacé ou si une autre bibliothèque apparaît.
+                # One warning per unknown library, identified by its path and content, never by the list of programs
+                # (it changes with every application launched, see integrity_warning_norm): "That's normal" holds
+                # from one pass to the next, and is dropped if the file is replaced or another library appears.
                 digest = preload_digest(lib, procs)
                 note = {"path": f"{lib} (sha256 {digest}) <- {who}" if digest else path, "verdict": "unknown", "reason": "preload_unknown"}
                 text = "LD_PRELOAD library injected into process(es):\n" + note["path"]
@@ -4401,7 +4407,7 @@ def builtin_check(name, trusted=None):
 
 
 def integrity_tools_now():
-    """Disponibilité actuelle des outils d'intégrité (indépendante du dernier relevé mémorisé)."""
+    """Current availability of the integrity tools (independent of the last saved report)."""
     return {name: shutil.which(cmd) is not None for name, cmd in INTEGRITY_TOOLS.items()}
 
 
@@ -4411,12 +4417,12 @@ def with_tools_now(integrity):
     return out
 
 
-HARDEN_CATALOG = harden.catalog_public()       # test Lynis → kind/caution/no_revert/action (pour l'interface)
+HARDEN_CATALOG = harden.catalog_public()       # Lynis test → kind/caution/no_revert/action (for the interface)
 
 
 def parse_lynis_report(path="/var/log/lynis-report.dat", log_path="/var/log/lynis.log"):
-    """Rapport Lynis : indice de durcissement (0-100), avertissements, suggestions (dédoublonnées par test, avec
-    détails) et, depuis le journal, les clés sysctl et permissions relevées (absentes du rapport)."""
+    """Lynis report: hardening index (0-100), warnings, suggestions (deduplicated per test, with
+    details) and, from the log, the sysctl keys and permissions reported (missing from the report)."""
     rep = {"index": None, "warnings": [], "suggestions": 0, "items": [], "tests": None, "version": "",
            "sysctl_diffs": [], "file_perms": []}
     seen = {}
@@ -4471,16 +4477,16 @@ def parse_lynis_report(path="/var/log/lynis-report.dat", log_path="/var/log/lyni
     return rep
 
 
-CHK_RULES_VERSION = 6              # règles de classification intégrées ; un relevé plus ancien est refait au démarrage
+CHK_RULES_VERSION = 6              # built-in classification rules; an older report is redone at startup
 CHK_NOISE = ("RTNETLINK answers", "ip: ", "ifconfig:", "ls: ", "find: ", "grep: ", "netstat:", "ss: ", "Usage:",
-             "/usr/sbin/chkrootkit:", "chkrootkit:", "chkproc:", "chkdirs:", "chkutmp:", "eth", "wlan")   # messages d'outils, pas des constats
+             "/usr/sbin/chkrootkit:", "chkrootkit:", "chkproc:", "chkdirs:", "chkutmp:", "eth", "wlan")   # tool messages, not findings
 CHK_NOISE = tuple(x for x in CHK_NOISE if x not in ("eth", "wlan"))
-LYNIS_SECTIONS = 44                # sections « [+] » d'un audit complet (progression)
-CHK_TESTS = 108                    # « Searching for … » + « Checking `bin'… » d'un passage chkrootkit
+LYNIS_SECTIONS = 44                # "[+]" sections of a full audit (progress)
+CHK_TESTS = 108                    # "Searching for …" + "Checking `bin'…" of a chkrootkit pass
 
 
 def _md5sums_entries():
-    """Nombre de fichiers que debsums va vérifier (lignes des *.md5sums), pour la progression."""
+    """Number of files debsums will check (lines of the *.md5sums), for the progress display."""
     total = 0
     try:
         for n in os.listdir("/var/lib/dpkg/info"):
@@ -4492,17 +4498,17 @@ def _md5sums_entries():
     return total or 500000
 
 
-# Délais des outils d'intégrité, en secondes : (silence maximal, durée totale maximale). Un outil qui ne répond plus
-# est arrêté et l'analyse continue avec le suivant — sans cela une analyse complète restait bloquée indéfiniment.
-# Pas de délai de silence pour unhide (sortie mise en tampon, écrite à la fin) ni rpm -Va (n'écrit que les anomalies).
+# Integrity tool timeouts, in seconds: (maximum silence, maximum total duration). A tool that stops responding
+# is stopped and the scan continues with the next one — without this a full scan stayed stuck indefinitely.
+# No silence timeout for unhide (buffered output, written at the end) or rpm -Va (only writes anomalies).
 TOOL_LIMITS = {"lynis": (900, 2700), "unhide": (None, 1800), "unhide-tcp": (None, 1800), "chkrootkit": (900, 2700),
                "debsums": (900, 5400), "rpmverify": (None, 5400)}
-BUILTIN_TIMEOUT = 120              # contrôles intégrés (noyau, processus) : quelques secondes en temps normal
-TOOL_HEARTBEAT = 5                 # progression rediffusée même sans nouvelle sortie (l'interface se resynchronise)
+BUILTIN_TIMEOUT = 120              # built-in checks (kernel, processes): a few seconds normally
+TOOL_HEARTBEAT = 5                 # progress rebroadcast even without new output (the interface resyncs)
 
 
 def tool_limits(name):
-    """(silence maximal, durée maximale) de l'outil ; DUKIWI_SHIELD_TOOL_STALL / _LIMIT les remplacent (tests)."""
+    """(maximum silence, maximum duration) of the tool; DUKIWI_SHIELD_TOOL_STALL / _LIMIT override them (tests)."""
     stall, limit = TOOL_LIMITS.get(name, (900, 2700))
     try:
         stall = int(os.environ["DUKIWI_SHIELD_TOOL_STALL"]) if "DUKIWI_SHIELD_TOOL_STALL" in os.environ else stall
@@ -4513,7 +4519,7 @@ def tool_limits(name):
 
 
 def _stop_tool(proc):
-    """Arrête l'outil et tous ses processus enfants (il est chef de sa session) : TERM, puis KILL 5 s plus tard."""
+    """Stops the tool and all its child processes (it is its session leader): TERM, then KILL 5 s later."""
     for sig in (signal.SIGTERM, signal.SIGKILL):
         try:
             os.killpg(proc.pid, sig)
@@ -4525,14 +4531,14 @@ def _stop_tool(proc):
             continue
         if sig == signal.SIGTERM:
             try:
-                os.killpg(proc.pid, signal.SIGKILL)   # enfants qui auraient survécu au script (ils tiennent la sortie)
+                os.killpg(proc.pid, signal.SIGKILL)   # children that would have survived the script (they hold the output)
             except OSError:
                 pass
         return
 
 
 def run_bounded(fn, timeout):
-    """fn() dans un fil auxiliaire ; TimeoutError s'il ne rend pas la main (lecture de /proc ou de sysfs bloquée)."""
+    """fn() in a helper thread; TimeoutError if it does not return (blocked read of /proc or sysfs)."""
     box = {}
 
     def target():
@@ -4551,11 +4557,11 @@ def run_bounded(fn, timeout):
 
 
 def _stream_tool(name, cmd, cancel_event, tick):
-    """Lance un outil d'intégrité en lisant sa sortie au fil de l'eau ; tick(pourcentage, étape) selon ses repères.
-    Retourne (lignes utiles, code retour, arrêt). Pour debsums, seules les anomalies sont gardées (une ligne par
-    fichier sinon). `arrêt` vaut None, ou {"reason": "stalled" | "limit", "after": secondes, "last": dernière ligne}
-    quand l'outil a été arrêté faute de réponse (tool_limits). L'annulation est prise en compte dans la seconde,
-    même si l'outil n'écrit rien."""
+    """Runs an integrity tool while reading its output as it comes; tick(percentage, step) according to its markers.
+    Returns (useful lines, return code, stop). For debsums, only anomalies are kept (one line per file
+    otherwise). `stop` is None, or {"reason": "stalled" | "limit", "after": seconds, "last": last line}
+    when the tool was stopped for not responding (tool_limits). Cancellation is handled within a second,
+    even if the tool writes nothing."""
     try:
         proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                                 bufsize=1, errors="replace", start_new_session=True)
@@ -4563,7 +4569,7 @@ def _stream_tool(name, cmd, cancel_event, tick):
         return [f"{name}: {e}"], 1, None
     lines = _queue.Queue()
 
-    def pump():                                         # lecture bloquante hors du fil d'analyse
+    def pump():                                         # blocking read outside the scan thread
         try:
             for raw in proc.stdout:
                 lines.put(raw)
@@ -4581,7 +4587,7 @@ def _stream_tool(name, cmd, cancel_event, tick):
             raw = lines.get(timeout=1)
         except _queue.Empty:
             raw = ""
-        if raw is None:                                 # fin de la sortie : l'outil a terminé
+        if raw is None:                                 # end of output: the tool has finished
             break
         now = time.time()
         if cancel_event is not None and cancel_event.is_set():
@@ -4635,8 +4641,8 @@ NETMGR_NAMES = {"NetworkManager", "wpa_supplicant", "iwd", "dhclient", "dhcpcd",
 
 
 def parse_chkrootkit(out):
-    """Sortie de chkrootkit -q → constats. Un « WARNING: … : » est suivi des chemins concernés sur les lignes
-    suivantes (fichiers cachés, etc.) : ils restent attachés au constat au lieu d'être perdus."""
+    """chkrootkit -q output → findings. A "WARNING: … :" is followed by the affected paths on the following
+    lines (hidden files, etc.): they stay attached to the finding instead of being lost."""
     findings, cur, prev_blank = [], [], True
     for raw in out:
         s = raw.strip()
@@ -4645,24 +4651,24 @@ def parse_chkrootkit(out):
             continue
         if s.startswith("ROOTDIR") or s.lower().startswith(("not tested", "not infected", "not found", "nothing found")) \
                 or s.startswith(CHK_NOISE) or s == "WARNING":
-            # « WARNING » seul : fin de la ligne « Checking … » séparée par un message d'outil (mode verbeux) ;
-            # le constat détaillé « WARNING: … » suit toujours (_warn de chkrootkit)
+            # "WARNING" alone: end of the "Checking …" line separated by a tool message (verbose mode);
+            # the detailed "WARNING: …" finding always follows (_warn of chkrootkit)
             prev_blank = False
             continue
         m = re.match(r"^(?:Checking `[^']*'\.\.\.|Searching for .*?\.\.\.)\s*(.*)$", s)
-        if m:                                       # mode verbeux : le résultat du test suit sur la même ligne
+        if m:                                       # verbose mode: the test result follows on the same line
             rest = m.group(1).strip().lower()
             if not rest or rest.startswith(("not infected", "not found", "not tested", "nothing", "ok", "warning", "no ", "started", "finished")) \
                     or "nothing detected" in rest or "nothing deleted" in rest or rest.startswith(tuple(x.lower() for x in CHK_NOISE)):
                 prev_blank = False
-                continue                            # test sans constat (un WARNING détaillé suit sur ses propres lignes)
-            if cur:                                 # résultat non anodin (ex. « Checking `ls'... INFECTED ») : constat entier
+                continue                            # test without a finding (a detailed WARNING follows on its own lines)
+            if cur:                                 # non-trivial result (e.g. "Checking `ls'... INFECTED"): whole finding
                 findings.append("\n".join(cur))
                 cur = []
             cur.append(s)
             prev_blank = False
             continue
-        # Se rattache au constat en cours : chemin ou ligne de tableau, ou en-tête terminé par « : » (liste annoncée)
+        # Attaches to the current finding: path or table row, or header ending with ":" (announced list)
         attach = s.startswith(("/", "!")) or (bool(cur) and cur[0].rstrip().endswith(":"))
         if cur and (s.startswith(("WARNING", "INFECTED", "Possible", "Checking")) or prev_blank or not attach):
             findings.append("\n".join(cur))
@@ -4674,9 +4680,9 @@ def parse_chkrootkit(out):
     return findings[:80]
 
 
-# Noms cachés légitimes dans /usr/lib et /lib (chkrootkit signale tout nom commençant par un point)
+# Legitimate hidden names in /usr/lib and /lib (chkrootkit reports any name starting with a dot)
 HIDDEN_KNOWN = {
-    "debug": {".build-id", ".dwz"},                                   # symboles de débogage, vdso du noyau
+    "debug": {".build-id", ".dwz"},                                   # debugging symbols, kernel vdso
     "perl": {".packlist"},                                            # modules Perl
     "devfile": {".gitignore", ".gitkeep", ".gitattributes", ".keep", ".placeholder", ".dirstamp", ".mkdir",
                 ".npmignore", ".npmrc", ".yarnrc", ".editorconfig", ".babelrc", ".eslintrc", ".eslintrc.js",
@@ -4689,7 +4695,7 @@ MODULE_TREES = ("/usr/lib/node_modules/", "/usr/lib/python3/dist-packages/", "/u
 
 
 def dpkg_owners(paths):
-    """{chemin: 'paquet, paquet'} pour les chemins livrés par un paquet installé (dpkg -S par lots ; rpm -qf sur Fedora)."""
+    """{path: 'package, package'} for paths shipped by an installed package (dpkg -S in batches; rpm -qf on Fedora)."""
     if distro.is_rpm():
         return distro.owners(paths)
     owners = {}
@@ -4706,7 +4712,7 @@ def dpkg_owners(paths):
 
 
 def _module_file(p):
-    """Petit fichier caché à l'intérieur d'un arbre de modules npm/Python (installé hors dpkg)."""
+    """Small hidden file inside an npm/Python module tree (installed outside dpkg)."""
     try:
         return any(p.startswith(t) for t in MODULE_TREES) and os.path.isfile(p) and os.path.getsize(p) < 1_000_000
     except OSError:
@@ -4714,8 +4720,8 @@ def _module_file(p):
 
 
 def classify_hidden_paths(paths):
-    """Verdict intégré pour chaque chemin caché signalé par chkrootkit : benign (livré par un paquet, nom connu,
-    fichier d'un module npm/Python) ou unknown (à vérifier). Le savoir est dans le programme, pas chez l'utilisateur."""
+    """Built-in verdict for each hidden path reported by chkrootkit: benign (shipped by a package, known name,
+    file of an npm/Python module) or unknown (to check). The knowledge lives in the program, not with the user."""
     owners = dpkg_owners(paths)
     notes = []
     for p in paths:
@@ -4740,9 +4746,9 @@ TMP_KNOWN = (
 
 
 def classify_tmp_paths(paths):
-    """Verdict intégré pour « Linux.Xor.DDoS » : chkrootkit y liste simplement tout fichier exécutable de /tmp.
-    Le vrai Xor.DDoS dépose des binaires ELF aux noms aléatoires : un fichier texte ou script, une installation
-    d'extension Chrome, un script Timeshift ou un dossier de compilation ne sont pas des rootkits."""
+    """Built-in verdict for "Linux.Xor.DDoS": chkrootkit simply lists every executable file in /tmp there.
+    The real Xor.DDoS drops ELF binaries with random names: a text or script file, a Chrome extension
+    install, a Timeshift script or a build folder are not rootkits."""
     notes = []
     for p in paths:
         if not os.path.exists(p):
@@ -4765,8 +4771,9 @@ def classify_tmp_paths(paths):
 
 
 def classify_promisc(lines):
-    """Verdict intégré pour « Output from ifpromisc » : une interface Wi-Fi gérée par NetworkManager/wpa_supplicant
-    apparaît en PACKET SNIFFER (socket brute légitime). Processus connu ou livré par un paquet → bénin ; sinon à vérifier."""
+    """Built-in verdict for "Output from ifpromisc": a Wi-Fi interface managed by NetworkManager/wpa_supplicant
+    shows up as PACKET SNIFFER (legitimate raw socket). Known process or shipped by a package → benign; otherwise
+    to check."""
     notes, exes = [], []
     for ln in lines:
         s = ln.strip()
@@ -4790,8 +4797,8 @@ def classify_promisc(lines):
 
 
 def local_ip_octets():
-    """Derniers octets des adresses IPv4 locales : le test bindshell de chkrootkit (regex « [.:]PORT[^0-9.:] » sur
-    netstat/ss) confond une adresse 192.168.0.145 avec le port 145."""
+    """Last octets of the local IPv4 addresses: the chkrootkit bindshell test (regex "[.:]PORT[^0-9.:]" on
+    netstat/ss) mistakes an address 192.168.0.145 for port 145."""
     r = run_quiet(["ip", "-4", "-o", "addr"], timeout=10)
     return set(re.findall(r"inet \d+\.\d+\.\d+\.(\d+)/", r.stdout or ""))
 
@@ -4799,21 +4806,21 @@ def local_ip_octets():
 APP_STORE_PREFIXES = ("/app/", "/snap/", "/var/lib/flatpak/", "/var/lib/snapd/")
 
 
-SLAPPER_PORTS = (2002, 4156, 1978, 1812, 2015)      # ports TCP du test « Slapper Worm » de chkrootkit
-SCALPER_PORTS = (2001,)                              # port TCP du test « Scalper Worm »
+SLAPPER_PORTS = (2002, 4156, 1978, 1812, 2015)      # TCP ports of chkrootkit's "Slapper Worm" test
+SCALPER_PORTS = (2001,)                              # TCP port of the "Scalper Worm" test
 CHK_BIN_DIRS = ("/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin")
 
 
 def package_file_origin(path):
-    """(paquet, modifié) pour un fichier : livré par un paquet (dpkg -S / rpm -qf) et, en root, vérifié inchangé
-    par rapport au paquet (dpkg -V / rpm -V)."""
+    """(package, modified) for a file: shipped by a package (dpkg -S / rpm -qf) and, as root, verified unchanged
+    against the package (dpkg -V / rpm -V)."""
     return sudoers_file_origin(path)
 
 
 def classify_infected_binary(head):
-    """Verdict intégré pour « Checking `ls'... INFECTED » : chkrootkit a trouvé dans le binaire des motifs de rootkits
-    connus. Binaire livré par un paquet et intact d'après lui (somme de contrôle) → les motifs sont dans le programme
-    d'origine : faux positif. Modifié ou hors paquet → à vérifier d'urgence."""
+    """Built-in verdict for "Checking `ls'... INFECTED": chkrootkit found known rootkit patterns in the binary.
+    Binary shipped by a package and intact according to it (checksum) → the patterns are in the original
+    program: false positive. Modified or not from a package → check urgently."""
     m = re.search(r"Checking `([^']+)'", head)
     if not m:
         return None
@@ -4831,7 +4838,7 @@ def classify_infected_binary(head):
 
 
 def classify_init(head):
-    """« Possible Suckit: /sbin/init INFECTED » : init réel (systemd…) livré par un paquet et intact → faux positif."""
+    """"Possible Suckit: /sbin/init INFECTED": real init (systemd…) shipped by a package and intact → false positive."""
     real = os.path.realpath("/sbin/init")
     pkg, modified = package_file_origin(real)
     if not pkg:
@@ -4842,9 +4849,9 @@ def classify_init(head):
 
 
 def classify_lkm(lines):
-    """« chkproc: Possible LKM Trojan installed » : chkproc compare /proc et ps à deux instants ; un processus terminé
-    entre les deux (ou visible normalement maintenant) est un faux positif ; un processus présent mais absent de ps
-    reste à vérifier (rootkit à module noyau)."""
+    """"chkproc: Possible LKM Trojan installed": chkproc compares /proc and ps at two moments; a process that ended
+    in between (or is now visible normally) is a false positive; a process present but missing from ps
+    still needs checking (kernel-module rootkit)."""
     pids = []
     for ln in lines:
         for m in re.finditer(r"PID\s+(\d+)", ln):
@@ -4870,8 +4877,9 @@ def classify_lkm(lines):
 
 
 def classify_ports(ports):
-    """Qui écoute vraiment sur ces ports ? Livré par un paquet ou une application de magasin → bénin ; aucun processus
-    (détection passagère, ou dernier octet d'une adresse IP pris pour un port) → bénin ; programme hors paquet → à vérifier."""
+    """Who is really listening on these ports? Shipped by a package or a store application → benign; no process
+    (transient detection, or last octet of an IP address taken for a port) → benign; program not from a
+    package → to check."""
     listeners = listening_ports()
     octets = local_ip_octets()
     notes, exes = [], {}
@@ -4901,7 +4909,7 @@ def classify_ports(ports):
 
 
 def classify_bindshell(head):
-    """Verdict intégré pour « Potential bindshell installed: infected ports: … » (voir classify_ports)."""
+    """Built-in verdict for "Potential bindshell installed: infected ports: …" (see classify_ports)."""
     m = re.search(r"infected ports:\s*(.*)", head, flags=re.I)
     if not m:
         return None
@@ -4912,8 +4920,8 @@ def classify_bindshell(head):
 
 
 def chkrootkit_analysis(out):
-    """Sortie de chkrootkit -q → {warnings, benign, notes} : les constats « suspicious files » dont tous les chemins
-    sont bénins deviennent des faux positifs connus (non comptés) ; les autres gardent une note par chemin."""
+    """chkrootkit -q output → {warnings, benign, notes}: "suspicious files" findings whose paths are all
+    benign become known false positives (not counted); the others keep one note per path."""
     warnings, benign, notes = [], [], {}
     for text in parse_chkrootkit(out):
         lines = text.splitlines()
@@ -4922,7 +4930,7 @@ def chkrootkit_analysis(out):
         if "bindshell" in head:
             verdicts = classify_bindshell(lines[0])
         elif head.startswith("checking `") and "infected" in head:
-            verdicts = classify_infected_binary(lines[0])          # « Checking `ls'... INFECTED »
+            verdicts = classify_infected_binary(lines[0])          # "Checking `ls'... INFECTED"
         elif "suckit" in head and "init" in head:
             verdicts = classify_init(lines[0])
         elif "chkproc" in head and "lkm" in head:
@@ -4956,8 +4964,8 @@ _MINT_ADJ = {"at": 0.0, "patterns": [], "paths": set()}
 
 
 def mint_adjustments():
-    """Fichiers que Linux Mint remplace ou modifie lui-même à chaque démarrage (mintsystem « adjustments ») :
-    motifs de destination des .overwrite (glob) et chemins cités par les .execute/.menu. Cache 10 min."""
+    """Files that Linux Mint itself replaces or modifies at every boot (mintsystem "adjustments"):
+    destination patterns of the .overwrite files (glob) and paths cited by the .execute/.menu files. 10 min cache."""
     if distro.is_rpm():
         return [], set()
     if time.time() - _MINT_ADJ["at"] < 600:
@@ -4996,8 +5004,8 @@ def dpkg_diversions():
 
 
 def classify_debsums(lines):
-    """Verdict intégré pour chaque fichier signalé par debsums : remplacé par les ajustements Mint, détourné par
-    dpkg-divert (bénins), sinon modifié depuis l'installation (à vérifier)."""
+    """Built-in verdict for each file reported by debsums: replaced by the Mint adjustments, diverted by
+    dpkg-divert (benign), otherwise modified since installation (to check)."""
     patterns, mentioned = mint_adjustments()
     diverted = dpkg_diversions()
     notes = []
@@ -5016,7 +5024,7 @@ def classify_debsums(lines):
 
 
 def debsums_analysis(lines):
-    """Lignes debsums (FAILED/REPLACED/missing) → {warnings, benign, notes} comme pour chkrootkit et Lynis."""
+    """debsums lines (FAILED/REPLACED/missing) → {warnings, benign, notes} as for chkrootkit and Lynis."""
     out, benign, notes = [], [], {}
     for ln, note in zip(lines, classify_debsums(lines)):
         if note["verdict"] == "benign":
@@ -5027,17 +5035,17 @@ def debsums_analysis(lines):
     return {"warnings": out[:80], "benign": benign[:80], "notes": notes}
 
 
-_PROC_PID_RE = re.compile(r"^\d+ (?=\S)")        # « 1234 comm /chemin » → « comm /chemin »
-_TRACER_PID_RE = re.compile(r" \(\d+\) -> ")      # « gdb (4321) -> victime » → « gdb -> victime »
-_PRELOAD_WHO_RE = re.compile(r" <- .*$")           # « lib.so (sha256 …) <- bash, plank » → « lib.so (sha256 …) »
+_PROC_PID_RE = re.compile(r"^\d+ (?=\S)")        # "1234 comm /path" → "comm /path"
+_TRACER_PID_RE = re.compile(r" \(\d+\) -> ")      # "gdb (4321) -> victim" → "gdb -> victim"
+_PRELOAD_WHO_RE = re.compile(r" <- .*$")           # "lib.so (sha256 …) <- bash, plank" → "lib.so (sha256 …)"
 
 
 def integrity_warning_norm(tool, text):
-    """Texte d'un avertissement sans ce qui change d'une exécution à l'autre. Pour la veille des processus : sans les
-    PID ni l'ordre des lignes, sinon un programme relancé est un « nouvel » avertissement à chaque passage (alerte
-    rouge toutes les 5 min, « C'est normal » sans effet dès que le PID change). Pour une bibliothèque préchargée
-    (LD_PRELOAD) : sans la liste des programmes qui la portent, héritée par tout ce qu'ils lancent — elle changeait à
-    chaque application ouverte, et l'approbation avec."""
+    """Text of a warning without what changes from one run to the next. For the process watch: without the
+    PIDs or the line order, otherwise a restarted program is a "new" warning on every pass (red alert
+    every 5 min, "That's normal" ineffective as soon as the PID changes). For a preloaded library
+    (LD_PRELOAD): without the list of programs that carry it, inherited by everything they launch — it changed
+    with every application opened, and the approval along with it."""
     if tool == "processes":
         lines = [re.sub(r"\s+", " ", ln).strip() for ln in (text or "").strip().splitlines() if ln.strip()]
         if len(lines) > 1:
@@ -5049,13 +5057,13 @@ def integrity_warning_norm(tool, text):
 
 
 def integrity_ack_key(tool, text):
-    """Clé d'un avertissement approuvé (« C'est normal ») : outil + empreinte du texte normalisé."""
+    """Key of an approved warning ("That's normal"): tool + hash of the normalized text."""
     return f"{tool}:{hashlib.sha1(integrity_warning_norm(tool, text).encode()).hexdigest()[:16]}"
 
 
 def watch_alert_fields(tool, text, notes):
-    """Programme, exécutable, motif et lignes d'un avertissement de la veille noyau/processus, pour une alerte lisible
-    (« evilsleep — exécutable supprimé du disque » plutôt que « 1 — processes »)."""
+    """Program, executable, reason and lines of a kernel/process watch warning, for a readable alert
+    ("evilsleep — executable deleted from disk" rather than "1 — processes")."""
     lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
     note = next((x for x in (notes or []) if x.get("verdict") == "unknown"), None) or {}
     label = note.get("path") or (lines[1] if len(lines) > 1 else "")
@@ -5070,10 +5078,10 @@ LYNIS_RULES_VERSION = 1
 
 
 def classify_lynis_warning(test, text):
-    """Verdict intégré pour un avertissement Lynis connu (l'état réel est vérifié) ; None si inconnu."""
+    """Built-in verdict for a known Lynis warning (the actual state is checked); None if unknown."""
     if test == "TIME-3185":
-        # Lynis exige un fichier témoin touché il y a moins de 2048 s ; systemd-timesyncd espace ses alignements
-        # jusqu'à exactement 2048 s une fois l'heure stable → faux positif fréquent. L'état réel fait foi.
+        # Lynis requires a flag file touched less than 2048 s ago; systemd-timesyncd spaces its adjustments
+        # up to exactly 2048 s once the time is stable → frequent false positive. The actual state is authoritative.
         r = run_quiet(["timedatectl", "show", "-p", "NTP", "-p", "NTPSynchronized", "--value"], timeout=15)
         vals = (r.stdout or "").split()
         ntp_on, synced = (vals + ["", ""])[0] == "yes", (vals + ["", ""])[1] == "yes"
@@ -5088,7 +5096,7 @@ def classify_lynis_warning(test, text):
 
 
 def lynis_analysis(warnings):
-    """Avertissements Lynis « TEST: texte » → {warnings, benign, notes} comme pour chkrootkit."""
+    """Lynis warnings "TEST: text" → {warnings, benign, notes} as for chkrootkit."""
     out, benign, notes = [], [], {}
     for w in warnings or []:
         test = w.split(":", 1)[0].strip() if ":" in w else ""
@@ -5103,10 +5111,10 @@ def lynis_analysis(warnings):
 
 
 def run_integrity_checks(collect_verified=False, cancel_event=None, progress=None, trusted=None):
-    """Lynis (audit de durcissement), unhide (processus et ports cachés), chkrootkit, debsums et fichiers de
-    l'application. Avec collect_verified, retourne aussi l'ensemble (hashes) des fichiers système vérifiés
-    par debsums, que l'antivirus peut ignorer. `progress(outil, pourcentage, étape, état, avertissements)`
-    est appelé au fil de l'eau (sortie des outils lue en continu) pour l'affichage."""
+    """Lynis (hardening audit), unhide (hidden processes and ports), chkrootkit, debsums and the application's
+    files. With collect_verified, also returns the set (hashes) of system files verified by debsums,
+    which the antivirus can skip. `progress(name, percent, detail, state, warnings)` is called as things
+    progress (tool output read continuously) for the display."""
     result = {"checked_at": now_iso(), "tools": {}, "app": app_integrity(), "warnings": 0, "verified_files": 0}
     verified = set()
     tools = {"kernel": ["uname"], "processes": ["ps"],
@@ -5152,12 +5160,12 @@ def run_integrity_checks(collect_verified=False, cancel_event=None, progress=Non
             entry["rc"] = rc
             entry["seconds"] = int(time.time() - t0)
             partial = bool(stopped) or (cancel_event is not None and cancel_event.is_set())
-            if stopped:                                 # outil arrêté faute de réponse : résultat partiel, on continue
+            if stopped:                                 # tool stopped for lack of response: partial result, we continue
                 entry["timed_out"] = stopped
                 log(f"Intégrité : {name} arrêté ({stopped['reason']}, {stopped['after']} s) — dernière ligne : {stopped['last']!r}")
             lines = [ln.strip() for ln in out if ln.strip()]
             if name == "lynis" and partial:
-                lines = []                              # rapport inachevé (indice absent) : pas de relevé Lynis cette fois
+                lines = []                              # unfinished report (index missing): no Lynis data this time
             elif name == "lynis":
                 rep = parse_lynis_report()
                 result["lynis"] = rep
@@ -5176,8 +5184,8 @@ def run_integrity_checks(collect_verified=False, cancel_event=None, progress=Non
                 entry["benign"], entry["notes"], entry["rules"] = ra["benign"], ra["notes"], RPM_VERIFY_RULES_VERSION
             elif name == "debsums":
                 lines = [ln for ln in lines if "FAILED" in ln or "REPLACED" in ln or "missing file" in ln][:160]
-                if collect_verified and not partial:              # passage interrompu : rien n'est tenu pour vérifié
-                    verified = debsums_verified_paths(lines)      # tout fichier signalé reste à analyser, bénin ou non
+                if collect_verified and not partial:              # interrupted pass: nothing is considered verified
+                    verified = debsums_verified_paths(lines)      # every reported file remains to be scanned, benign or not
                     result["verified_files"] = len(verified)
                 da = debsums_analysis(lines)
                 lines = da["warnings"]
@@ -5198,7 +5206,7 @@ def run_integrity_checks(collect_verified=False, cancel_event=None, progress=Non
 # ═══════════════════════════════════════════════════════════════════════════
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Notifications par courrier (msmtp ou tout serveur de courrier du système, via sendmail)
+# Email notifications (msmtp or any system mail server, via sendmail)
 # ═══════════════════════════════════════════════════════════════════════════
 
 MAIL_CONFIG_FILE = os.path.join(SYSTEM_STATE_DIR, "msmtprc") if TEST_MODE else "/etc/msmtprc"
@@ -5217,8 +5225,8 @@ def sendmail_path():
 
 
 def mail_transport():
-    """« msmtp » si sendmail est msmtp (réglages SMTP écrits dans /etc/msmtprc), sinon le nom du serveur de courrier du
-    système (postfix, exim4…) qui sera utilisé tel quel, ou "" sans aucun transport."""
+    """"msmtp" if sendmail is msmtp (SMTP settings written to /etc/msmtprc), otherwise the name of the system's mail
+    server (postfix, exim4…), which will be used as is, or "" with no transport at all."""
     p = sendmail_path()
     if not os.path.exists(p):
         return ""
@@ -5238,7 +5246,7 @@ def mail_read_password():
 
 
 def mail_write_config(cfg, password):
-    """/etc/msmtprc (root, 600) : compte par défaut utilisé par tout programme du système appelant sendmail."""
+    """/etc/msmtprc (root, 600): default account used by any program on the system that calls sendmail."""
     lines = ["# Généré par Dukiwi Shield — Paramètres › Notifications par courrier. Lisible par root seulement.",
              "defaults", f"logfile {MAIL_LOG_FILE}", "tls_trust_file /etc/ssl/certs/ca-certificates.crt", "",
              "account default", f"host {cfg['host']}", f"port {cfg['port']}", f"from {cfg['from']}"]
@@ -5270,7 +5278,7 @@ def mail_build(cfg, subject, body):
 
 
 def mail_send_now(cfg, subject, body):
-    """Envoi par sendmail -t (msmtp lit /etc/msmtprc ; un autre serveur de courrier utilise sa propre configuration)."""
+    """Sends via sendmail -t (msmtp reads /etc/msmtprc; another mail server uses its own configuration)."""
     if not cfg.get("to"):
         return False, "no recipient"
     cmd = distro.sendmail_cmd()
@@ -5283,7 +5291,7 @@ def mail_send_now(cfg, subject, body):
 
 
 def mail_sanitize(incoming, current):
-    """Réglages reçus de l'interface → configuration valide (sans mot de passe) ou (None, erreur)."""
+    """Settings received from the interface → valid configuration (without password) or (None, error)."""
     cfg = dict(MAIL_DEFAULT, **(current or {}))
     inc = incoming if isinstance(incoming, dict) else {}
     cfg["enabled"] = bool(inc.get("enabled", cfg["enabled"]))
@@ -5340,7 +5348,7 @@ class Daemon:
         self.subscribers = []
         self.sub_lock = threading.Lock()
         self.queue = deque()
-        self.usb_priority_job = None            # clé USB analysée pendant qu'un scan est en pause
+        self.usb_priority_job = None            # USB key scanned while a scan is paused
         self.last_mail_tick = 0.0
         self.queue_lock = threading.Condition()
         self.current = None
@@ -5364,11 +5372,11 @@ class Daemon:
         self.urlguard = dukiwi_shield_urlguard.UrlGuard(self, URLGUARD_DIR, log=log)
         self.last_urlguard_check = 0.0
         self.unlocked = {}          # uid -> expiry (session administrateur)
-        self.suspended = {}         # pid -> info (processus suspendus par la réponse automatique)
+        self.suspended = {}         # pid -> info (processes suspended by the automatic response)
         self._dns_lock = threading.Lock()
         self._persistence_lock = threading.Lock()
         programs = self.state.get("trusted_programs") or []
-        # Anciennes approbations d'une AppImage enregistrées par chemin de montage : ce chemin ne reviendra jamais
+        # Old approvals of an AppImage recorded by mount path: that path will never come back
         stale = [p for p in programs if APPIMAGE_MOUNT_RE.match(p.get("exe") or "") and not p.get("sha256")
                  and not os.path.exists(p.get("exe") or "")]
         if stale:
@@ -5384,8 +5392,8 @@ class Daemon:
             stored_vulns = self.state.get("vulns") or {}
             current_eco = ubuntu_osv_ecosystem() if not distro.is_rpm() else ""
             if stored_vulns and stored_vulns.get("ecosystem") != (current_eco or "unsupported"):
-                # Relevé fait pour une autre version d'Ubuntu (mise à niveau, ou 24.04 pris par défaut avant 1.24.3) :
-                # écarté, le relevé quotidien le refait dans la minute sur le bon écosystème.
+                # Report made for another Ubuntu version (upgrade, or 24.04 assumed by default before 1.24.3):
+                # discarded, the daily check redoes it within the minute on the right ecosystem.
                 log(f"Failles : relevé {stored_vulns.get('ecosystem')!r} écarté, le système est {current_eco or 'unsupported'!r}")
                 stored_vulns = {}
             if stored_vulns.get("items") and any(k not in (stored_vulns.get("counts") or {}) for k in ("na_vendor", "na_headers")) \
@@ -5403,11 +5411,11 @@ class Daemon:
         self.timeshift_enabling = False
         self.hardening_running = False
         self.integrity_progress = None         # {"tools": {outil: {percent, detail, state, warnings}}, "current", "started_at"}
-        self.tray_stopped = {}                 # uid → {ids de sessions} où l'administrateur a quitté le bouclier
+        self.tray_stopped = {}                 # uid → {session ids} where the administrator quit the shield
         self.tray_launched = {}                # uid → dernier lancement (anti-rafale)
         self.last_tray_check = 0.0
         self.last_integrity_emit = 0.0
-        self.current_network = None            # réseau courant {key, name, type, device}, None hors ligne
+        self.current_network = None            # current network {key, name, type, device}, None when offline
         self.network_lock = threading.Lock()
         self.last_integrity = 0
         self.integrity_running = False
@@ -5426,7 +5434,7 @@ class Daemon:
         with self.queue_lock:
             return self.current
 
-    # ── Diffusion aux abonnés ────────────────────────────────────────────
+    # ── Broadcast to subscribers ─────────────────────────────────────────
     def broadcast(self, event):
         with self.sub_lock:
             dead = []
@@ -5449,7 +5457,7 @@ class Daemon:
         self.broadcast({"event": "progress", **payload})
 
     def integrity_progress_cb(self, name, percent, detail, state, warnings):
-        """Callback des outils d'intégrité : état par outil diffusé (au plus toutes les 0,4 s, sauf changement d'état)."""
+        """Callback of the integrity tools: per-tool state broadcast (at most every 0.4 s, unless the state changes)."""
         if self.integrity_progress is None:
             self.integrity_progress = {"tools": {}, "current": None, "started_at": now_iso()}
         prev = self.integrity_progress["tools"].get(name) or {}
@@ -5458,7 +5466,7 @@ class Daemon:
         self.integrity_progress["tools"][name] = {"percent": percent, "detail": detail, "state": state, "warnings": warnings, "since": since}
         self.integrity_progress["current"] = name if state == "running" else self.integrity_progress.get("current")
         if state != prev.get("state") and state in ("done", "timeout"):
-            # Une ligne par outil dans le journal : en cas de lenteur ou de blocage, on voit lequel et combien de temps
+            # One line per tool in the log: in case of slowness or a hang, you see which one and for how long
             took = int(now - since)
             if state == "timeout":
                 self.write_log(f"⚠ integrity: {name} stopped after {took} s, no answer ({detail})")
@@ -5495,7 +5503,7 @@ class Daemon:
         elif alert.get("kind") in ("mail", "url"):
             self.write_log(f"⚠ {alert.get('kind')} {alert.get('severity')}: {alert.get('title', '')} — {alert.get('detail', '')} ({alert.get('source', '')})")
         elif alert.get("kind") in ("ransomware", "privacy", "miner", "certificate", "redirect", "extension", "ssh_key", "suid", "keylogger", "login", "dev_package", "protected"):
-            pass                                        # journalisé par le centre de sécurité (dukiwi_shield_guard)
+            pass                                        # logged by the security centre (dukiwi_shield_guard)
         elif alert.get("kind") == "honeypot":
             self.write_log(f"⚠ honeypot {alert.get('severity')}: {alert.get('ip')} ({alert.get('host') or '?'}) "
                            f"{alert.get('detail', '')} — {', '.join(alert.get('reasons') or [])}")
@@ -5559,7 +5567,7 @@ class Daemon:
                 self._after_job(job)
 
     def _after_job(self, job):
-        """Support amovible : démontage du montage privé et événement usb_done (popup de résultat)."""
+        """Removable media: unmount of the private mount and usb_done event (result popup)."""
         if job.usb:
             if job.usb.get("private_mount"):
                 self.usb.unmount(job.usb["devnode"])
@@ -5572,7 +5580,7 @@ class Daemon:
             })
 
     def _run_priority(self, job, paused):
-        """Clé USB pendant un scan : le scan est mis en pause, la clé est analysée tout de suite, puis reprise."""
+        """USB key during a scan: the scan is paused, the key is scanned right away, then the scan resumes."""
         paused.pause()
         self.usb_priority_job = job
         self.write_log(f"⏸ paused {paused.path} for USB {job.usb.get('label') or job.usb.get('devnode')}")
@@ -5613,14 +5621,14 @@ class Daemon:
             self.mail_scan_event(job, status)
         if job.kind == "scan" and not job.usb and status in ("clean", "infected") and self.settings.get("telemetry") \
                 and not self.state.get("telemetry_scan_sent"):
-            # Premier scan complet depuis l'accord : rapport envoyé sans attendre la semaine (mesures de performance)
+            # First full scan since consent: report sent without waiting for the week (performance measurements)
             self.state.update(telemetry_scan_sent=True)
             threading.Thread(target=lambda: self.send_telemetry(force=True), daemon=True).start()
 
     # ── Scan ─────────────────────────────────────────────────────────────
     def _save_progress(self, job, in_progress=True):
         if job.usb:
-            return   # pas de reprise pour un support amovible
+            return   # no resume for a removable drive
         try:
             tmp = SYSTEM_PROGRESS_FILE + ".tmp"
             with open(tmp, "w") as f:
@@ -5642,9 +5650,9 @@ class Daemon:
             return {}
 
     def _count_files(self, job, cache, skip=None, scache=None, manifest=None):
-        """Phase inventaire : find (avec empreintes) → fichier cache, en streaming.
-        `skip` : hashes des fichiers système vérifiés par debsums. `scache` : cache des fichiers sains (disque) ;
-        `manifest` : manifeste .clamav du support amovible. Les fichiers inchangés déjà vérifiés ne sont pas relus."""
+        """Inventory phase: find (with hashes) → cache file, streamed.
+        `skip`: hashes of the system files verified by debsums. `scache`: cache of clean files (disk);
+        `manifest`: .clamav manifest of the removable media. Unchanged files already checked are not reread."""
         job.phase = "counting"
         job.found = 0
         job.cached = 0
@@ -5692,7 +5700,7 @@ class Daemon:
                 try:
                     e[0].encode("utf-8")
                 except UnicodeEncodeError:
-                    bad_names += 1                                # nom qui n'est pas de l'UTF-8 : signalé plus bas
+                    bad_names += 1                                # name that is not UTF-8: reported further down
                     continue
                 if skip and hash(e[0]) in skip:
                     job.skipped += 1
@@ -5700,10 +5708,10 @@ class Daemon:
                 if job.usb:
                     rel = e[0][len(root):] if e[0].startswith(root) else os.path.relpath(e[0], job.path)
                     if rel in (USB_MANIFEST, USB_MANIFEST + ".tmp", USB_MANIFEST_LEGACY):
-                        continue                                  # le manifeste lui-même
+                        continue                                  # the manifest itself
                     m = mf_files.get(rel)
                     if m and len(m) >= 2 and m[0] == e[1] and m[1] == e[2]:
-                        job.cached += 1                           # inchangé depuis la dernière analyse
+                        job.cached += 1                           # unchanged since the last scan
                         job.manifest_keep[rel] = [e[1], e[2]]
                         continue
                 batch.append(e)
@@ -5715,10 +5723,10 @@ class Daemon:
             flush(out)
         job.proc.wait()
         if bad_names:
-            # Nom de fichier qui n'est pas de l'UTF-8 (ancien codage sur un disque ext4, support monté sans l'option
-            # utf8…) : la suite du scan manipule les chemins comme du texte et ne sait pas le transmettre au moteur.
-            # Le fichier n'est pas analysé, mais il est compté et signalé — avant, un seul nom de ce genre faisait
-            # échouer tout le scan (« Internal error: 'utf-8' codec can't decode byte… »).
+            # File name that is not UTF-8 (old encoding on an ext4 disk, drive mounted without the utf8
+            # option…): the rest of the scan handles paths as text and cannot pass it to the engine.
+            # The file is not scanned, but it is counted and reported — before, a single such name made the
+            # whole scan fail ("Internal error: 'utf-8' codec can't decode byte…").
             job.errors += bad_names
             msg = f"⚠ {bad_names} file(s) not scanned: file name is not valid UTF-8"
             self.write_log(msg)
@@ -5726,7 +5734,7 @@ class Daemon:
         return job.found
 
     def _resume_offset(self, job):
-        """Index de reprise dans le cache, ou None si reprise impossible."""
+        """Resume index in the cache, or None if resuming is impossible."""
         prog = self.load_progress()
         if not (prog.get("in_progress") and prog.get("path") == job.path):
             return None
@@ -5776,8 +5784,8 @@ class Daemon:
                            + (" (manifest)" if manifest else ""))
             self.emit_line("info", f"▶ {job.path}")
             if job.integrity and not job.usb:
-                # Analyse complète : intégrité d'abord (rootkits, paquets, fichiers de l'application) ;
-                # les fichiers système confirmés intacts par debsums sont ensuite ignorés par l'antivirus.
+                # Full scan: integrity first (rootkits, packages, application files);
+                # system files confirmed intact by debsums are then skipped by the antivirus.
                 job.phase = "integrity"
                 self.emit_progress(job)
                 self.emit_line("info", "▶ integrity (Lynis, unhide, chkrootkit, debsums)")
@@ -5822,7 +5830,7 @@ class Daemon:
             self.finish(job, "clean", key, params, self._summary(job))
             return
 
-        # Liste des fichiers restants (copie en streaming)
+        # List of remaining files (streaming copy)
         tmp_list = cache + ".tmp"
         with open(cache) as src, open(tmp_list, "w") as dst:
             for i, line in enumerate(src):
@@ -5896,7 +5904,7 @@ class Daemon:
                 pass
 
     def _write_usb_manifest(self, job):
-        """Manifeste .clamav à la racine du support : fichiers sains (empreintes) pour un scan rapide la prochaine fois."""
+        """.clamav manifest at the root of the media: clean files (hashes) for a quick scan next time."""
         files = dict(job.manifest_keep)
         if len(files) > MANIFEST_MAX_FILES:
             self.write_log(f"usb manifest skipped ({len(files)} files)")
@@ -5905,7 +5913,7 @@ class Daemon:
         self.write_log(f"usb manifest {'written' if ok else 'not written'}: {len(files)} clean file(s)")
 
     def _record_clean(self, job, clean, scache):
-        """Fichiers sains d'un lot : cache disque (empreinte relevée à l'inventaire) ou manifeste du support."""
+        """Clean files of a batch: disk cache (hash taken during the inventory) or manifest of the media."""
         if not clean:
             return
         if job.usb:
@@ -5921,7 +5929,7 @@ class Daemon:
                 log(f"Cache de scan : {e}")
 
     def _scan_line(self, job, line, by_path, clean):
-        """Une ligne de clamdscan : « chemin: OK », « chemin: Signature FOUND », « chemin: … ERROR »."""
+        """One clamdscan line: "path: OK", "path: Signature FOUND", "path: … ERROR"."""
         if line.endswith(": OK"):
             path = line[:-4]
             with job.count_lock:
@@ -5969,12 +5977,12 @@ class Daemon:
         return False
 
     def _scan_with_clamd(self, job, tmp_list, scache):
-        """clamd garde la base en mémoire : plusieurs clamdscan --fdpass en parallèle, chacun sur un lot de fichiers
-        (le descripteur est transmis à clamd, qui lit les fichiers avec les droits du service)."""
+        """clamd keeps the database in memory: several clamdscan --fdpass in parallel, each on a batch of files
+        (the descriptor is passed to clamd, which reads the files with the service's rights)."""
         cpu = os.cpu_count() or 2
         workers = max(2, min(SCAN_WORKERS_MAX, cpu // 2))
         if job.usb:
-            workers = min(workers, 3)              # le débit d'une clé vient du support, pas du CPU
+            workers = min(workers, 3)              # a key's throughput comes from the drive, not the CPU
         prefix = ["nice", "-n", "15", "ionice", "-c", "2", "-n", "7"] if job.auto else ["nice", "-n", "5", "ionice", "-c", "2", "-n", "4"]
         if not shutil.which("ionice"):
             prefix = prefix[:2]
@@ -6019,9 +6027,9 @@ class Daemon:
                                 f"--move={SYSTEM_QUARANTINE_DIR}", f"--file-list={list_path}"]
                 clean, seen, rc_b, tail = self._run_clamdscan_batch(job, cmd, by_path, tick)
                 if rc_b == 2 and seen == 0 and not job.cancel_event.is_set():
-                    # Lot refusé sans qu'aucun fichier ne soit traité (clamd injoignable, descripteur refusé…) :
-                    # attendre clamd et réessayer une fois, sinon ce lot passe par clamscan ; au 5e lot en échec,
-                    # le reste du scan bascule sur clamscan au lieu d'échouer.
+                    # Batch refused without any file being processed (clamd unreachable, descriptor refused…):
+                    # wait for clamd and retry once, otherwise this batch goes through clamscan; at the 5th failed
+                    # batch, the rest of the scan switches to clamscan instead of failing.
                     self.write_log(f"clamdscan batch failed (rc 2, {len(batch)} files): {tail[:200]}")
                     if ensure_clamd(wait=60):
                         clean, seen, rc_b, tail = self._run_clamdscan_batch(job, cmd, by_path, tick)
@@ -6046,7 +6054,7 @@ class Daemon:
         for th in threads:
             th.join()
         if state["fatal"] and not job.cancel_event.is_set():
-            # clamd hors service : le reste de la liste par clamscan (plus lent, mais le scan aboutit)
+            # clamd out of service: the rest of the list through clamscan (slower, but the scan completes)
             rest, n = tmp_list + ".rest", 0
             with open(rest, "w") as f:
                 for line in src:
@@ -6068,7 +6076,7 @@ class Daemon:
         return 1 if job.infected else state["rc"]
 
     def _run_clamdscan_batch(self, job, cmd, by_path, tick):
-        """Un lot par clamdscan : (fichiers sains, fichiers traités, code retour, dernières lignes hors fichiers)."""
+        """One batch per clamdscan: (clean files, processed files, return code, last non-file lines)."""
         try:
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
         except OSError as e:
@@ -6092,7 +6100,7 @@ class Daemon:
         return clean, seen, proc.returncode, " | ".join(tail[-3:])
 
     def _scan_batch_with_clamscan(self, job, batch, list_path, scache):
-        """Repli pour un lot que clamd n'a pas pu traiter."""
+        """Fallback for a batch that clamd could not process."""
         with open(list_path, "w") as f:
             f.write("".join("\t".join(str(x) for x in e) + "\n" for e in batch))
         try:
@@ -6105,7 +6113,7 @@ class Daemon:
                     pass
 
     def _scan_with_clamscan(self, job, tmp_list, scache):
-        """Repli sans clamd : un seul clamscan sur la liste (base chargée une fois), mono-thread."""
+        """Fallback without clamd: a single clamscan on the list (database loaded once), single-threaded."""
         paths_list = tmp_list + ".paths"
         with open(tmp_list) as src, open(paths_list, "w") as dst:
             for line in src:
@@ -6119,7 +6127,7 @@ class Daemon:
         with job.proc_lock:
             job.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
                                         stderr=subprocess.STDOUT, text=True, bufsize=1)
-        entries = open(tmp_list)            # lecture en parallèle de la liste : empreinte du fichier courant
+        entries = open(tmp_list)            # parallel read of the list: fingerprint of the current file
         cur, cur_dirty, clean = None, False, []
 
         def advance_to(path):
@@ -6195,7 +6203,7 @@ class Daemon:
         return rc
 
     def _forget_auto(self, job):
-        """L'utilisateur a annulé un scan automatique : ne pas le relancer tout seul."""
+        """The user cancelled an automatic scan: do not restart it on its own."""
         job.auto = False
         try:
             os.remove(FIRST_SCAN_FLAG)
@@ -6234,7 +6242,7 @@ class Daemon:
 
     # ── USB ──────────────────────────────────────────────────────────────
     def start_usb_scan(self, info):
-        """Clé USB : montage privé, analyse, puis remise à l'utilisateur (événement job_done)."""
+        """USB key: private mount, scan, then handed over to the user (job_done event)."""
         try:
             mountpoint = self.usb.mount(info)
         except OSError as e:
@@ -6245,7 +6253,7 @@ class Daemon:
         self._start_usb_job(Job("scan", path=mountpoint, usb=usb, requested_by="system"))
 
     def _start_usb_job(self, job):
-        """Une clé passe devant : si un scan (disque) est en cours, il est mis en pause le temps de la clé."""
+        """A key goes first: if a (disk) scan is running, it is paused while the key is scanned."""
         with self.queue_lock:
             cur = self.current
         if cur and cur.kind == "scan" and not cur.usb and not cur.paused \
@@ -6254,7 +6262,7 @@ class Daemon:
         else:
             self.enqueue(job)
 
-    # ── Mise à jour des signatures ───────────────────────────────────────
+    # ── Signature update ─────────────────────────────────────────────────
     def run_update(self, job):
         job.phase = "updating"
         self.emit_progress(job)
@@ -6296,7 +6304,7 @@ class Daemon:
             self.write_log(f"■ update failed ({rc})")
             self.finish(job, "error", "msg.update.failed", {"code": rc})
 
-    # ── État du système (apt / CVE) ──────────────────────────────────────
+    # ── System status (apt / CVE) ────────────────────────────────────────
     def _system_upgrade_worker(self, unit):
         ok, detail = True, "test_mode"
         try:
@@ -6340,9 +6348,9 @@ class Daemon:
             with self.system_status_lock:
                 self.system_status_running = False
 
-    # ── Sécurité réseau (UFW / SSH) ──────────────────────────────────────
+    # ── Network security (UFW / SSH) ─────────────────────────────────────
     def _timeshift_first_snapshot(self):
-        """Premier instantané juste après l'activation (quelques minutes), puis état rafraîchi."""
+        """First snapshot right after activation (a few minutes), then state refreshed."""
         r = run_quiet(["timeshift", "--check", "--scripted"], timeout=1800)
         if r.returncode != 0 or "snapshot" not in ((r.stdout or "") + (r.stderr or "")).lower():
             r = run_quiet(["timeshift", "--create", "--scripted", "--tags", "D", "--comments", "Dukiwi Shield"], timeout=1800)
@@ -6351,9 +6359,9 @@ class Daemon:
         self.refresh_overall()
 
     def _timeshift_state_quick(self):
-        """État Timeshift immédiat (configuration seulement, sans « timeshift --list » qui peut durer des minutes) :
-        les compteurs d'instantanés du dernier relevé sont conservés. Utilisé juste après activer/désactiver pour
-        répondre à l'interface sans délai ; le relevé complet suit en arrière-plan."""
+        """Immediate Timeshift state (configuration only, without "timeshift --list", which can take minutes):
+        the snapshot counters of the last survey are kept. Used right after enabling/disabling to
+        answer the interface without delay; the full survey follows in the background."""
         cached = self.state.get("timeshift") or {}
         ts = collect_timeshift_status(list_snapshots=False)
         ts["snapshots"], ts["last"] = cached.get("snapshots"), cached.get("last")
@@ -6371,12 +6379,12 @@ class Daemon:
         return info.get("bytes") if age < max_age and info.get("bytes") else None
 
     def refresh_system_size(self, force=False):
-        """Taille du système (garde-fou Timeshift), mesurée au plus une fois par semaine ; None si indisponible."""
+        """Size of the system (Timeshift safeguard), measured at most once a week; None if unavailable."""
         size = None if force else self.cached_system_size()
         if size is not None:
             return size
         size = estimate_system_size()
-        if size is None:   # du indisponible : occupation du disque principal, majorant prudent
+        if size is None:   # du unavailable: usage of the main disk, a cautious upper bound
             try:
                 st = os.statvfs("/")
                 size = (st.f_blocks - st.f_bfree) * st.f_frsize
@@ -6387,7 +6395,7 @@ class Daemon:
         return size
 
     def _timeshift_enable_now(self, existing, size):
-        """Garde-fou puis activation : refus si l'espace libre est inférieur à 1,2 × le système + 10 Go."""
+        """Safeguard then activation: refused if free space is less than 1.2 × the system + 10 GB."""
         cfg, btrfs = timeshift_best_practice_config(existing)
         free, path = timeshift_free_bytes(None)
         needed = timeshift_space_needed(size, btrfs)
@@ -6402,13 +6410,13 @@ class Daemon:
         self.state.update(timeshift_suspended=None)
         self.write_log(f"timeshift enabled ({'btrfs' if btrfs else 'rsync'}, daily 5 / weekly 3 / monthly 2, "
                        f"{'?' if free is None else free // 10**9} GB free for a {size // 10**9} GB system)")
-        self._timeshift_state_quick()                     # réponse immédiate ; relevé complet après le premier instantané
+        self._timeshift_state_quick()                     # immediate answer; full status check after the first snapshot
         threading.Thread(target=self._timeshift_first_snapshot, daemon=True).start()
         self.refresh_overall()
         return {"ok": True, "mode": "btrfs" if btrfs else "rsync", "started": True, "free": free, "size": size}
 
     def _timeshift_enable_worker(self, existing):
-        """Activation différée : mesure du système (une à deux minutes), garde-fou, activation ; résultat diffusé."""
+        """Deferred activation: system measurement (one to two minutes), safeguard, activation; result broadcast."""
         try:
             size = self.refresh_system_size(force=True)
             result = self._timeshift_enable_now(existing, size) if size is not None \
@@ -6421,8 +6429,8 @@ class Daemon:
         self.broadcast({"event": "timeshift_enable", "result": result})
 
     def _timeshift_suspend(self, ts):
-        """Garde-fou : disque presque plein → planifications Timeshift coupées (les instantanés existants restent)
-        et alerte. À réactiver depuis l'onglet Sauvegardes une fois de la place libérée."""
+        """Safeguard: disk almost full → Timeshift schedules turned off (existing snapshots remain)
+        and alert. To be re-enabled from the Backups tab once space has been freed."""
         try:
             with open(TIMESHIFT_CONF, encoding="utf-8") as f:
                 cfg = json.load(f)
@@ -6439,7 +6447,7 @@ class Daemon:
         free_gb = round((ts.get("free_bytes") or 0) / 1e9, 1)
         self.state.update(timeshift_suspended={"at": now_iso(), "free_bytes": ts.get("free_bytes")})
         self.write_log(f"timeshift schedules suspended: only {free_gb} GB free")
-        if self.settings.get("timeshift_check") is not False:          # état Timeshift ignoré par l'utilisateur : pas d'alerte
+        if self.settings.get("timeshift_check") is not False:          # Timeshift state ignored by the user: no alert
             self.publish_alert({"kind": "timeshift", "severity": "warn", "time": now_iso(), "title": "low_space",
                                 "detail": f"{free_gb} GB free", "free_gb": free_gb})
         new = collect_timeshift_status(list_snapshots=False)
@@ -6447,7 +6455,7 @@ class Daemon:
         return new
 
     def refresh_backup(self, force=False):
-        """État Timeshift, au plus une fois par heure (timeshift --list peut monter le disque de sauvegarde)."""
+        """Timeshift state, at most once an hour (timeshift --list may mount the backup disk)."""
         with self.security_lock:
             cached = self.state.get("timeshift") or {}
             try:
@@ -6481,10 +6489,10 @@ class Daemon:
             self.broadcast({"event": "security_status", "security": result})
         return result
 
-    # ── Réseau courant et profil mémorisé par réseau ──────────────────────
+    # ── Current network and profile remembered per network ────────────────
     def network_loop(self):
-        """Surveille le réseau courant (route par défaut, connexion NetworkManager) toutes les 10 s,
-        et le bouclier (tray) de chaque session graphique toutes les 20 s."""
+        """Monitors the current network (default route, NetworkManager connection) every 10 s,
+        and the shield (tray) of each graphical session every 20 s."""
         time.sleep(8)
         while not self.shutdown.is_set():
             try:
@@ -6500,13 +6508,13 @@ class Daemon:
             try:
                 if time.time() - getattr(self, "last_builtin_watch", 0) >= 300:
                     self.last_builtin_watch = time.time()
-                    self._builtin_refresh()             # noyau et processus : veille comportementale toutes les 5 min
+                    self._builtin_refresh()             # kernel and processes: behavioural watch every 5 min
             except Exception as e:  # noqa: BLE001
                 log(f"Veille noyau/processus : {e}")
             try:
                 if time.time() - getattr(self, "last_gateway_check", 0) >= 60:
                     self.last_gateway_check = time.time()
-                    self.check_gateway()                # passerelle : adresse matérielle inchangée (homme du milieu)
+                    self.check_gateway()                # gateway: hardware address unchanged (man in the middle)
             except Exception as e:  # noqa: BLE001
                 log(f"Passerelle : {e}")
             try:
@@ -6518,8 +6526,8 @@ class Daemon:
             self.shutdown.wait(10)
 
     def stop_legacy_tray(self, s):
-        """Bouclier du paquet précédent encore en mémoire après la migration (son service utilisateur Restart=always l'a
-        relancé juste avant l'effacement de ses fichiers) : service utilisateur arrêté, processus terminé, une fois."""
+        """Shield of the previous package still in memory after the migration (its Restart=always user service
+        restarted it just before its files were deleted): user service stopped, process terminated, once."""
         uid = s["uid"]
         legacy = "/opt/" + "clamav" + "-antivirus/"
         r = run_quiet(["pgrep", "-u", str(uid), "-f", legacy], timeout=10)
@@ -6535,12 +6543,12 @@ class Daemon:
                 os.kill(pid, signal.SIGTERM)
             except OSError:
                 pass
-        self.tray_launched.pop(uid, None)                 # nouveau bouclier lancé tout de suite, sans attendre 60 s
+        self.tray_launched.pop(uid, None)                 # new shield launched right away, without waiting 60 s
         self.write_log(f"legacy tray stopped for {s['user']}: {pids}")
 
     def check_tray(self):
-        """Le bouclier doit être présent dans chaque session graphique active : s'il a été tué, il est relancé
-        dans la session (service utilisateur transitoire), sauf si un administrateur l'a quitté dans cette session."""
+        """The shield must be present in every active graphical session: if it was killed, it is restarted
+        in the session (transient user service), unless an administrator quit it in that session."""
         if os.geteuid() != 0 or TEST_MODE or not os.path.exists(TRAY_LAUNCHER):
             return
         for s in graphical_sessions():
@@ -6551,7 +6559,7 @@ class Daemon:
             r = run_quiet(["pgrep", "-u", str(uid), "-f", TRAY_PROCESS_RE], timeout=10)
             pids = sorted(int(p) for p in (r.stdout or "").split() if p.isdigit())
             if len(pids) > 1:
-                # Doublons (deux boucliers, notifications en double) : on garde le plus ancien
+                # Duplicates (two shields, duplicate notifications): keep the oldest
                 for pid in pids[1:]:
                     try:
                         os.kill(pid, signal.SIGTERM)
@@ -6560,8 +6568,8 @@ class Daemon:
                 self.write_log(f"duplicate tray for {s['user']}: terminated {pids[1:]}, kept {pids[0]}")
             if pids:
                 continue
-            # Juste après l'ouverture de session, c'est le démarrage automatique du bureau qui lance le bouclier :
-            # on lui laisse 90 s, et il faut que le bus utilisateur existe (gestionnaire systemd --user prêt)
+            # Right after login, the shield is launched by the desktop autostart:
+            # give it 90 s, and the user bus must exist (systemd --user manager ready)
             if s.get("age") is not None and s["age"] < 90:
                 continue
             if not os.path.exists(f"/run/user/{uid}/bus"):
@@ -6580,7 +6588,7 @@ class Daemon:
                 "known": sorted(({"key": k, **v} for k, v in known.items()), key=lambda x: x.get("last_seen") or "", reverse=True)[:30]}
 
     def remember_network_profile(self, profile):
-        """Le profil choisi par l'utilisateur est mémorisé pour le réseau courant."""
+        """The profile chosen by the user is remembered for the current network."""
         net = self.current_network
         if not net:
             return
@@ -6591,8 +6599,9 @@ class Daemon:
         self.state.update(network_profiles=known)
 
     def check_network(self, force=False):
-        """Réseau connu : son profil mémorisé est appliqué. Réseau inconnu : Public d'office, mémorisé, et l'utilisateur
-        est prévenu (popup avec « Changer »). Première fois après mise à jour : le réseau courant hérite du profil déjà choisi."""
+        """Known network: its remembered profile is applied. Unknown network: Public by default, remembered, and the
+        user is notified (popup with "Change"). First time after an update: the current network inherits the
+        profile already chosen."""
         net = network_identity()
         with self.network_lock:
             prev_key = (self.current_network or {}).get("key")
@@ -6605,14 +6614,14 @@ class Daemon:
                 return
             known = dict(self.state.get("network_profiles") or {})
             current_profile = self.settings.get("firewall_profile") or ""
-            migrate = not self.state.get("network_profiles_init")      # première fois (mise à jour) : héritage du profil choisi
+            migrate = not self.state.get("network_profiles_init")      # first time (update): inherit the chosen profile
             entry = known.get(net["key"])
             new = entry is None
             if new:
                 inherit = bool(migrate and current_profile)
                 profile = current_profile if inherit else "public"
                 entry = {"profile": profile, "name": net["name"], "type": net["type"], "first_seen": now_iso()}
-                new = not inherit                                          # héritage silencieux, sinon popup « nouveau réseau »
+                new = not inherit                                          # silent inheritance, otherwise "New network" popup
             else:
                 profile = entry.get("profile") or "public"
             if migrate:
@@ -6622,7 +6631,7 @@ class Daemon:
             gw_mac = net.get("gw_mac") or ""
             if gw_mac:
                 if not entry.get("gw_mac"):
-                    entry["gw_mac"] = gw_mac                                 # première fois : mémorisée sans bruit
+                    entry["gw_mac"] = gw_mac                                 # first time: remembered silently
                 elif entry["gw_mac"] != gw_mac and not new:
                     traps.append(("gateway_changed", {"old": entry["gw_mac"], "new": gw_mac}))
             if net.get("type") == "wifi":
@@ -6653,8 +6662,8 @@ class Daemon:
             self.network_trap(subtype, net, extra)
 
     def network_trap(self, subtype, net, extra):
-        """Réseau piégé : passerelle dont l'adresse matérielle a changé (homme du milieu possible) ou Wi-Fi sans chiffrement
-        sans VPN. Alerte (popup, événement, courrier), une seule fois par réseau et par heure."""
+        """Rogue network: gateway whose hardware address has changed (possible man-in-the-middle) or unencrypted Wi-Fi
+        without VPN. Alert (popup, event, mail), only once per network and per hour."""
         key = net.get("key") or ""
         for a in (self.state.get("alerts") or [])[:20]:
             if a.get("kind") == "network" and a.get("subtype") == subtype and a.get("key") == key and not a.get("resolved"):
@@ -6670,8 +6679,9 @@ class Daemon:
                             "pid": 0, "comm": "", "exe": "", "count": 0, "top_dir": "", "reasons": [subtype], "sample": []})
 
     def check_gateway(self):
-        """Toutes les 60 s : l'adresse matérielle de la passerelle du réseau courant n'a pas changé en cours de session
-        (empoisonnement ARP). Comparée à celle vue à la connexion, puis mise à jour pour n'alerter qu'une fois par changement."""
+        """Every 60 s: the hardware address of the current network's gateway has not changed during the session
+        (ARP poisoning). Compared with the one seen at connection time, then updated so as to alert only once
+        per change."""
         with self.network_lock:
             net = dict(self.current_network or {})
         if not net.get("gw") or not net.get("gw_mac"):
@@ -6684,8 +6694,8 @@ class Daemon:
             self.network_trap("gateway_changed", net, {"old": net["gw_mac"], "new": mac})
 
     def firewalld_apply_profile(self, profile):
-        """Fedora : zone par défaut home / public / work, interface du réseau courant (et sa connexion NetworkManager)
-        rattachée à la zone, services du profil ajoutés à la zone, firewalld démarré."""
+        """Fedora: default zone home / public / work, interface of the current network (and its NetworkManager
+        connection) attached to the zone, profile services added to the zone, firewalld started."""
         zone = FIREWALLD_ZONES[profile]
         errors = []
         if not systemd_is_active("firewalld"):
@@ -6714,7 +6724,7 @@ class Daemon:
         return not errors, "; ".join(errors)[:300]
 
     def firewalld_command(self, cmd, req):
-        """Commandes de la page Pare-feu sur firewalld (activer, politiques, règles)."""
+        """Commands of the Firewall page on firewalld (enable, policies, rules)."""
         zone = firewalld_zone()
         if cmd == "firewall_set":
             if req.get("enabled"):
@@ -6771,7 +6781,7 @@ class Daemon:
         return False, "unknown"
 
     def apply_firewall_profile(self, profile):
-        """Retire les anciennes règles du profil, applique les politiques, ajoute les règles du profil, active UFW."""
+        """Removes the old profile rules, applies the policies, adds the profile rules, enables UFW."""
         if distro.firewall_backend() == "firewalld":
             return self.firewalld_apply_profile(profile)
         r = run_quiet(["ufw", "status", "numbered"], timeout=30)
@@ -6798,7 +6808,7 @@ class Daemon:
         self.write_log(f"{' '.join(cmd[1:])} → {r.returncode}" + (f" : {text[:160]}" if r.returncode != 0 else ""))
         return r.returncode == 0, text[:300]
 
-    # ── Application des réglages ─────────────────────────────────────────
+    # ── Applying settings ─────────────────────────────────────────────────
     def apply_settings(self, changed):
         applied = []
         if "update_hour" in changed or "update_minute" in changed:
@@ -6821,24 +6831,24 @@ class Daemon:
             self.network.samples.clear()
             applied.append("upload_window")
         if "honeypot" in changed:
-            applied.append("honeypot")                  # le fil du pot de miel suit le réglage (≤ 2 s)
+            applied.append("honeypot")                  # the honeypot thread follows the setting (≤ 2 s)
         if "filtered_dns" in changed:
             threading.Thread(target=self.sync_filtered_dns, daemon=True, name="dns-filter").start()
             applied.append("filtered_dns")
         return applied
 
-    # ── Démarrage automatique, tâches planifiées, extensions ──────────────
+    # ── Autostart, scheduled tasks, extensions ────────────────────────────
     def refresh_persistence(self, reason="daily"):
-        """Relevé de la persistance (démarrage automatique, cron, timers, at, services, extensions) ; tout nouvel élément,
-        et toute extension qui obtient de nouvelles permissions sensibles, déclenche une alerte. Appelé chaque jour et par
-        la veille du centre de sécurité dès qu'un des dossiers surveillés change."""
+        """Survey of persistence (autostart, cron, timers, at, services, extensions); any new item, and any
+        extension that obtains new sensitive permissions, triggers an alert. Called every day and by the
+        security centre watch as soon as one of the watched folders changes."""
         with self._persistence_lock:
             prev = self.state.get("persistence") or {}
             prev_keys = {it["key"] for it in prev.get("items", [])}
             prev_ext = {e["key"]: e for e in prev.get("extensions", [])}
             pers = self.apply_acknowledged(collect_persistence())
-            # Dossier personnel chiffré pas encore monté (service démarré avant la session) : ses entrées du relevé
-            # précédent sont reprises telles quelles, sinon elles réapparaîtraient toutes « nouvelles » à l'ouverture.
+            # Encrypted home folder not mounted yet (service started before the session): its entries from the
+            # previous scan are carried over as-is, otherwise they would all reappear as "new" at login.
             for name in pers.get("pending") or []:
                 pers["items"] += [it for it in prev.get("items", []) if it.get("user") == name]
                 pers["extensions"] += [e for e in prev.get("extensions", []) if e.get("user") == name]
@@ -6849,8 +6859,8 @@ class Daemon:
             if prev.get("items") is not None and (prev_keys or prev_ext):
                 new_items = [it for it in pers["items"] if it["key"] not in prev_keys]
                 new_ext = [e for e in pers["extensions"] if e["key"] not in prev_ext]
-                # Plus de quatre nouveautés d'un coup : ce n'est pas une installation mais un changement de référence (profil
-                # importé, nouveau compte, restauration) → un seul avis, pas une rafale de popups.
+                # More than four new items at once: not an installation but a change of baseline (imported
+                # profile, new account, restore) → a single notice, not a burst of popups.
                 if len(new_items) > 4:
                     self.write_log(f"⚠ persistence: {len(new_items)} new entries at once: " + ", ".join(it["name"] for it in new_items[:8]))
                     self.publish_alert({"kind": "persistence", "subtype": "many", "severity": "warn", "time": now_iso(), "title": str(len(new_items)),
@@ -6890,13 +6900,13 @@ class Daemon:
 
     # ── Fichiers SUID / SGID hors paquets ────────────────────────────────
     def refresh_suid(self):
-        """Relevé des fichiers SUID/SGID ; ceux qu'aucun paquet ne livre sont gardés (empreinte, propriétaire, droits).
-        Un nouveau fichier de ce genre déclenche une alerte (danger dans un dossier temporaire ou personnel)."""
+        """Survey of SUID/SGID files; those shipped by no package are kept (hash, owner, permissions).
+        A new file of this kind triggers an alert (danger in a temporary or personal folder)."""
         paths = self.guard.suid_scan()
         owners = dpkg_owners(paths)
         missing = [p_ for p_ in paths if p_ not in owners]
         if missing and not distro.is_rpm():
-            # /usr fusionné : dpkg peut connaître /bin/su pour /usr/bin/su (et l'inverse)
+            # merged /usr: dpkg may know /bin/su for /usr/bin/su (and vice versa)
             alt = {(p_[4:] if p_.startswith("/usr/") else "/usr" + p_): p_ for p_ in missing}
             for a, orig in alt.items():
                 if a in dpkg_owners(list(alt)):
@@ -6917,7 +6927,7 @@ class Daemon:
         pending = tuple(pwd.getpwnam(n).pw_dir.rstrip("/") + "/" for n in pending_homes())
         if prev is not None and pending:
             seen = {u["path"] for u in unowned}
-            unowned += [u for u in prev.get("unowned") or [] if u["path"].startswith(pending) and u["path"] not in seen]   # dossier non monté
+            unowned += [u for u in prev.get("unowned") or [] if u["path"].startswith(pending) and u["path"] not in seen]   # folder not mounted
         info = {"checked_at": now_iso(), "total": len(paths), "unowned": unowned}
         self.state.update(suid=info)
         if prev is not None:
@@ -6935,7 +6945,7 @@ class Daemon:
         return info
 
     def flatpak_status(self):
-        """Applications Flatpak aux permissions sensibles, avec l'état « ignoré » (par application et jeu de droits)."""
+        """Flatpak applications with sensitive permissions, with the "ignored" state (per application and set of rights)."""
         apps = self.cached("flatpak_audit", 3600, lambda: audit.flatpak_audit(human_users()))
         acks = self.state.get("acknowledged_flatpak") or {}
         return [dict(a, acknowledged=set((acks.get(a["app"]) or {}).get("risks") or []) >= set(a["risks"])) for a in apps]
@@ -6946,9 +6956,9 @@ class Daemon:
         info["unowned"] = [dict(u, acknowledged=acks.get(u["path"], {}).get("sha256") == u.get("sha256")) for u in info.get("unowned") or []]
         return info
 
-    # ── Paquets de développement malveillants (pip, npm) ─────────────────
+    # ── Malicious development packages (pip, npm) ────────────────────────
     def refresh_dev_packages(self):
-        """Paquets pip/npm installés hors du système, comparés aux fiches « MAL- » d'OSV ; un nouveau → alerte rouge."""
+        """pip/npm packages installed outside the system, compared with the OSV "MAL-" entries; a new one → red alert."""
         res = audit.malicious_packages(human_users(), osv_query)
         prev = {(m["ecosystem"], m["name"], m["version"]) for m in ((self.state.get("dev_packages") or {}).get("malicious") or [])}
         self.state.update(dev_packages=res)
@@ -6962,10 +6972,10 @@ class Daemon:
         log(f"Paquets de développement : {res['counts']} — {len(res['malicious'])} malveillant(s)")
         return res
 
-    # ── Résumé de la semaine ─────────────────────────────────────────────
+    # ── Weekly summary ───────────────────────────────────────────────────
     def weekly_summary(self, days=7):
-        """Bilan des 7 derniers jours : score et son évolution, analyses, menaces, ce qui a été bloqué ou suspendu,
-        événements par catégorie, points à corriger."""
+        """Summary of the last 7 days: score and its trend, scans, threats, what was blocked or suspended,
+        events by category, items to fix."""
         cutoff = time.time() - days * 86400
 
         def recent(iso):
@@ -6997,8 +7007,8 @@ class Daemon:
                 "by_cat": by_cat, "todo": [it["key"] for it in todo[:5]], "isolated": bool(self.state.get("isolated"))}
 
     def check_weekly_summary(self):
-        """Le lundi dès 8 h (ou au premier démarrage qui suit) : résumé enregistré, diffusé à l'application, envoyé par
-        courriel si les notifications sont configurées."""
+        """On Monday from 8 a.m. (or at the first start after that): summary saved, broadcast to the application,
+        sent by email if notifications are configured."""
         now = datetime.now()
         last = self.state.get("weekly_summary_at") or ""
         try:
@@ -7035,9 +7045,9 @@ class Daemon:
             lines += ["", t(lang, "mail.weekly.todo")] + [f"- {t(lang, f'check.{k}.title')}" for k in s_["todo"]]
         return "\n".join(lines)
 
-    # ── DNS filtré (systemd-resolved) ────────────────────────────────────
+    # ── Filtered DNS (systemd-resolved) ──────────────────────────────────
     def sync_filtered_dns(self):
-        """Applique le DNS filtré choisi, ou le retire ; suspendu sur un réseau au profil Entreprise (DNS interne)."""
+        """Applies the chosen filtered DNS, or removes it; suspended on a network with the Business profile (internal DNS)."""
         if os.geteuid() != 0 or TEST_MODE:
             return
         with self._dns_lock:
@@ -7060,7 +7070,7 @@ class Daemon:
 
     # ── Isoler l'ordinateur ──────────────────────────────────────────────
     def isolate(self, uid):
-        """Urgence : réseau coupé, programmes suspects suspendus, analyse complète. Sans mot de passe."""
+        """Emergency: network cut off, suspicious programs suspended, full scan. No password."""
         if self.state.get("isolated"):
             return {"ok": True, "already": True, "isolated": self.state.get("isolated")}
         if os.geteuid() != 0 or TEST_MODE:
@@ -7132,24 +7142,24 @@ class Daemon:
         log("Scan complet hebdomadaire planifié")
         self.enqueue(Job("scan", path="/", auto=True, requested_by="system"))
 
-    # ── Tâches quotidiennes : failles, persistance, mise à jour de l'app, checklist ───
+    # ── Daily tasks: vulnerabilities, persistence, app update, checklist ───────────────
     def daily_tasks(self, force=False):
         if self.daily_running:
             return
         self.daily_running = True
         try:
             self.last_daily = time.time()
-            # Instantanés système (Timeshift)
+            # System snapshots (Timeshift)
             try:
                 self.refresh_backup(force=True)
             except Exception as e:  # noqa: BLE001
                 log(f"Timeshift : {e}")
-            # Routeur UPnP : ports ouverts tout seuls vers cet ordinateur (réseau local uniquement)
+            # UPnP router: ports opened automatically to this computer (local network only)
             try:
                 self.state.update(upnp=hygiene.upnp_mappings())
             except Exception as e:  # noqa: BLE001
                 log(f"UPnP : {e}")
-            # Test de restauration mensuel des instantanés Timeshift
+            # Monthly restore test of the Timeshift snapshots
             try:
                 last_test = (self.state.get("timeshift_test") or {}).get("date") or ""
                 ts = self.state.get("timeshift") or {}
@@ -7198,16 +7208,17 @@ class Daemon:
                 self.connections.load_blocklist(refresh=True)
             except Exception as e:  # noqa: BLE001
                 log(f"Blocklist : {e}")
-            # Vérification d'intégrité : jamais faite, ou faite avec une autre liste d'outils (mise à jour de l'application)
+            # Integrity check: never done, or done with a different list of tools (application update)
             stored = self.state.get("integrity") or {}
             if stored.get("tools") and any(n not in stored["tools"] for n in BUILTIN_CHECKS):
-                self._builtin_refresh(initial=True)       # noyau / processus : ajoutés sans relancer tout l'audit
+                self._builtin_refresh(initial=True)       # kernel / processes: added without rerunning the whole audit
                 stored = self.state.get("integrity") or {}
             if os.geteuid() == 0 and not self.integrity_running and set((stored.get("tools") or {}).keys()) != set(INTEGRITY_TOOLS):
                 log("Vérification d'intégrité relancée (outils modifiés)")
                 threading.Thread(target=self.run_integrity, daemon=True).start()
             else:
-                # Avertissements Lynis d'un relevé antérieur : reclassés sur place (état réel vérifié), sans relancer l'audit
+                # Lynis warnings from an earlier scan: reclassified in place (actual state checked),
+                # without rerunning the audit
                 ly = (stored.get("tools") or {}).get("lynis") or {}
                 if ly.get("ran") and ly.get("rules") != LYNIS_RULES_VERSION:
                     try:
@@ -7225,7 +7236,7 @@ class Daemon:
                         log(f"Avertissements Lynis reclassés : {len(la['benign'])} faux positif(s) connu(s)")
                     except Exception as e:  # noqa: BLE001
                         log(f"Reclassement Lynis : {e}")
-                # Fichiers debsums d'un relevé antérieur : reclassés sur place (ajustements Mint, détournements)
+                # debsums files from an earlier scan: reclassified in place (Mint adjustments, diversions)
                 ds = (stored.get("tools") or {}).get("debsums") or {}
                 if ds.get("ran") and ds.get("rules") != DEBSUMS_RULES_VERSION:
                     try:
@@ -7244,21 +7255,21 @@ class Daemon:
                         log(f"Fichiers debsums reclassés : {len(da['benign'])} bénin(s), {len(da['warnings'])} à vérifier")
                     except Exception as e:  # noqa: BLE001
                         log(f"Reclassement debsums : {e}")
-                # Relevé chkrootkit incomplet (en-tête sans ses chemins, versions < 1.12.1) ou sans classification
+                # Incomplete chkrootkit scan (header without its paths, versions < 1.12.1) or without classification
                 chk = (stored.get("tools") or {}).get("chkrootkit") or {}
                 old_style = any(str(w).rstrip().endswith(":") for w in (chk.get("all_warnings") or chk.get("warnings") or []))
                 if os.geteuid() == 0 and not self.integrity_running and chk.get("ran") \
                         and (old_style or chk.get("rules") != CHK_RULES_VERSION):
                     log("chkrootkit relancé (relevé incomplet)")
                     threading.Thread(target=self._chkrootkit_rescan, daemon=True).start()
-            # Liste blanche centrale (signée), politique d'entreprise, télémétrie opt-in
+            # Central whitelist (signed), enterprise policy, opt-in telemetry
             try:
                 self.refresh_central_allowlist()
                 self.apply_policy()
                 self.send_telemetry()
             except Exception as e:  # noqa: BLE001
                 log(f"Liste blanche / politique / télémétrie : {e}")
-            # Mise à jour de l'application
+            # Application update
             self.check_app_update()
             # Checklist
             self.refresh_checklist()
@@ -7283,7 +7294,7 @@ class Daemon:
         return info
 
     def refresh_checklist_async(self):
-        """Checklist et score recalculés en arrière-plan (ss, sudoers… quelques secondes) après une action de sécurité."""
+        """Checklist and score recomputed in the background (ss, sudoers… a few seconds) after a security action."""
         th = getattr(self, "_checklist_thread", None)
         if th and th.is_alive():
             return
@@ -7298,7 +7309,7 @@ class Daemon:
 
     def refresh_checklist(self):
         checklist = collect_checklist(self)
-        # Historique du score : une valeur par jour (la dernière du jour), 400 jours au plus
+        # Score history: one value per day (the last one of the day), 400 days at most
         hist = [h for h in (self.state.get("score_history") or []) if isinstance(h, dict)]
         today = now_iso()[:10]
         hist = [h for h in hist if h.get("d") != today] + [{"d": today, "s": checklist.get("score"), "g": checklist.get("grade")}]
@@ -7312,8 +7323,8 @@ class Daemon:
 
     # ── Durcissement (recommandations Lynis) ─────────────────────────────
     def integrity_summary(self):
-        """Résumé pour la vue simple et le tray : avertissements des outils rootkit (hors Lynis), fichiers de
-        l'application modifiés (→ rouge), recommandations Lynis (→ jaune)."""
+        """Summary for the simple view and the tray: warnings from the rootkit tools (except Lynis), modified
+        application files (→ red), Lynis recommendations (→ yellow)."""
         integ = self.state.get("integrity") or {}
         if not integ:
             return None
@@ -7327,7 +7338,7 @@ class Daemon:
                 "tools": per_tool}
 
     def integrity_payload(self):
-        """Résultat d'intégrité + disponibilité actuelle des outils + état du durcissement (pour l'interface)."""
+        """Integrity result + current availability of the tools + hardening state (for the interface)."""
         out = with_tools_now(self.state.get("integrity"))
         h = dict(self.state.get("hardening") or {})
         h.pop("prev", None)
@@ -7337,7 +7348,7 @@ class Daemon:
         return out
 
     def pending_safe_hardening(self, integrity):
-        """Tests Lynis relevés, applicables sans risque, ni appliqués ni échoués depuis moins de 7 jours."""
+        """Lynis tests found, safe to apply, neither applied nor failed within the last 7 days."""
         h = self.state.get("hardening") or {}
         applied, failed = h.get("applied") or {}, h.get("failed") or {}
         out = []
@@ -7362,7 +7373,7 @@ class Daemon:
         return True
 
     def _harden_worker(self, tests, revert, auto):
-        """Applique (ou annule) chaque recommandation, note le résultat, relance Lynis, puis diffuse."""
+        """Applies (or reverts) each recommendation, records the result, reruns Lynis, then broadcasts."""
         h = dict(self.state.get("hardening") or {})
         for k in ("applied", "prev", "failed"):
             h[k] = dict(h.get(k) or {})
@@ -7415,8 +7426,8 @@ class Daemon:
         self.broadcast({"event": "hardening_done", "ok": ok, "failed": fail, "revert": revert, "auto": auto, "index": index})
 
     def _lynis_rescan(self):
-        """Nouvel audit Lynis seul (une à deux minutes) après un durcissement : indice et suggestions à jour sans
-        relancer toute la vérification d'intégrité."""
+        """New Lynis audit alone (one to two minutes) after hardening: index and suggestions up to date without
+        rerunning the whole integrity check."""
         if self.integrity_running:
             return
         r = run_quiet(["lynis", "audit", "system", "--quick", "--no-colors", "--quiet"], timeout=1800)
@@ -7435,7 +7446,7 @@ class Daemon:
         self.write_log(f"lynis rescan → index {rep.get('index')}")
 
     def apply_integrity_acks(self, result):
-        """Avertissements d'intégrité approuvés par l'utilisateur (« C'est normal ») : mis à part, non comptés."""
+        """Integrity warnings approved by the user ("That's normal"): set aside, not counted."""
         if not result:
             return result
         acks = set(self.state.get("acknowledged_integrity") or [])
@@ -7460,8 +7471,8 @@ class Daemon:
         return dict(cfg, transport=mail_transport(), queued=len(self.state.get("mail_queue") or []), hostname=socket.gethostname())
 
     def mail_event(self, kind, title, body):
-        """Événement à notifier (si les courriers sont activés et ce type choisi) : envoyé tout de suite (immédiat)
-        ou groupé dans le prochain bilan (quotidien, hebdomadaire)."""
+        """Event to notify (if mails are enabled and this type is selected): sent right away (immediate)
+        or grouped into the next summary (daily, weekly)."""
         cfg = self.mail_cfg()
         if not cfg.get("enabled") or not (cfg.get("events") or {}).get(kind):
             return
@@ -7469,7 +7480,7 @@ class Daemon:
         queue.append({"t": now_iso(), "kind": kind, "title": str(title)[:200], "body": str(body)[:2000]})
         self.state.update(mail_queue=queue[-MAIL_QUEUE_MAX:])
         if cfg.get("frequency") == "immediate":
-            self.last_mail_tick = 0                 # le prochain tour de boucle (≤ 10 s) envoie
+            self.last_mail_tick = 0                 # the next loop iteration (≤ 10 s) sends it
 
     def mail_alert_event(self, alert):
         lang = self.mail_cfg().get("lang") or "fr"
@@ -7495,7 +7506,7 @@ class Daemon:
         self.mail_event("scan", title, body)
 
     def mail_summary(self, lang):
-        """Bilan de l'état du système en quelques lignes (pour les courriers quotidiens / hebdomadaires)."""
+        """Summary of the system state in a few lines (for the daily / weekly mails)."""
         ov = self.overall or {}
         color = ov.get("color") or "green"
         reasons = ", ".join(t(lang, f"overall.reason.{r}") for r in (ov.get("reasons") or [])[:5])
@@ -7516,7 +7527,7 @@ class Daemon:
         return "\n".join(lines)
 
     def mail_deliver(self, subject, body, kind="digest"):
-        """Envoi avec plafond quotidien et journal ; met à jour last_sent / last_error."""
+        """Sending with a daily cap and log; updates last_sent / last_error."""
         cfg = self.mail_cfg()
         today = gmdate_today = time.strftime("%Y-%m-%d")
         sent_today = cfg.get("sent_today") or 0 if cfg.get("sent_day") == today else 0
@@ -7535,7 +7546,7 @@ class Daemon:
         return ok, err
 
     def mail_flush(self, force=False):
-        """Envoie ce qui est en attente : tout de suite (immédiat) ou sous forme de bilan (quotidien / hebdomadaire)."""
+        """Sends what is pending: right away (immediate) or as a summary (daily / weekly)."""
         cfg = self.mail_cfg()
         lang = cfg.get("lang") or "fr"
         queue = list(self.state.get("mail_queue") or [])
@@ -7578,7 +7589,7 @@ class Daemon:
             self.mail_flush()
 
     def cached(self, name, ttl, fn):
-        """Résultat d'un contrôle coûteux (dconf par utilisateur, clés SSH, journal) gardé `ttl` secondes."""
+        """Result of a costly check (per-user dconf, SSH keys, journal) kept for `ttl` seconds."""
         now = time.time()
         hit = self._check_cache.get(name)
         if hit and now - hit[0] < ttl:
@@ -7588,17 +7599,17 @@ class Daemon:
         return value
 
     def trusted_map(self):
-        """{exe: nom} des programmes de confiance (« Faire confiance »), pour la veille des processus."""
+        """{exe: name} of trusted programs ("Trust"), for the process watch."""
         return {p["exe"]: p.get("comm") or os.path.basename(p["exe"]) for p in (self.state.get("trusted_programs") or []) if p.get("exe")}
 
     def _builtin_refresh(self, initial=False):
-        """Contrôles intégrés (noyau, processus) recalculés sur place : nouvel avertissement non approuvé → alerte
-        (popup) et bouclier rouge ; disparition (processus terminé) → retour au vert. Pas de relance des outils."""
+        """Built-in checks (kernel, processes) recomputed in place: new unapproved warning → alert
+        (popup) and red shield; disappearance (process ended) → back to green. The tools are not rerun."""
         if (os.geteuid() != 0 and not TEST_MODE) or self.integrity_running:
             return
         stored = self.state.get("integrity") or {}
         if not stored.get("tools"):
-            return                                       # jamais de relevé : la première analyse complète les créera
+            return                                       # never scanned: the first full scan will create them
         integ = dict(stored)
         tools = dict(integ.get("tools") or {})
         new_unknown = []
@@ -7637,7 +7648,7 @@ class Daemon:
                                 "pid": f["pid"], "comm": f["comm"], "exe": f["exe"], "count": len(fresh), "top_dir": "", "reasons": [], "sample": []})
 
     def _chkrootkit_rescan(self):
-        """chkrootkit seul (moins d'une minute) quand le relevé stocké est incomplet ; classification intégrée."""
+        """chkrootkit alone (under a minute) when the stored survey is incomplete; built-in classification."""
         if self.integrity_running or not shutil.which("chkrootkit"):
             return
         r = run_quiet(["chkrootkit", "-q"], timeout=1800)
@@ -7661,7 +7672,7 @@ class Daemon:
         if "lynis" not in result and ((result.get("tools") or {}).get("lynis") or {}).get("timed_out"):
             prev = (self.state.get("integrity") or {}).get("lynis")
             if prev:
-                result["lynis"] = prev                   # audit interrompu : le dernier relevé complet reste affiché
+                result["lynis"] = prev                   # audit interrupted: the last full scan stays displayed
         self.apply_integrity_acks(result)
         self.last_integrity = time.time()
         self.state.update(integrity=result, last_integrity=now_iso())
@@ -7673,7 +7684,7 @@ class Daemon:
                                 "pid": 0, "comm": "", "exe": "", "count": 0, "top_dir": "", "reasons": [], "sample": []})
         self.broadcast({"event": "integrity", "integrity": self.integrity_payload(), "after_scan": after_scan})
         self.refresh_overall()
-        # Durcissement automatique (réglage) : recommandations Lynis sans risque pas encore appliquées
+        # Automatic hardening (setting): safe Lynis recommendations not applied yet
         if self.settings.get("auto_harden") and not TEST_MODE:
             tests = self.pending_safe_hardening(result)
             if tests and self.start_hardening(tests, auto=True):
@@ -7710,16 +7721,16 @@ class Daemon:
     def public_vulns(vulns):
         return {k: v for k, v in (vulns or {}).items() if k != "cache"}
 
-    # ── Couleur globale (icône du tray, vue simple) ──────────────────────
+    # ── Overall color (tray icon, simple view) ───────────────────────────
     def user_trusted(self):
-        """Exécutables approuvés par l'utilisateur (« C'est moi ») : plus jamais d'alerte pour eux."""
+        """Executables approved by the user ("It's me"): never alerted on again."""
         return self._trusted_set
 
-    # ── Habitudes apprises : rafales d'écritures que l'utilisateur a déclarées normales (« C'est OK ») ──
+    # ── Learned habits: write bursts that the user declared normal ("It's OK") ──
     @staticmethod
     def habit_key(exe, top_dir):
-        """Ce qu'on retient d'une rafale : son programme quand il est connu, sinon le dossier exact où elle écrit
-        (jamais plus large : ignorer d'office tout un dossier de documents ouvrirait la porte à un rançongiciel)."""
+        """What is remembered from a burst: its program when known, otherwise the exact folder it writes to
+        (never wider: automatically ignoring a whole documents folder would open the door to ransomware)."""
         exe = normalize_exe(exe)
         if exe:
             return "" if exe.startswith(("/tmp/", "/var/tmp/", "/dev/shm/")) else exe
@@ -7748,8 +7759,8 @@ class Daemon:
             self.write_log(f"habit learned: file bursts of {key} are now ignored automatically")
 
     def central_trusted(self, exe):
-        """Liste blanche centrale Dukiwi (signée) + programmes de confiance de la politique d'entreprise + applications
-        Dukiwi elles-mêmes (reconnues d'office)."""
+        """Dukiwi central allowlist (signed) + trusted programs of the business policy + the Dukiwi
+        applications themselves (recognized automatically)."""
         if dukiwi_program(exe):
             return True
         for pat in self.central_patterns:
@@ -7758,7 +7769,7 @@ class Daemon:
         return False
 
     def load_central_allowlist(self):
-        """Charge allowlist.json (déjà vérifiée) et les programmes de la politique."""
+        """Loads allowlist.json (already verified) and the programs of the policy."""
         patterns = []
         try:
             with open(ALLOWLIST_FILE, encoding="utf-8") as f:
@@ -7774,7 +7785,7 @@ class Daemon:
         self.central_patterns = patterns
 
     def refresh_central_allowlist(self):
-        """Télécharge allowlist.json + .sig, vérifie la signature Dukiwi, remplace le fichier local."""
+        """Downloads allowlist.json + .sig, checks the Dukiwi signature, replaces the local file."""
         tmp = ALLOWLIST_FILE + ".new"
         try:
             data = http_get(ALLOWLIST_URL, timeout=30)
@@ -7805,7 +7816,7 @@ class Daemon:
                     pass
 
     def apply_policy(self, startup=False):
-        """Applique la politique d'entreprise : réglages imposés (verrouillés), profil pare-feu, programmes de confiance."""
+        """Applies the business policy: enforced settings (locked), firewall profile, trusted programs."""
         policy = load_policy()
         if not policy:
             if self.policy:
@@ -7837,8 +7848,9 @@ class Daemon:
         self.write_log(f"policy applied: {policy.get('name', '')}")
 
     def telemetry_extra(self):
-        """Champs de télémétrie qui alimentent les règles intégrées et la mesure des performances (sans identifiant) :
-        avertissements d'intégrité approuvés, classifications bénignes, dernier scan, durcissement, paquets à failles hautes."""
+        """Telemetry fields that feed the built-in rules and the performance measurement (no identifier):
+        approved integrity warnings, benign classifications, last scan, hardening, packages with high-severity
+        vulnerabilities."""
         integ = self.state.get("integrity") or {}
         tools = integ.get("tools") or {}
         acked, benign = [], {}
@@ -7880,8 +7892,8 @@ class Daemon:
         }
 
     def send_telemetry(self, force=False):
-        """Télémétrie anonyme, opt-in, une fois par semaine (force : à la demande, ou après le premier scan complet) :
-        version, système, score, faux positifs approuvés (chemins anonymisés). Also right after an update of the
+        """Anonymous telemetry, opt-in, once a week (force: on demand, or after the first full scan):
+        version, system, score, approved false positives (anonymized paths). Also right after an update of the
         application (first daily tasks, 90 s after the service starts), so a version that goes wrong shows up within
         hours instead of waiting for the weekly report."""
         if not self.settings.get("telemetry"):
@@ -7908,7 +7920,7 @@ class Daemon:
             return False
 
     def build_telemetry_payload(self):
-        """Exactement ce qui serait envoyé (aussi montré à l'utilisateur avant qu'il ne décide)."""
+        """Exactly what would be sent (also shown to the user before they decide)."""
         install_id = self.state.get("install_id")
         if not install_id:
             install_id = uuid.uuid4().hex
@@ -7953,13 +7965,13 @@ class Daemon:
         return payload
 
     def apply_acknowledged(self, pers):
-        """Applique les entrées de persistance approuvées par l'utilisateur et recalcule les compteurs."""
+        """Applies the persistence entries approved by the user and recomputes the counters."""
         if not pers:
             return pers
         ack = set(self.state.get("acknowledged_persistence") or [])
         items, exts = pers.get("items") or [], pers.get("extensions") or []
         for it in items:
-            base = it.get("trusted_base", it.get("trusted"))   # confiance dpkg d'origine, conservée pour pouvoir retirer l'approbation
+            base = it.get("trusted_base", it.get("trusted"))   # original dpkg trust, kept so the approval can be withdrawn
             it["trusted_base"] = base
             it["approved"] = it.get("key") in ack
             it["trusted"] = bool(base) or it["approved"]
@@ -8009,14 +8021,14 @@ class Daemon:
             except ValueError:
                 continue
             if ts < cutoff or a.get("ignored"):
-                continue                                 # « C'est OK » : l'alerte reste listée mais ne compte plus
-            # Veille noyau/processus (kind integrity) : c'est le relevé d'intégrité courant qui fait foi (rouge tant que
-            # l'avertissement est là, vert dès que le processus a disparu ou a été approuvé), pas l'alerte de 24 h.
+                continue                                 # "It's OK": the alert stays listed but no longer counts
+            # Kernel/process watch (kind integrity): the current integrity scan is authoritative (red as long as
+            # the warning is there, green once the process is gone or has been approved), not the 24 h alert.
             if a.get("severity") == "danger" and a.get("kind") not in ("honeypot", "integrity"):
                 raise_to("red", "danger_alert")
                 break
         if (self.honeypot.summary() or {}).get("danger_24h"):
-            raise_to("yellow", "network_scan")           # un appareil balaie cet ordinateur : bloquer ou ignorer
+            raise_to("yellow", "network_scan")           # a device is scanning this computer: block or ignore
         if self.suspended:
             raise_to("red", "suspended_process")
         if self.state.get("isolated"):
@@ -8026,9 +8038,9 @@ class Daemon:
         rootkit_warns = sum(len(t.get("warnings") or []) for name, t in (integ.get("tools") or {}).items() if name != "lynis") \
             + len(app.get("modified") or []) + len(app.get("missing") or [])
         if rootkit_warns:
-            raise_to("red", "integrity_warnings")          # rootkits, fichiers de paquets ou de l'application modifiés
+            raise_to("red", "integrity_warnings")          # rootkits, modified package or application files
         elif integ.get("warnings"):
-            raise_to("yellow", "hardening_warnings")       # avertissements Lynis seuls (durcissement) : pas une compromission
+            raise_to("yellow", "hardening_warnings")       # Lynis warnings only (hardening): not a compromise
         vulns = self.state.get("vulns") or {}
         counts = vulns.get("counts") or {}
         if counts.get("unfixed") or counts.get("pro_only"):
@@ -8043,7 +8055,7 @@ class Daemon:
             raise_to("yellow", "unknown_persistence")
         if not self.monitor.active and not TEST_MODE:
             raise_to("yellow", "monitor_inactive")
-        # Disponibilité (CIA) : instantanés système Timeshift
+        # Availability (CIA): Timeshift system snapshots
         ts = self.state.get("timeshift") or {}
         if self.settings.get("timeshift_check") is not False and ts.get("checked_at"):     # backup_check = fichiers seulement
             if not ts.get("installed") or not ts.get("configured") or not ts.get("schedule"):
@@ -8074,9 +8086,9 @@ class Daemon:
         return False
 
     def admin_required(self, cmd, req, uid):
-        """Actions réservées à un administrateur authentifié (pkexec → unlock)."""
-        # Dossiers protégés : n'importe quel programme peut parler au service ; un logiciel malveillant ne doit pouvoir ni
-        # s'autoriser lui-même, ni couper la protection, ni retirer un dossier, sans le mot de passe administrateur.
+        """Actions reserved for an authenticated administrator (pkexec → unlock)."""
+        # Protected folders: any program can talk to the service; malware must not be able to allow itself,
+        # turn off the protection, or remove a folder without the administrator password.
         if cmd in ("protected_allow", "protected_folder_remove"):
             return not (cmd == "protected_allow" and req.get("remove"))
         if cmd == "set_settings" and (req.get("settings") or {}).get("protected_folders") is False and self.settings.get("protected_folders"):
@@ -8084,27 +8096,28 @@ class Daemon:
         if cmd == "firewall_set":
             return not req.get("enabled")
         if cmd == "firewall_profile":
-            # L'utilisateur sait sur quel réseau il est : le service applique le profil sans mot de passe, même en
-            # mode famille et pour un compte sans droits d'administration (décision 2026-09-29).
+            # The user knows which network they are on: the service applies the profile without a password, even in
+            # family mode and for an account without administrator rights (decision 2026-09-29).
             return False
         if cmd in ("timeshift_disable", "harden_revert", "mail_configure", "mail_test", "mail_flush"):
             return True
         if cmd == "ssh_set":
             return bool(req.get("enabled"))
         if cmd == "feature_answer":
-            # Proposer / activer une protection avancée : jamais de mot de passe. La désactiver : administrateur en mode famille.
+            # Offering / enabling an advanced protection: never a password. Disabling it: administrator in family
+            # mode.
             feature = str(req.get("feature") or "")
             return bool(self.settings.get("family_mode")) and not req.get("enabled") and bool(self.settings.get(feature))
         if cmd in ("firewall_defaults", "firewall_rule_add", "firewall_rule_delete", "install_update", "install_tools",
                    "install_phased", "install_package", "firmware_update", "password_policy_apply"):
             return True
-        # « Ignorer » une faille sans correctif ou un port ouvert voulu, monter une clé USB sans analyse ou lui faire
-        # confiance : jamais de mot de passe, même en mode famille (acknowledge_vuln, acknowledge_port, ignore_check,
-        # usb_skip, untrust_usb ne figurent pas ici). Le choix est journalisé ; on fait confiance à l'utilisateur.
+        # "Ignore" an unfixed vulnerability or an intended open port, mount a USB key without scanning or trust it:
+        # never a password, even in family mode (acknowledge_vuln, acknowledge_port, ignore_check, usb_skip,
+        # untrust_usb are not listed here). The choice is logged; we trust the user.
         if (cmd == "isolate" and req.get("on", True) is False) or cmd == "browser_harden":
             return bool(self.settings.get("family_mode"))
         if cmd == "ssh_key_remove":
-            # Sa propre clé : sans mot de passe ; celle d'un autre compte : administrateur
+            # Own key: no password; another account's key: administrator
             try:
                 return os.stat(str(req.get("path") or "")).st_uid != uid
             except OSError:
@@ -8114,9 +8127,9 @@ class Daemon:
             return bool(self.settings.get("family_mode"))
         return False
 
-    # ── Première installation / reprise automatique ──────────────────────
+    # ── First installation / automatic resume ────────────────────────────
     def check_first_scan(self):
-        """Programme le scan complet initial (et une MàJ avant si les bases manquent)."""
+        """Schedules the initial full scan (and an update first if the databases are missing)."""
         if self.shutdown.is_set():
             return
         with self.queue_lock:
@@ -8141,7 +8154,7 @@ class Daemon:
         self.enqueue(Job("scan", path="/", auto=True, requested_by="system"))
 
     def maintenance_loop(self):
-        time.sleep(15)  # laisser le système finir de démarrer
+        time.sleep(15)  # let the system finish booting
         first_status_done = False
         while not self.shutdown.is_set():
             try:
@@ -8225,7 +8238,7 @@ class Daemon:
                                "reboot_required", "os", "kernel", "lists_updated")} if sys_status else None,
         }
 
-    # ── Quarantaine système ──────────────────────────────────────────────
+    # ── System quarantine ────────────────────────────────────────────────
     def quarantine_list(self):
         files = []
         try:
@@ -8265,7 +8278,7 @@ class Daemon:
         if norm in DAEMON_ALLOWED_ROOTS:
             return True
         if norm.startswith(("/media/", "/mnt/")):
-            return True          # supports amovibles montés
+            return True          # mounted removable media
         home = self._home_of(uid)
         if home and home != "/" and (norm == home or norm.startswith(home.rstrip("/") + "/")):
             return True
@@ -8278,7 +8291,7 @@ class Daemon:
         norm = os.path.normpath(dest)
         return bool(home and home != "/" and (norm == home or norm.startswith(home.rstrip("/") + "/")))
 
-    # ── Traitement des commandes ─────────────────────────────────────────
+    # ── Command handling ─────────────────────────────────────────────────
     def handle(self, req, uid):
         cmd = req.get("cmd")
 
@@ -8345,7 +8358,7 @@ class Daemon:
         if cmd == "honeypot":
             return {"ok": True, "honeypot": self.honeypot.snapshot()}
 
-        # ── Contrôle des liens et des courriels (extensions Thunderbird / navigateurs, via l'hôte natif) ──
+        # ── Link and email checks (Thunderbird / browser extensions, via the native host) ──
         if cmd == "url_check":
             if self.settings.get("url_guard") is False:
                 return {"ok": True, "enabled": False, "results": []}
@@ -8383,7 +8396,7 @@ class Daemon:
             return {"ok": True, "refreshing": True}
 
         if cmd == "url_scan":
-            # Pièce jointe déposée par l'hôte natif dans /tmp/dukiwi-shield-mail-<uid>/ : vérification de l'appartenance, clamd
+            # Attachment dropped by the native host in /tmp/dukiwi-shield-mail-<uid>/: ownership check, clamd
             if self.settings.get("mail_scan_attachments") is False:
                 return {"ok": True, "enabled": False, "infected": False}
             path = os.path.realpath(str(req.get("path") or ""))
@@ -8424,7 +8437,7 @@ class Daemon:
             ip, remove = str(req.get("ip") or "").strip(), bool(req.get("remove"))
             ok = self.honeypot.ignore(ip, remove=remove)
             if ok:
-                # Alertes déjà listées pour cet appareil : ignorées elles aussi (bleues dans la liste), ou recomptées
+                # Alerts already listed for this device: ignored too (blue in the list), or counted again
                 alerts = list(self.state.get("alerts") or [])
                 marked = [a for a in alerts if a.get("kind") == "honeypot" and a.get("ip") == ip]
                 for a in marked:
@@ -8440,7 +8453,7 @@ class Daemon:
             return {"ok": True}
 
         if cmd == "feature_answer":
-            # Protections avancées (pot de miel…) : toujours proposées, jamais activées sans l'accord de l'utilisateur
+            # Advanced protections (honeypot…): always offered, never enabled without the user's consent
             feature = str(req.get("feature") or "")
             if feature not in FEATURES_OPT_IN:
                 return {"ok": False, "error": "invalid_feature"}
@@ -8472,7 +8485,7 @@ class Daemon:
             return {"ok": True, "timeshift": self.refresh_backup(force=bool(req.get("refresh")))}
 
         if cmd in ("timeshift_enable", "timeshift_disable"):
-            # Activer : sans mot de passe (protège le système). Désactiver : administrateur (voir admin_required).
+            # Enable: no password (protects the system). Disable: administrator (see admin_required).
             if os.geteuid() != 0:
                 return {"ok": False, "error": "root_required"}
             if not shutil.which("timeshift"):
@@ -8483,7 +8496,7 @@ class Daemon:
             except (OSError, ValueError):
                 existing = {}
             if cmd == "timeshift_enable":
-                # Garde-fou : jamais sans avoir mesuré la place (la première copie rsync, c'est tout le système)
+                # Safeguard: never without measuring the space first (the first rsync copy is the whole system)
                 if self.timeshift_enabling:
                     return {"ok": False, "error": "busy_timeshift"}
                 size = self.cached_system_size()
@@ -8507,8 +8520,8 @@ class Daemon:
             return {"ok": True}
 
         if cmd in ("harden_apply", "harden_revert"):
-            # Recommandations Lynis : appliquer (sans mot de passe, protège le système ; mode famille : administrateur)
-            # ou annuler (administrateur). Tâche de fond ; résultat diffusé par l'événement hardening_done.
+            # Lynis recommendations: apply (no password, protects the system; family mode: administrator)
+            # or revert (administrator). Background task; result broadcast by the hardening_done event.
             revert = cmd == "harden_revert"
             tests = [str(t) for t in (req.get("tests") or []) if (harden.CATALOG.get(str(t)) or {}).get("kind") == "apply"]
             if req.get("all") and not revert:
@@ -8522,8 +8535,8 @@ class Daemon:
             return {"ok": True, "started": True, "tests": tests}
 
         if cmd == "auto_updates_enable":
-            # « Activer » (sans mot de passe : protège le système) : automatisation du Gestionnaire de mises à jour de
-            # Linux Mint, sinon unattended-upgrades. Les réglages utilisateur (Spices, Flatpak) sont faits par l'interface.
+            # "Enable" (no password: protects the system): Linux Mint Update Manager automation,
+            # otherwise unattended-upgrades. User settings (Spices, Flatpak) are done by the interface.
             if TEST_MODE:
                 return {"ok": True, "method": "test"}
             if os.geteuid() != 0:
@@ -8571,7 +8584,7 @@ class Daemon:
                     "detail": ((r.stderr or "") + (r.stdout or "")).strip()[-200:]}
 
         if cmd == "system_upgrade":
-            # « Mettre à jour » : apt-get update && apt-get upgrade dans une unité transitoire, puis nouvel état du système
+            # "Update": apt-get update && apt-get upgrade in a transient unit, then new system status
             sysst = self.state.get("system_status") or {}
             if not sysst.get("upgradable") and not req.get("force"):
                 return {"ok": False, "error": "nothing_to_upgrade"}
@@ -8585,8 +8598,8 @@ class Daemon:
             return {"ok": True, "detail": "test_mode" if TEST_MODE else ""}
 
         if cmd == "firmware_update":
-            # « Régler » sur le contrôle Firmware : fwupdmgr update dans une unité transitoire (téléchargement LVFS, pose au
-            # prochain redémarrage pour les capsules UEFI), puis nouveau relevé et événement firmware_done
+            # "Fix" on the Firmware check: fwupdmgr update in a transient unit (LVFS download, installed at the
+            # next reboot for UEFI capsules), then a new scan and the firmware_done event
             if not shutil.which("fwupdmgr"):
                 return {"ok": False, "error": "fwupd_missing"}
             if TEST_MODE:
@@ -8706,8 +8719,8 @@ class Daemon:
             return {"ok": True, "pending": self.usb.pending_list()}
 
         if cmd == "usb_skip":
-            # « Continuer sans analyse » / « Faire confiance à cette clé » : l'utilisateur assume le risque, la clé lui
-            # est remise tout de suite (analyse en cours annulée, ou en attente retirée). Sans mot de passe sauf mode famille.
+            # "Continue without scanning" / "Trust this key": the user accepts the risk, the key is handed over
+            # immediately (running scan cancelled, or pending one removed). No password except in family mode.
             devnode = str(req.get("devnode") or "")[:64]
             trust = bool(req.get("trust"))
             info = self.usb.take_pending(devnode)
@@ -8721,7 +8734,7 @@ class Daemon:
             if running:
                 info = info or running.usb
                 running.usb["skipped"] = True
-                running.cancel(by_user=True)            # usb_done {skipped} suit, le montage privé est libéré
+                running.cancel(by_user=True)            # usb_done {skipped} follows, the private mount is released
             for j in queued:
                 info = info or j.usb
                 if j.usb.get("private_mount"):
@@ -8748,7 +8761,7 @@ class Daemon:
             return {"ok": True, "mail": self.mail_public()}
 
         if cmd == "mail_configure":
-            # Réglages SMTP (administrateur) : /etc/msmtprc réécrit (mot de passe conservé si non fourni), état mémorisé
+            # SMTP settings (administrator): /etc/msmtprc rewritten (password kept if not provided), state saved
             cfg, err = mail_sanitize(req.get("mail"), self.state.get("mail"))
             if cfg is None:
                 return {"ok": False, "error": err}
@@ -8780,7 +8793,7 @@ class Daemon:
             return {"ok": ok, "error": "" if ok else "mail_failed", "detail": err}
 
         if cmd == "ignore_check":
-            # « Ignorer » un contrôle de disponibilité (sauvegarde des fichiers, Timeshift) : jamais de mot de passe
+            # "Ignore" an availability check (file backup, Timeshift): never a password
             setting = str(req.get("setting") or "")
             if setting not in ("backup_check", "timeshift_check"):
                 return {"ok": False, "error": "invalid_key"}
@@ -8788,7 +8801,7 @@ class Daemon:
             self.write_log(f"settings: {setting}={self.settings.get(setting)} (ignore_check)")
             self.broadcast({"event": "settings", "settings": self.settings.snapshot()})
             self.refresh_overall()
-            self.refresh_checklist_async()               # le contrôle reste compté dans le score, marqué « rappel ignoré »
+            self.refresh_checklist_async()               # the check still counts in the score, marked "reminder ignored"
             return {"ok": True, "changed": changed, "settings": {k: self.settings.get(k) for k in ("backup_check", "timeshift_check")}}
 
         if cmd == "untrust_usb":
@@ -8858,7 +8871,7 @@ class Daemon:
             ok, text = self.security_command(cmd, req)
             sec = self.refresh_security(force=True)
             self.refresh_overall()
-            self.refresh_checklist_async()                      # score, « Pare-feu » et badge suivent tout de suite
+            self.refresh_checklist_async()                      # score, "Firewall" and badge follow immediately
             ufw_now = (sec or {}).get("ufw") or {}
             enabling = cmd == "firewall_set" and bool(req.get("enabled"))
             if enabling and ok and not ufw_now.get("active"):
@@ -8870,7 +8883,7 @@ class Daemon:
             return {"ok": True, "alerts": self.state.get("alerts", [])}
 
         if cmd == "forget_habit":
-            # Oublier une habitude apprise : les rafales de ce programme / de ce dossier sont à nouveau signalées
+            # Forget a learned habit: bursts from this program / this folder are reported again
             key = str(req.get("key") or "")[:400]
             habits = dict(self.state.get("habits") or {})
             if key not in habits:
@@ -8971,7 +8984,8 @@ class Daemon:
             return {"ok": True, "browser_security": self.cached("browser_security", 600, lambda: hygiene.browser_security(human_users()))}
 
         if cmd == "browser_harden":
-            # Firefox : user.js des profils de l'utilisateur qui le demande ; Chrome, Chromium, Brave, Edge : règles recommandées
+            # Firefox: user.js in the profiles of the requesting user; Chrome, Chromium, Brave, Edge: recommended
+            # policies
             try:
                 pw = pwd.getpwuid(uid)
             except KeyError:
@@ -8995,7 +9009,7 @@ class Daemon:
             return {"ok": True, "firefox": len(fx), "policies": len(dirs), "checklist": self.refresh_checklist()}
 
         if cmd == "exposure_test":
-            # Test depuis Internet : uniquement sur demande explicite (consentement dans l'application, à chaque test)
+            # Test from the Internet: only on explicit request (consent in the application, for each test)
             if req.get("consent") is not True:
                 return {"ok": False, "error": "consent_required"}
             ports = [p_["port"] for p_ in ((self.state.get("checklist") or {}).get("ports") or []) if p_.get("exposed") and p_.get("proto") == "tcp"]
@@ -9011,7 +9025,7 @@ class Daemon:
             return {"ok": True, "exposure": {"test": self.state.get("exposure"), "upnp": self.state.get("upnp")}}
 
         if cmd == "incident_step":
-            # Page « Après une attaque » : étapes cochées (partagées par tous les utilisateurs de l'ordinateur)
+            # "After an attack" page: checked steps (shared by all users of the computer)
             inc = dict(self.state.get("incident") or {})
             if req.get("reset"):
                 inc = {}
@@ -9030,8 +9044,8 @@ class Daemon:
             return {"ok": True, "incident": self.state.get("incident") or {}}
 
         if cmd == "backup_state_report":
-            # État des sauvegardes de fichiers de l'utilisateur (ses réglages, ses supports), relevé par son application :
-            # il entre dans le score de sécurité, que le rappel soit ignoré ou non.
+            # State of the user's file backups (their settings, their media), reported by their application:
+            # it counts in the security score, whether the reminder is ignored or not.
             reported = str(req.get("state") or "")
             if reported not in ("ok", "none", "missing", "old"):
                 return {"ok": False, "error": "invalid_key"}
@@ -9044,7 +9058,7 @@ class Daemon:
             return {"ok": True, "changed": changed}
 
         if cmd == "backup_test_report":
-            # Test de restauration des sauvegardes de fichiers, fait par l'application de l'utilisateur (ses droits)
+            # Restore test of the file backups, run by the user's application (with their rights)
             r = req.get("result") or {}
             tests = dict(self.state.get("backup_tests") or {})
             tests[str(uid)] = {"date": str(r.get("date") or now_iso())[:19], "ok": bool(r.get("ok")), "dest_label": str(r.get("dest_label") or "")[:80],
@@ -9067,7 +9081,7 @@ class Daemon:
             return {"ok": True, "dns_filter": self.dns_filter_status()}
 
         if cmd == "isolate":
-            # Isoler : jamais de mot de passe (urgence). Rétablir le réseau : administrateur en mode famille.
+            # Isolate: never a password (emergency). Restore the network: administrator in family mode.
             return self.isolate(uid) if req.get("on", True) is not False else self.unisolate(uid)
 
         if cmd == "home_encryption":
@@ -9079,7 +9093,7 @@ class Daemon:
             return {"ok": True, "home_encryption": self.cached("home_encryption", 600, check)}
 
         if cmd == "privacy_allow":
-            # « Toujours autoriser » un programme sur la caméra / le micro (ou le retirer) : choix personnel, sans mot de passe
+            # "Always allow" a program on the camera / microphone (or remove it): personal choice, no password
             exe = str(req.get("exe") or "")[:400]
             if not exe:
                 return {"ok": False, "error": "invalid_exe"}
@@ -9093,8 +9107,8 @@ class Daemon:
             return {"ok": True}
 
         if cmd == "guard_ack":
-            # « Ignorer » un certificat racine (empreinte), un détournement réseau voulu (proxy d'entreprise, hosts…) ou un
-            # fichier SUID installé à la main (chemin + empreinte)
+            # "Ignore" a root certificate (fingerprint), an intended network redirection (corporate proxy, hosts…)
+            # or a SUID file installed by hand (path + fingerprint)
             group = req.get("group")
             if group not in ("certs", "redirects", "suid", "flatpak"):
                 return {"ok": False, "error": "invalid_group"}
@@ -9117,9 +9131,9 @@ class Daemon:
                 for c in items:
                     acks[c[field]] = {"name": c.get("name") or c.get("value") or c.get("path") or c.get("app") or "", "at": now_iso()}
                     if group == "flatpak":
-                        acks[c[field]]["risks"] = c.get("risks")              # réapparaît si l'application obtient d'autres droits
+                        acks[c[field]]["risks"] = c.get("risks")              # reappears if the application gets other permissions
                     if group == "suid":
-                        acks[c[field]]["sha256"] = c.get("sha256")          # réapparaît si le fichier change
+                        acks[c[field]]["sha256"] = c.get("sha256")          # reappears if the file changes
                 keys = [c[field] for c in items]
             self.state.update(**{state_key: acks})
             self.guard.invalidate()
@@ -9129,7 +9143,7 @@ class Daemon:
             return {"ok": True, "n": len(keys), "checklist": checklist}
 
         if cmd == "hid_allow":
-            # « Autoriser ce clavier » (BadUSB) : réactivé et mémorisé ; l'alerte est marquée résolue
+            # "Allow this keyboard" (BadUSB): re-enabled and remembered; the alert is marked resolved
             ident = str(req.get("id") or "")[:200]
             info = self.hid_guard.allow(ident, remember=req.get("remember", True) is not False)
             if info is None and ident not in (self.state.get("trusted_hid") or {}):
@@ -9154,7 +9168,7 @@ class Daemon:
             return {"ok": True, "hid": [dict(v, id=k) for k, v in trusted.items()]}
 
         if cmd == "network_gateway_accept":
-            # « C'est mon nouveau routeur » : l'adresse matérielle actuelle de la passerelle devient la référence du réseau
+            # "This is my new router": the gateway's current hardware address becomes the network's reference
             key = str(req.get("key") or "")[:200]
             with self.network_lock:
                 net = dict(self.current_network or {})
@@ -9178,7 +9192,7 @@ class Daemon:
             return {"ok": True}
 
         if cmd == "trust_program":
-            # « C'est moi » : le programme ne déclenche plus d'alerte (rafale, connexion), même s'il est inconnu de dpkg
+            # "It's me": the program no longer triggers alerts (burst, connection), even if dpkg does not know it
             exe = normalize_exe(req.get("exe"))
             if not exe or not os.path.isabs(exe):
                 return {"ok": False, "error": "invalid_path"}
@@ -9188,7 +9202,7 @@ class Daemon:
                 who = str(uid)
             entry = {"exe": exe, "comm": str(req.get("comm") or os.path.basename(exe))[:64], "added": now_iso(), "by": who}
             if APPIMAGE_MOUNT_RE.match(exe):
-                # AppImage : approuvée par son contenu, valable aux prochains lancements (autre dossier de montage)
+                # AppImage: approved by its content, valid for future launches (different mount folder)
                 entry["sha256"] = TrustedPrograms.digest(exe)
                 if not entry["sha256"]:
                     return {"ok": False, "error": "not_found"}
@@ -9201,11 +9215,11 @@ class Daemon:
             self._trusted_set = TrustedPrograms(programs)
             alerts = [a for a in (self.state.get("alerts") or [])
                       if not (a.get("kind") in ("burst", "connection") and normalize_exe(a.get("exe")) == exe)]
-            for a in alerts:                                   # veille des processus : alerte « approuvée »
+            for a in alerts:                                   # process watch: alert "approved"
                 if a.get("kind") == "integrity" and a.get("exe") and normalize_exe(a.get("exe")) == exe:
                     a["approved"] = True
             self.state.update(alerts=alerts)
-            threading.Thread(target=self._builtin_refresh, daemon=True).start()   # avertissement retiré sans attendre 5 min
+            threading.Thread(target=self._builtin_refresh, daemon=True).start()   # warning removed without waiting 5 min
             for spid, info in list(self.suspended.items()):
                 if normalize_exe(info.get("exe")) == exe:
                     try:
@@ -9231,21 +9245,21 @@ class Daemon:
             return {"ok": True, "programs": programs}
 
         if cmd == "tray_quit":
-            # « Quitter » autorisé par un administrateur : ne pas relancer le bouclier dans cette session
+            # "Quit" authorized by an administrator: do not relaunch the shield in this session
             ids = {s["id"] for s in graphical_sessions() if s["uid"] == uid} if not TEST_MODE else {"test"}
             self.tray_stopped[uid] = ids
             self.write_log(f"tray quit by uid {uid} (sessions {sorted(ids)})")
             return {"ok": True, "sessions": sorted(ids)}
 
         if cmd == "telemetry_send":
-            # « Envoyer maintenant » (Paramètres) : rapport anonyme immédiat si la télémétrie est acceptée
+            # "Send now" (Settings): immediate anonymous report if telemetry is accepted
             if not self.settings.get("telemetry"):
                 return {"ok": False, "error": "telemetry_disabled"}
             ok = self.send_telemetry(force=True)
             return {"ok": ok, "error": "" if ok else "telemetry_failed", "sent": self.state.get("telemetry_sent")}
 
         if cmd == "telemetry_preview":
-            # Aperçu de la charge utile telle qu'elle serait envoyée (rien n'est transmis)
+            # Preview of the payload as it would be sent (nothing is transmitted)
             try:
                 payload = self.build_telemetry_payload()
             except Exception as e:  # noqa: BLE001
@@ -9253,7 +9267,8 @@ class Daemon:
             return {"ok": True, "payload": payload, "url": TELEMETRY_URL}
 
         if cmd == "forget_network":
-            # Le réseau redevient inconnu : Public d'office à la prochaine connexion (tout de suite si c'est le réseau courant)
+            # The network becomes unknown again: Public by default at the next connection (immediately if it is
+            # the current network)
             key = str(req.get("key") or "")
             known = dict(self.state.get("network_profiles") or {})
             if key not in known:
@@ -9268,7 +9283,7 @@ class Daemon:
             return {"ok": True}
 
         if cmd == "acknowledge_integrity":
-            # « C'est normal » : un avertissement d'intégrité (chkrootkit, debsums, unhide, Lynis) approuvé ne compte plus
+            # "That's normal": an approved integrity warning (chkrootkit, debsums, unhide, Lynis) no longer counts
             tool, text = str(req.get("tool") or "")[:32], str(req.get("text") or "")[:4000]
             if tool not in INTEGRITY_TOOLS or not text.strip():
                 return {"ok": False, "error": "invalid_key"}
@@ -9277,7 +9292,7 @@ class Daemon:
             if not req.get("remove"):
                 ack.insert(0, key)
             self.state.update(acknowledged_integrity=ack[:500])
-            # Alertes de la veille portant cet avertissement : « approuvé » dans les événements (bouton « C'est normal »)
+            # Watch alerts carrying this warning: "approved" in the events ("That's normal" button)
             alerts = list(self.state.get("alerts") or [])
             marked = [a for a in alerts if a.get("kind") == "integrity" and a.get("text")
                       and integrity_ack_key(a.get("check") or tool, a["text"]) == key]
@@ -9294,8 +9309,8 @@ class Daemon:
             return {"ok": True, "key": key}
 
         if cmd == "acknowledge_alert":
-            # « C'est OK » sur une alerte grave de la liste : elle y reste, marquée ignorée, mais ne tient plus le bouclier
-            # en rouge pendant 24 h (remove : la recompter). Une nouvelle alerte du même genre compte à nouveau.
+            # "It's OK" on a serious alert in the list: it stays there, marked ignored, but no longer keeps the shield
+            # red for 24 h (remove: count it again). A new alert of the same kind counts again.
             when, kind = str(req.get("time") or "")[:40], str(req.get("kind") or "")[:40]
             title = req.get("title")
             alerts = list(self.state.get("alerts") or [])
@@ -9306,7 +9321,7 @@ class Daemon:
             for a in marked:
                 if a.get("kind") == "burst" and bool(a.get("ignored")) == bool(req.get("remove")) \
                         and not a.get("infected_exe") and not a.get("infected_files"):
-                    # Rafale déclarée normale : retenue ; à la deuxième fois, les suivantes sont ignorées d'office
+                    # Burst declared normal: remembered; the second time, later ones are ignored automatically
                     self.habit_note(self.habit_key(a.get("exe"), a.get("top_dir")), -1 if req.get("remove") else 1)
                 a["ignored"] = not req.get("remove")
             self.state.update(alerts=alerts)
@@ -9316,7 +9331,7 @@ class Daemon:
             return {"ok": True, "n": len(marked)}
 
         if cmd == "acknowledge_vuln":
-            # « Ignorer » une ou plusieurs failles sans correctif (par CVE, tous paquets confondus) ; remove les réaffiche
+            # "Ignore" one or more unfixed vulnerabilities (by CVE, across all packages); remove shows them again
             vulns = self.state.get("vulns") or {}
             acks = dict(self.state.get("acknowledged_vulns") or {})
             wanted = req.get("cves")
@@ -9355,7 +9370,8 @@ class Daemon:
             return {"ok": True, "count": len(cves), "acknowledged": (vulns.get("counts") or {}).get("acknowledged_cves") or 0}
 
         if cmd == "acknowledge_sudoers":
-            # « Ignorer » une règle sudo NOPASSWD voulue : mémorisée avec l'empreinte du fichier (réapparaît s'il change)
+            # "Ignore" an intended sudo NOPASSWD rule: remembered with the file fingerprint (reappears if it
+            # changes)
             acks = dict(self.state.get("acknowledged_sudoers") or {})
             if req.get("remove"):
                 path = str(req.get("path") or "")
@@ -9380,7 +9396,7 @@ class Daemon:
             return {"ok": True, "n": len(done), "checklist": checklist}
 
         if cmd == "acknowledge_port":
-            # « Ignorer » un port joignable voulu (serveur web de développement…) : ne compte plus dans la checklist
+            # "Ignore" an intended reachable port (development web server…): no longer counts in the checklist
             acks = dict(self.state.get("acknowledged_ports") or {})
             ports = (self.state.get("checklist") or {}).get("ports") or []
             wanted = req.get("keys")
@@ -9475,7 +9491,7 @@ class Daemon:
             return {"ok": True, "msg_key": "msg.quarantine.emptied_system", "msg_params": {"count": count}}
 
         if cmd == "security_journal":
-            # Journal de sécurité unifié : alertes structurées + actions du journal du service, classées par catégorie
+            # Unified security journal: structured alerts + actions from the service log, sorted by category
             try:
                 days = max(1, min(400, int(req.get("days") or 30)))
             except (TypeError, ValueError):
@@ -9496,12 +9512,12 @@ class Daemon:
             return {"ok": True}
 
         if cmd == "test_event" and TEST_MODE:
-            # Mode test uniquement (daemon non root) : injecter un événement pour le GUI
+            # Test mode only (non-root daemon): inject an event for the GUI
             event = req.get("payload") or {}
             if event.get("event") == "alert":
                 self.publish_alert(event["alert"])
             elif event.get("event") == "usb_priority":
-                # Simule une clé insérée pendant un scan : dossier déjà monté, analysé en priorité
+                # Simulates a key inserted during a scan: folder already mounted, scanned first
                 path = os.path.normpath(str(event.get("path") or ""))
                 usb = {"devnode": "test", "label": event.get("label") or "TEST", "model": "", "size": 0, "fstype": "vfat",
                        "private_mount": False, "mountpoint": path}
@@ -9513,7 +9529,7 @@ class Daemon:
         return {"ok": False, "error": "unknown_command", "cmd": cmd}
 
     def security_command(self, cmd, req):
-        """Actions pare-feu / SSH demandées depuis la page Pare-feu."""
+        """Firewall / SSH actions requested from the Firewall page."""
         if cmd != "ssh_set" and distro.firewall_backend() == "firewalld":
             return self.firewalld_command(cmd, req)
         if cmd == "firewall_set":
@@ -9571,10 +9587,10 @@ class Daemon:
                 return
             if req.get("cmd") == "subscribe":
                 conn.send(self.status(uid))
-                sock.settimeout(5)   # ne jamais bloquer la diffusion sur un client lent
+                sock.settimeout(5)   # never block broadcasting on a slow client
                 with self.sub_lock:
                     self.subscribers.append(conn)
-                return               # la connexion reste ouverte, gérée par broadcast()
+                return               # the connection stays open, handled by broadcast()
             try:
                 resp = self.handle(req, uid)
             except Exception as e:  # noqa: BLE001
@@ -9594,7 +9610,7 @@ class Daemon:
             os.makedirs(d, exist_ok=True)
         os.chmod(SYSTEM_QUARANTINE_DIR, 0o700)
 
-        # Refuser de démarrer si un daemon répond déjà sur le socket
+        # Refuse to start if a daemon already answers on the socket
         if daemon_request("ping", timeout=1).get("ok"):
             log("Un daemon est déjà actif sur ce socket — arrêt.")
             sys.exit(1)
@@ -9612,7 +9628,7 @@ class Daemon:
         threading.Thread(target=self.worker, daemon=True, name="worker").start()
         threading.Thread(target=self.maintenance_loop, daemon=True, name="maintenance").start()
         try:
-            self._builtin_refresh(initial=True)      # noyau / processus : état à jour dès le démarrage (quelques ms)
+            self._builtin_refresh(initial=True)      # kernel / processes: up-to-date state right at startup (a few ms)
         except Exception as e:  # noqa: BLE001
             log(f"Contrôles intégrés : {e}")
         threading.Thread(target=self.network_loop, daemon=True, name="network").start()
@@ -9691,11 +9707,11 @@ class Daemon:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Mode client (utilisé par le timer systemd et pour le diagnostic)
+# Client mode (used by the systemd timer and for diagnostics)
 # ═══════════════════════════════════════════════════════════════════════════
 
 def client_request(kind, path="/"):
-    """Envoie une demande au daemon et suit son exécution jusqu'à la fin. Code retour 0 = OK."""
+    """Sends a request to the daemon and follows its execution until the end. Return code 0 = OK."""
     if kind == "status":
         resp = daemon_request("status", timeout=3)
         print(json.dumps(resp, indent=2, ensure_ascii=False))
@@ -9710,7 +9726,7 @@ def client_request(kind, path="/"):
         print(json.dumps(resp, indent=2, ensure_ascii=False)[:20000])
         return 0 if resp.get("ok") else 1
 
-    # S'abonner avant de lancer pour ne rater aucun événement
+    # Subscribe before launching so that no event is missed
     try:
         sub = daemon_connect(timeout=None)
         sub.send({"cmd": "subscribe"})
@@ -9780,9 +9796,9 @@ def main():
     signal.signal(signal.SIGTERM, on_signal)
     signal.signal(signal.SIGINT, on_signal)
     daemon.serve()
-    # Sortie immédiate : les pools de threads encore en vol (requêtes OSV des tâches quotidiennes…) sont joints par
-    # concurrent.futures à la fin de l'interpréteur et retenaient le service plusieurs minutes après « Daemon arrêté »
-    # (systemd stop / mise à niveau du paquet). Tout l'état est déjà écrit de façon synchrone.
+    # Immediate exit: thread pools still in flight (OSV requests from the daily tasks…) are joined by
+    # concurrent.futures at interpreter shutdown and kept the service alive for several minutes after
+    # "Daemon arrêté" (systemd stop / package upgrade). All state is already written synchronously.
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.flush()

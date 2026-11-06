@@ -1,5 +1,5 @@
 #!/bin/sh
-# Dukiwi Shield : sans argument, l'application ; avec une commande (status, quick-scan…), le terminal.
+# Dukiwi Shield: without an argument, the application; with a command (status, quick-scan…), the terminal.
 if [ "$#" -eq 0 ]; then
     exec /opt/dukiwi-shield/dukiwi-shield.py
 fi

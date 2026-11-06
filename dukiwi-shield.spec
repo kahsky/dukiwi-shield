@@ -1,5 +1,5 @@
-# Dukiwi Shield — paquet RPM (Fedora et dérivés). Construit par build-rpm.sh à partir de l'arborescence
-# commune (build-deb.sh --stage-only) : mêmes fichiers que le paquet Debian, manifeste d'intégrité signé inclus.
+# Dukiwi Shield — RPM package (Fedora and derivatives). Built by build-rpm.sh from the common tree
+# (build-deb.sh --stage-only): same files as the Debian package, signed integrity manifest included.
 Name:           dukiwi-shield
 Version:        %{version}
 Release:        1%{?dist}
@@ -58,12 +58,13 @@ install -D -m 644 dukiwi.repo %{buildroot}%{_sysconfdir}/yum.repos.d/dukiwi.repo
 
 %post
 mkdir -p /var/lib/dukiwi-shield
-# Anciens noms du fichier de dépôt (dukiwi-clamav < 1.25.1, nom de 1.25.1) : même dépôt : même dépôt, retiré pour ne pas le lister deux fois
+# Old names of the repository file (dukiwi-clamav < 1.25.1, name of 1.25.1): same repository, removed so it is
+# not listed twice
 rm -f /etc/yum.repos.d/dukiwi-clamav.repo /etc/yum.repos.d/dukiwi-clamav.repo.rpmsave /etc/yum.repos.d/linux-shield.repo /etc/yum.repos.d/linux-shield.repo.rpmsave
 if [ "$1" = "1" ] && [ ! -f /var/lib/dukiwi-shield/state.json ]; then
     touch /var/lib/dukiwi-shield/first-scan-pending
 fi
-# clamd@scan : Fedora livre LocalSocket commenté dans scan.conf ; sans lui, pas de moteur clamd (clamscan lent)
+# clamd@scan: Fedora ships LocalSocket commented out in scan.conf; without it, no clamd engine (slow clamscan)
 if [ -f /etc/clamd.d/scan.conf ] && ! grep -q '^LocalSocket' /etc/clamd.d/scan.conf; then
     sed -i '0,/^#\s*LocalSocket\s/s|^#\s*LocalSocket\s\+\(\S\+\)|LocalSocket \1|' /etc/clamd.d/scan.conf
     grep -q '^LocalSocket' /etc/clamd.d/scan.conf || echo 'LocalSocket /run/clamd.scan/clamd.sock' >> /etc/clamd.d/scan.conf
@@ -72,9 +73,9 @@ systemctl enable clamd@scan.service >/dev/null 2>&1 || true
 systemctl enable clamav-freshclam.service >/dev/null 2>&1 || true
 systemctl start clamav-freshclam.service >/dev/null 2>&1 || true
 
-# ── Reprise d'une installation des versions précédentes (paquet « OLD », ≤ 1.31.1) ─────────────────────────────
-# Le paquet précédent vient d'être retiré (Obsoletes) : état, quarantaine, cache, journaux, politique, fichiers
-# de durcissement et réglage de l'heure des mises à jour passent sous le nouveau nom ; liens systemd orphelins supprimés.
+# ── Takeover of an installation from previous versions (package "OLD", ≤ 1.31.1) ───────────────────────────────
+# The previous package has just been removed (Obsoletes): state, quarantine, cache, logs, policy, hardening
+# files and update time setting move to the new name; orphaned systemd links removed.
 OLD=clamav-antivirus
 migrate_dir() {
     if [ -d "$1" ] && [ ! -L "$1" ]; then
@@ -101,7 +102,7 @@ done
 for f in /etc/hosts /etc/login.defs /etc/sysctl.d/90-dukiwi-shield* /etc/security/limits.d/90-dukiwi-shield* \
          /etc/systemd/coredump.conf.d/90-dukiwi-shield* /etc/modprobe.d/90-dukiwi-shield* /etc/ssh/sshd_config.d/90-dukiwi-shield* \
          /etc/needrestart/conf.d/90-dukiwi-shield*; do
-    # réécrit sur place (même inode : /etc/hosts peut être un montage), jamais bloquant
+    # rewritten in place (same inode: /etc/hosts can be a mount), never blocking
     if [ -f "$f" ] && grep -q '# ClamAV Antivirus GUI' "$f" 2>/dev/null; then
         sed 's/# ClamAV Antivirus GUI/# Dukiwi Shield/' "$f" > "$f.dukiwi-tmp" && cat "$f.dukiwi-tmp" > "$f" || true
         rm -f "$f.dukiwi-tmp"
@@ -112,7 +113,7 @@ for l in /etc/systemd/system/multi-user.target.wants/$OLD-daemon.service /etc/sy
          /etc/systemd/system/$OLD-daemon.service /etc/systemd/system/timers.target.wants/$OLD-update.timer; do
     [ -L "$l" ] && rm -f "$l"
 done
-# Restes non suivis par l'ancien paquet (caches Python) une fois celui-ci retiré
+# Leftovers not tracked by the old package (Python caches) once it has been removed
 [ -d /opt/$OLD ] && [ ! -e /opt/$OLD/$OLD.py ] && rm -rf /opt/$OLD
 true
 
@@ -128,7 +129,7 @@ if command -v update-desktop-database >/dev/null 2>&1; then update-desktop-datab
 if command -v restorecon >/dev/null 2>&1; then restorecon -R /opt/dukiwi-shield /var/lib/dukiwi-shield >/dev/null 2>&1 || true; fi
 
 %posttrans
-# Après le retrait de l'ancien paquet (son %preun peut arrêter et désactiver le service) : service actif et activé
+# After the old package is removed (its %preun may stop and disable the service): service active and enabled
 systemctl daemon-reload >/dev/null 2>&1 || true
 systemctl enable dukiwi-shield-daemon.service dukiwi-shield-update.timer >/dev/null 2>&1 || true
 systemctl restart dukiwi-shield-daemon.service >/dev/null 2>&1 || true

@@ -1,6 +1,6 @@
-# Dukiwi Shield — analyse des supports USB avant leur mise à disposition.
-# Quand le service dukiwi-shield-daemon tourne (son socket existe), le montage
-# automatique par udisks est désactivé pour les périphériques de stockage USB :
-# le service monte la clé en privé, l'analyse, puis l'interface la monte pour
-# l'utilisateur. Sans le service, le comportement habituel est conservé.
+# Dukiwi Shield — scanning USB media before they are made available.
+# When the dukiwi-shield-daemon service is running (its socket exists), automatic
+# mounting by udisks is disabled for USB storage devices:
+# the service mounts the drive privately, scans it, then the interface mounts it for
+# the user. Without the service, the usual behaviour is kept.
 ACTION=="add", SUBSYSTEM=="block", ENV{ID_BUS}=="usb", TEST=="/run/dukiwi-shield/daemon.sock", ENV{UDISKS_AUTO}="0"

@@ -1,4 +1,4 @@
-# Jamais de clé privée dans le dépôt GitHub (la clé de signature vit dans /home/kahsky/GITHUB/repo/keys/gnupg)
+# Never a private key in the GitHub repository (the signing key lives in /home/kahsky/GITHUB/repo/keys/gnupg)
 keys/gnupg/
 **/private-keys-v1.d/
 **/openpgp-revocs.d/

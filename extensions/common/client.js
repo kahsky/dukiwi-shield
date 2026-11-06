@@ -1,6 +1,6 @@
-/* Dukiwi Shield — client de l'hôte de messagerie native (partagé navigateurs / Thunderbird).
-   Une connexion native persistante, une file de requêtes identifiées par `id`, reconnexion à la demande.
-   L'extension ne décide rien : le service système répond sûr / prudence / danger avec ses raisons. */
+/* Dukiwi Shield — native messaging host client (shared by browsers / Thunderbird).
+   One persistent native connection, a queue of requests identified by `id`, reconnection on demand.
+   The extension decides nothing: the system service answers safe / caution / danger with its reasons. */
 'use strict';
 
 const UG = (() => {

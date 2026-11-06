@@ -1,7 +1,7 @@
-/* Dukiwi Shield — pilotage du centre de sécurité : historique du score, journal de sécurité unifié, rapport exportable. */
+/* Dukiwi Shield — security centre control: score history, unified security journal, exportable report. */
 'use strict';
 
-// ─── Historique du score (courbe, une valeur par jour) ─────────────────────
+// ─── Score history (curve, one value per day) ──────────────────────────────
 function fmtDay(d) { try { return new Date(d + 'T12:00:00').toLocaleDateString(lang, { day: 'numeric', month: 'short' }); } catch (e) { return d; } }
 let historyRange = 90;
 function renderScoreHistory() {
@@ -59,7 +59,7 @@ function historyHover(ev) {
     tip.style.top = `${(cy / 170) * r.height - 10}px`;
 }
 
-// ─── Journal de sécurité unifié ────────────────────────────────────────────
+// ─── Unified security journal ──────────────────────────────────────────────
 let journalData = { days: 30, events: [] };
 const journalFilter = { days: 30, cat: '', sev: '', q: '' };
 const JOURNAL_CATS = ['scan', 'behaviour', 'integrity', 'firewall', 'network', 'honeypot', 'privacy', 'usb', 'updates', 'hardening', 'approvals', 'accounts', 'backup', 'mail', 'settings', 'system'];
@@ -113,11 +113,11 @@ function exportJournal(fmt) {
     sendToBackend({ action: 'save_text', filename: `dukiwi-shield-journal-${stamp}.${fmt}`, content });
 }
 
-// ─── Rapport de sécurité (PDF ou HTML) ─────────────────────────────────────
+// ─── Security report (PDF or HTML) ─────────────────────────────────────────
 let pendingReport = null;
 function exportReport(fmt) {
     pendingReport = fmt;
-    sendToBackend({ action: 'get_security_data', type: 'journal', days: 30 });   // journal à jour, puis rapport
+    sendToBackend({ action: 'get_security_data', type: 'journal', days: 30 });   // up-to-date journal, then report
 }
 
 function buildReportHtml() {
@@ -166,11 +166,11 @@ function onJournalData(data) {
     }
 }
 
-// ═══ 2.3.0 : DNS filtré, isoler l'ordinateur, chiffrement du dossier personnel, bac à sable ═══════════
+// ═══ 2.3.0: filtered DNS, isolate the computer, home folder encryption, sandbox ═══════════════════════
 let dnsData = null;
 let encData = null;
 
-/** Appelé à chaque statut : bandeau d'isolement, page Isoler, état du bac à sable. */
+/** Called on every status: isolation banner, Isolate page, sandbox state. */
 function onCenterStatus(st) {
     renderIsolation((st && st.isolated) || null);
     const b = $('sandboxBadge'), btn = $('btnSandboxInstall');
@@ -225,7 +225,7 @@ function onDnsFilterData(d) {
 
 function loadEncryption(refresh = false) { sendToBackend({ action: 'get_security_data', type: 'home_encryption', refresh }); }
 
-/** Assistant fscrypt : état, vérifications, puis étapes à suivre (commandes à copier). Rien n'est fait automatiquement. */
+/** fscrypt assistant: state, checks, then steps to follow (commands to copy). Nothing is done automatically. */
 function onEncryptionData(d) {
     encData = d || {};
     const box = $('encryptionBox');
@@ -262,7 +262,7 @@ function onEncryptionData(d) {
         <p class="text-muted">${escapeHtml(t('encryption.warning'))}</p>`;
 }
 
-// ═══ 2.4.0 : test de restauration des sauvegardes ═════════════════════════════════════════════════════
+// ═══ 2.4.0: backup restore test ═══════════════════════════════════════════════════════════════════════
 function restoreTestLine(r, label) {
     if (!r) return `<div class="ts-line"><span class="ts-dot warn"></span><span>${escapeHtml(t('backup.restore_test.never', { what: label }))}</span></div>`;
     const err = r.error ? t(`backup.restore_test.error.${r.error}`) : '';
@@ -284,7 +284,7 @@ function restoreTestHtml() {
     return parts.length ? `<div class="restore-test"><h5>${escapeHtml(t('backup.restore_test.title'))}</h5>${parts.join('')}</div>` : '';
 }
 
-// ═══ 2.4.0 : actions de la checklist, exposition sur Internet, « Après une attaque » ═══════════════════
+// ═══ 2.4.0: checklist actions, Internet exposure, "After an attack" ════════════════════════════════════
 async function confirmCenterAction(key, msg) {
     const ok = await appConfirm({ title: t(`check.${key}.confirm_title`), message: t(`check.${key}.confirm_msg`), ok: t(`check.${key}.action`), cancel: t('modal.cancel') });
     if (ok) sendToBackend(msg);
@@ -319,7 +319,7 @@ function onExposureData(d) {
     box.innerHTML = html;
 }
 
-// Étapes : [clé, action (bouton), page/onglet à ouvrir]
+// Steps: [key, action (button), page/tab to open]
 const INCIDENT_STEPS = [
     ['isolate', () => confirmIsolate(true)],
     ['scan', () => startFullSystemScan(true)],
@@ -361,7 +361,7 @@ async function incidentReset() {
     if (ok) sendToBackend({ action: 'incident_step', reset: true });
 }
 
-// ═══ 2.5.0 : clés SSH autorisées, résumé de la semaine ════════════════════════════════════════════════
+// ═══ 2.5.0: authorised SSH keys, weekly summary ═══════════════════════════════════════════════════════
 function onSshKeysData(keys) {
     const box = $('sshKeysBox');
     if (!box) return;
@@ -396,7 +396,7 @@ function onWeeklySummary(d) {
         ${(d.todo || []).length ? `<p class="text-muted">${escapeHtml(t('weekly.todo'))} ${d.todo.map(k => escapeHtml(t('check.' + k + '.title'))).join(', ')}</p>` : ''}</div>`;
 }
 
-// ═══ 2.7.0 : dossiers protégés ═══════════════════════════════════════════════════════════════════════
+// ═══ 2.7.0: protected folders ════════════════════════════════════════════════════════════════════════
 function onProtectedData(d) {
     const box = $('protectedBox'), badge = $('protectedBadge');
     if (!box) return;

@@ -1,7 +1,7 @@
 /* ═══════════════════════════════════════════════════════════════════════════
    CLAMAV ANTIVIRUS — Frontend Logic
-   Communication avec le backend Python via webkit.messageHandlers
-   Traductions : ui/i18n.js (window.I18N), clé → texte, {param} interpolé
+   Communication with the Python backend via webkit.messageHandlers
+   Translations: ui/i18n.js (window.I18N), key → text, {param} interpolated
    ═══════════════════════════════════════════════════════════════════════════ */
 
 // ─── State ──────────────────────────────────────────────────────────────────
@@ -19,12 +19,12 @@ let settingsData = null;
 let overall = null;
 let secData = { vulns: null, checklist: null, integrity: null, persistence: null, connections: null, app_update: null };
 let vulnFilter = 'unfixed';
-let vulnPrio = 'high';   // priorité minimale affichée : 'high' (critique + haute), 'medium', 'all'
+let vulnPrio = 'high';   // minimum priority shown: 'high' (critical + high), 'medium', 'all'
 const VULN_PRIO_RANK = { critical: 0, high: 1, medium: 2, low: 3, negligible: 4, untriaged: 5 };
 function setVulnPrio(p) { vulnPrio = p; renderVulns(); }
 let legalAccepted = true;
 
-const RING_CIRC = 2 * Math.PI * 52;   // circonférence de l'anneau (r = 52)
+const RING_CIRC = 2 * Math.PI * 52;   // ring circumference (r = 52)
 
 const scan = {
     running: false,
@@ -37,7 +37,7 @@ const scan = {
     file: '',
     threats: [],
     lines: [],             // {kind, text}
-    samples: [],           // {t, n} pour la vitesse / ETA
+    samples: [],           // {t, n} for speed / ETA
     ticker: null,
     result: null,          // {status, message, summary}
     auto: false,
@@ -79,7 +79,7 @@ function setLanguage(code) {
     if (typeof renderJournal === 'function' && $('journalBox') && journalData.events.length) renderJournal();
     if (typeof renderScoreHistory === 'function' && secData.checklist) renderScoreHistory();
     ['langSelect', 'langSelectSimple', 'setLanguage'].forEach(id => { const sel = $(id); if (sel && sel.value !== code) sel.value = code; });
-    // Re-rendre les zones dynamiques avec la nouvelle langue
+    // Re-render the dynamic areas in the new language
     if (lastStatus) updateDashboardStatus(lastStatus);
     renderScanHero();
     if (scan.result) renderScanResults(scan.result);
@@ -106,7 +106,7 @@ function setLanguage(code) {
 
 function changeLanguage(code) {
     sendToBackend({ action: 'set_language', lang: code });
-    setLanguage(code);   // effet immédiat, même sans backend
+    setLanguage(code);   // immediate effect, even without a backend
 }
 
 function locale() {
@@ -116,8 +116,8 @@ function locale() {
 
 // ─── Backend Communication ──────────────────────────────────────────────────
 
-// « Ignorer », « C'est normal », « Faire confiance », « Réafficher »… : le service recalcule bouclier, score et listes.
-// Trois secondes après, tout l'état affiché est relu pour montrer le nouveau statut sans changer d'onglet.
+// "Ignore", "That's normal", "Trust", "Show again"…: the service recomputes shield, score and lists.
+// Three seconds later, the whole displayed state is reloaded to show the new status without switching tabs.
 const RELOAD_AFTER_ACTIONS = new Set(['acknowledge_vuln', 'acknowledge_port', 'acknowledge_integrity', 'acknowledge_persistence',
     'ignore_check', 'acknowledge_sudoers', 'timeshift_ignore', 'trust_program', 'untrust_program', 'untrust_usb', 'hid_allow', 'hid_forget', 'network_gateway_accept', 'honeypot_block', 'honeypot_ignore', 'honeypot_forget', 'feature_answer', 'url_allow', 'guard_ack', 'privacy_allow', 'isolate', 'password_policy_apply', 'browser_harden', 'exposure_test', 'ssh_key_remove', 'acknowledge_alert', 'forget_habit']);
 let statusReloadTimer = null;
@@ -127,7 +127,7 @@ function scheduleStatusReload(delay = 3000) {
     statusReloadTimer = setTimeout(() => {
         statusReloadTimer = null;
         sendToBackend({ action: 'check_status' });                                   // bouclier, vue simple, tableau de bord
-        sendToBackend({ action: 'get_security_data', type: 'checklist', refresh: true });   // score et points à corriger
+        sendToBackend({ action: 'get_security_data', type: 'checklist', refresh: true });   // score and items to fix
         sendToBackend({ action: 'get_security_data', type: 'vulns' });
         sendToBackend({ action: 'get_security_data', type: 'integrity' });
         sendToBackend({ action: 'get_security_data', type: 'persistence' });
@@ -140,7 +140,7 @@ function sendToBackend(data) {
     try {
         window.webkit.messageHandlers.backend.postMessage(JSON.stringify(data));
     } catch (e) {
-        simulateBackend(data);   // mode développement (HTML ouvert dans un navigateur)
+        simulateBackend(data);   // development mode (HTML opened in a browser)
     }
 }
 
@@ -188,12 +188,12 @@ function onBackendMessage(msg) {
     }
 }
 
-/** Appelé par le tray icon (Python) */
+/** Called by the tray icon (Python) */
 function updateTrayStatus(color, message) {
     updateStatusUI(color, message);
 }
 
-/** Appelé par le tray icon et par les cartes du tableau de bord */
+/** Called by the tray icon and by the dashboard cards */
 function triggerUpdate() {
     switchTab('update');
     startUpdate();
@@ -267,7 +267,7 @@ function renderAwareness(containerId, openId) {
     if (openId) { const d = $(`${containerId}-${openId}`); if (d) onLessonToggle(d); }
 }
 
-// Une leçon est « lue » quand elle est restée ouverte au moins 5 secondes (« Lire plus »)
+// A lesson counts as "read" once it has stayed open for at least 5 seconds ("Read more")
 const LESSON_READ_DELAY_MS = 5000;
 let readLessons = new Set();
 
@@ -306,7 +306,7 @@ function hideAwareness() {
     document.body.classList.remove('awareness-open');
 }
 
-/** Appelé par le popup « Lire plus » (Python). */
+/** Called by the "Read more" popup (Python). */
 function openLesson(id) {
     if (viewMode === 'simple') {
         showAwareness();
@@ -340,7 +340,7 @@ function renderLegal() {
     if ($('legalTextCredits')) $('legalTextCredits').innerHTML = html;
 }
 
-// ─── Consentement télémétrie : pleine page, réponse obligatoire, exemple réel des données ────
+// ─── Telemetry consent: full page, answer required, real sample of the data ────────────────
 let telemetryConsentOpen = false;
 
 function openTelemetryConsent() {
@@ -402,7 +402,7 @@ function acceptLegal() {
 }
 
 
-// ─── Centre de sécurité ─────────────────────────────────────────────────────
+// ─── Security centre ────────────────────────────────────────────────────────
 
 function loadSecurityData(type, refresh = false, run = false) {
     if (type === 'vulns' && refresh) { $('btnVulnsRefresh').disabled = true; $('vulnsChecked').textContent = t('system.refreshing'); }
@@ -443,20 +443,20 @@ function renderSecurityUnavailable(type) {
     if (type === 'app_update') { $('appUpdateSummary').textContent = t('system.unavailable'); }
 }
 
-// Pastilles des sous-menus de Sécurité : ce qui attend une décision de l'utilisateur dans chaque section.
+// Badges of the Security submenus: what awaits a user decision in each section.
 let appsData = null;
 
 function subBadgeCounts() {
     const hp = (lastStatus && lastStatus.honeypot_summary) || {};
     const integ = (lastStatus && lastStatus.integrity_summary) || {};
     const it = secData.integrity || null;
-    // Durcissement : réglages applicables (d'un clic ou à la main dans un réglage du bureau) pas encore appliqués
+    // Hardening: applicable settings (in one click or by hand in a desktop setting) not yet applied
     let hardening = 0;
     if (it && it.lynis) {
         const h = it.hardening || {}, catalog = h.catalog || {}, applied = h.applied || {};
         hardening = (it.lynis.items || []).filter(i => ['apply', 'gui'].includes(hardenKind(i.test, catalog)) && !applied[i.test]).length;
     }
-    // Applications hors dépôts : permissions à risque pas encore approuvées
+    // Applications outside the repositories: risky permissions not yet approved
     let apps = 0;
     if (appsData) {
         const inv = appsData.inventory || {}, ack = new Set(appsData.acknowledged || []);
@@ -473,14 +473,14 @@ function renderSubBadges() {
         if (!n) { if (badge) badge.remove(); return; }
         if (!badge) { badge = document.createElement('span'); badge.className = 'nav-sub-badge'; b.appendChild(badge); }
         badge.textContent = n > 99 ? '99+' : n;
-        badge.classList.toggle('red', b.dataset.acc === 'honeypot' || b.dataset.acc === 'integrity');   // menace ; ambre = amélioration
+        badge.classList.toggle('red', b.dataset.acc === 'honeypot' || b.dataset.acc === 'integrity');   // threat; amber = improvement
     });
 }
 
 function renderSecurityBadge() {
     renderSubBadges();
-    // Le badge compte ce qui demande une action (points de la checklist à corriger ou à améliorer),
-    // pas les milliers de failles « sans correctif » qu'Ubuntu n'a pas encore traitées.
+    // The badge counts what needs action (checklist items to fix or improve),
+    // not the thousands of "unfixed" vulnerabilities Ubuntu has not handled yet.
     const c = secData.checklist;
     const n = c && Array.isArray(c.items) ? c.items.filter(i => i.status === 'warn' || i.status === 'fail').length
         : ((lastStatus && lastStatus.checklist_summary && lastStatus.checklist_summary.todo) || 0);
@@ -498,7 +498,7 @@ function renderChecklist() {
     $('scoreFill').style.strokeDashoffset = RING_CIRC * (1 - (c.score || 0) / 100);
     if (typeof renderScoreHistory === 'function') renderScoreHistory();
     $('scoreChecked').textContent = c.checked_at ? t('system.checked', { date: formatDateTime(c.checked_at), rel: formatRelative(c.checked_at) }) : '';
-    // Un contrôle peut être complété côté interface (réglages utilisateur : Spices Cinnamon et Flatpak pour les mises à jour)
+    // A check can be completed on the UI side (user settings: Cinnamon Spices and Flatpak for updates)
     const items = (c.items || []).map(i => {
         const missing = checkExtrasMissing(i.key);
         return missing.length && i.status === 'ok' ? { ...i, status: 'warn', extras: missing } : i;
@@ -650,7 +650,7 @@ function renderIntegrity(running = false) {
     if (!it || !it.checked_at) { $('integrityList').innerHTML = `<p class="text-muted">${running ? t('security.integrity.running') : t('security.integrity.none_yet')}</p>`; $('btnInstallTools').hidden = true; return; }
     integrityWarnRefs = [];
     const tools = it.tools || {};
-    const now = it.tools_now || null;                      // disponibilité actuelle des outils (indépendante du relevé)
+    const now = it.tools_now || null;                      // current tool availability (independent of the report)
     const names = now ? Object.keys(now) : Object.keys(tools);
     const missing = names.filter(k => now ? !now[k] : !(tools[k] && tools[k].installed));
     $('btnInstallTools').hidden = !missing.length;
@@ -662,8 +662,8 @@ function renderIntegrity(running = false) {
     for (const name of names) {
         const tl = tools[name] || {};
         const installedNow = now ? !!now[name] : !!tl.installed;
-        const pending = installedNow && !tl.ran;              // installé depuis le dernier relevé, pas encore vérifié
-        const timedOut = !!tl.timed_out;                      // arrêté faute de réponse : résultat incomplet
+        const pending = installedNow && !tl.ran;              // installed since the last report, not checked yet
+        const timedOut = !!tl.timed_out;                      // stopped for lack of response: incomplete result
         const st = !installedNow ? 'unknown' : pending ? 'neutral' : (tl.warnings || []).length ? 'warn' : timedOut ? 'unknown' : 'ok';
         const toolTitle = t(`security.integrity.tool.${name}`) !== `security.integrity.tool.${name}` ? t(`security.integrity.tool.${name}`) : name;
         html += `<div class="check-item check-${st}"><span class="check-icon">${st === 'ok' ? '✓' : st === 'warn' ? '!' : st === 'neutral' ? '…' : '?'}</span><div class="check-text"><span class="check-title">${escapeHtml(toolTitle)}</span><span class="check-detail">${!installedNow ? t('security.integrity.not_installed') : pending ? t('security.integrity.pending') : (tl.warnings || []).length ? t('security.integrity.warnings', { n: tl.warnings.length }) + (timedOut ? ` · ${t('security.integrity.timed_out')}` : '') : timedOut ? t('security.integrity.timed_out') : t('security.integrity.clean')}${(tl.ignored || []).length ? ` · ${t('security.integrity.ignored', { n: tl.ignored.length })}` : ''}${(tl.benign || []).length ? ` · ${t('security.integrity.benign', { n: tl.benign.length })}` : ''}</span>${integrityWarningsHtml(name, tl)}</div></div>`;
@@ -676,10 +676,10 @@ function renderIntegrity(running = false) {
 }
 
 
-// ─── Avertissements d'intégrité : texte complet, faux positifs expliqués, « C'est normal » ───
+// ─── Integrity warnings: full text, false positives explained, "That's normal" ─────────
 
 let integrityWarnRefs = [];
-// Noms cachés courants et légitimes dans /usr/lib et /lib (symboles de débogage, modules Perl, marqueurs de paquets)
+// Common, legitimate hidden names in /usr/lib and /lib (debug symbols, Perl modules, package markers)
 const BENIGN_HIDDEN = /\/\.(build-id|packlist|gitignore|gitkeep|keep|placeholder|uuid|dirstamp|mkdir|htaccess|libs|deps|relocate|hidden|note\.[a-z.]+)(\/|$)/;
 
 function integrityHint(tool, text) {
@@ -689,7 +689,7 @@ function integrityHint(tool, text) {
     return t(paths.every(p => BENIGN_HIDDEN.test(p)) ? 'security.integrity.hint.hidden_benign' : 'security.integrity.hint.hidden_check');
 }
 
-/** Verdict intégré du service pour un chemin caché (dpkg, nom connu, module npm/Python, inconnu). */
+/** The service's built-in verdict for a hidden path (dpkg, known name, npm/Python module, unknown). */
 function pathNoteHtml(n) {
     const params = { package: escapeHtml(n.package || ''), path: escapeHtml(n.path || '') };
     const text = t(`security.integrity.reason.${n.reason}`, params) !== `security.integrity.reason.${n.reason}` ? t(`security.integrity.reason.${n.reason}`, params) : t('security.integrity.reason.unknown');
@@ -703,7 +703,7 @@ function integrityWarningsHtml(tool, tl) {
     const block = (w, kind, pathNotes) => {
         const ref = integrityWarnRefs.push({ tool, text: w }) - 1;
         const hint = kind === 'warn' && !pathNotes ? integrityHint(tool, w) : '';
-        const shown = pathNotes ? w.split('\n')[0] : w;          // avec notes par chemin, l'en-tête suffit
+        const shown = pathNotes ? w.split('\n')[0] : w;          // with per-path notes, the header is enough
         return `<div class="integrity-warning${kind !== 'warn' ? ' ignored' : ''}"><pre>${escapeHtml(shown)}</pre>${pathNotes ? pathNotes.map(pathNoteHtml).join('') : ''}${hint ? `<div class="integrity-hint">${escapeHtml(hint)}</div>` : ''}<div class="fw-actions">${
             kind === 'benign' ? `<span class="scope-badge scope-user">${t('security.integrity.benign_badge')}</span> <span class="text-muted">${t('security.integrity.benign_intro')}</span>`
             : kind === 'ignored' ? `<span class="scope-badge scope-user">${t('security.integrity.ignored_badge')}</span> <button class="btn btn-secondary btn-sm" onclick="acknowledgeIntegrity(${ref}, true)">${t('settings.trusted.remove')}</button>`
@@ -712,13 +712,13 @@ function integrityWarningsHtml(tool, tl) {
     return `<details class="alert-sample"${warns.length ? ' open' : ''}><summary>${t('popup.btn.details')}</summary>${warns.map(w => block(w, 'warn', notes[w] || null)).join('')}${ignored.map(w => block(w, 'ignored', null)).join('')}${benign.map(b => block(b.text, 'benign', b.notes || null)).join('')}</details>`;
 }
 
-// ─── Failles « dont on se fiche » : ignorées par CVE, ne comptent plus pour le tray, le score ni la vue simple ───
+// ─── Vulnerabilities "we don't care about": ignored by CVE, no longer count for the tray, score or simple view ───
 function ackVuln(cve, remove = false) {
     if (cve) sendToBackend({ action: 'acknowledge_vuln', cves: [cve], remove });
 }
 
-/** « Tout ignorer » : toutes les failles ouvertes (sans correctif et Ubuntu Pro, toutes priorités) — depuis la carte,
- *  la checklist ou la vue simple. Le service connaît la liste : all_open. */
+/** "Ignore all": every open vulnerability (unfixed and Ubuntu Pro, all priorities) — from the card,
+ *  the checklist or the simple view. The service knows the list: all_open. */
 async function ackAllVulns() {
     const v = secData.vulns;
     const vs = lastStatus && lastStatus.vulns_summary;
@@ -746,7 +746,7 @@ function acknowledgeIntegrity(ref, remove = false) {
 }
 
 
-// ─── Durcissement (Lynis) : recommandations applicables d'un clic ──────────
+// ─── Hardening (Lynis): recommendations applicable in one click ─────────────
 
 function hardenKind(test, catalog) { return (catalog[test] || {}).kind || 'other'; }
 
@@ -894,7 +894,7 @@ function toggleAdmin() {
 }
 
 
-// ─── Vue simple / avancée ───────────────────────────────────────────────────
+// ─── Simple / advanced view ─────────────────────────────────────────────────
 
 function scrollToIntegrity() {
     setTimeout(() => revealEl($('integrityList')), 150);
@@ -949,7 +949,7 @@ function simpleOverall() {
     rows.push({ state: sshState, label: t('simple.row.ssh'), value: sshValue,
         action: sshState === 'warn' ? { label: t('simple.disable'), fn: 'sshToggle(false)' } : null });
 
-    // Réseau local (pot de miel, s'il est activé) : un appareil sonde-t-il cet ordinateur ?
+    // Local network (honeypot, if enabled): is a device probing this computer?
     const hp = (lastStatus && lastStatus.honeypot_summary) || null;
     if (hp && hp.enabled) {
         const hpState = hp.danger_24h ? 'warn' : hp.active ? 'ok' : 'neutral';
@@ -959,7 +959,7 @@ function simpleOverall() {
             action: hp.danger_24h ? { label: t('popup.btn.details'), fn: "setViewMode('advanced'); switchTab('security'); scrollToHoneypot()" } : null });
     }
 
-    // Mises à jour système
+    // System updates
     const sysState = systemState(sys);
     const sysRowState = sysState === 'security' ? 'danger' : (sysState === 'reboot' || sysState === 'updates') ? 'warn' : sysState === 'ok' ? 'ok' : 'neutral';
     bump(sysRowState === 'neutral' ? 'ok' : sysRowState);
@@ -972,9 +972,9 @@ function simpleOverall() {
     rows.push({ state: sysRowState === 'ok' && openVulns ? 'info' : sysRowState, label: t('simple.row.system'), value: sysValue,
         action: (sysState === 'security' || sysState === 'updates') ? { label: t('simple.update_system'), fn: "sendToBackend({action:'system_upgrade'})" } : (openVulns ? { label: t('security.ignore'), fn: "ackAllVulns()" } : null) });
 
-    // Menaces / quarantaine
-    // Même règle que le service : alertes graves des dernières 24 h, hors pot de miel (ligne Réseau local) et hors veille
-    // d'intégrité (ligne Intégrité du système, qui suit le relevé courant)
+    // Threats / quarantine
+    // Same rule as the service: serious alerts from the last 24 h, excluding the honeypot (Local network row) and
+    // integrity monitoring (System integrity row, which follows the current report)
     const danger = alerts.find(a => alertCountsRed(a) && !a.ignored && Date.now() - new Date(a.time).getTime() < 86400e3);
     const lastScan = lastStatus && lastStatus.last_scan;
     let thrState = 'ok', thrValue = t('simple.threats.none');
@@ -986,7 +986,7 @@ function simpleOverall() {
     rows.push({ state: thrState, label: t('simple.row.threats'), value: thrValue,
         action: thrState !== 'ok' ? { label: t('popup.btn.details'), fn: danger ? "setViewMode('advanced'); switchTab('system')" : "setViewMode('advanced'); switchTab('quarantine')" } : null });
 
-    // Intégrité du système : rootkits, fichiers de paquets ou de l'application modifiés (rouge), Lynis (jaune)
+    // System integrity: rootkits, modified package or application files (red), Lynis (yellow)
     const integ = (lastStatus && lastStatus.integrity_summary) || null;
     let intState = 'neutral', intValue = t('simple.integrity.unknown');
     if (integ && integ.checked_at) {
@@ -999,7 +999,7 @@ function simpleOverall() {
     rows.push({ state: intState, label: t('simple.row.integrity'), value: intValue,
         action: intState === 'ok' || intState === 'neutral' ? null : { label: t('popup.btn.details'), fn: "setViewMode('advanced'); switchTab('security'); scrollToIntegrity()" } });
 
-    // Sauvegardes (disponibilité)
+    // Backups (availability)
     const bk = backupRowInfo();
     bump(bk.state === 'neutral' ? 'ok' : bk.state);
     rows.push({ state: bk.state, label: t('simple.row.backup'), value: bk.value, action: bk.action });
@@ -1012,14 +1012,15 @@ function renderSimpleView() {
     if (!view) return;
     let { worst, rows } = simpleOverall();
     if (overall && overall.color) {
-        const map = { green: 'ok', yellow: 'warn', blue: 'info', red: 'danger' };   // bleu = information, comme le bouclier du tray
+        const map = { green: 'ok', yellow: 'warn', blue: 'info', red: 'danger' };   // blue = information, like the tray shield
         const rank = { ok: 0, info: 1, warn: 2, danger: 3 };
         const o = map[overall.color] || 'ok';
-        worst = (rank[o] || 0) >= (rank[worst] || 0) ? o : worst;   // le pire des deux : service + vue (sauvegardes)
+        worst = (rank[o] || 0) >= (rank[worst] || 0) ? o : worst;   // the worse of the two: service + view (backups)
     }
     view.dataset.state = worst;
     $('simpleTitle').textContent = t(`simple.title.${worst}`);
-    // Le motif exact du service (« intégrité compromise », « failles sans correctif »…) : jamais un rouge sans explication
+    // The service's exact reason ("integrity compromised", "unpatched vulnerabilities"…): never red without
+    // an explanation
     const reasons = worst !== 'ok' && overall && overall.reasons ? overall.reasons.map(r => t(`overall.reason.${r}`)).filter(x => !x.startsWith('overall.reason.')) : [];
     $('simpleSub').textContent = t(`simple.sub.${worst}`) + (reasons.length ? ` ${t('simple.sub.reasons', { list: reasons.join(', ') })}` : '');
     $('simpleRows').innerHTML = rows.map(r => `
@@ -1057,7 +1058,7 @@ function onSecurityStatus(data) {
     renderSimpleView();
 }
 
-// ─── Profil réseau du pare-feu : Maison / Public / Entreprise ───────────────
+// ─── Firewall network profile: Home / Public / Enterprise ───────────────────
 
 function setFirewallProfile(profile) {
     sendToBackend({ action: 'security_action', cmd: 'firewall_profile', profile });
@@ -1066,7 +1067,7 @@ function setFirewallProfile(profile) {
 
 function forgetNetwork(key) { sendToBackend({ action: 'security_action', cmd: 'forget_network', key }); }
 
-/** Réseau courant et réseaux connus (profil mémorisé par réseau ; inconnu = Public d'office). */
+/** Current network and known networks (profile remembered per network; unknown = Public by default). */
 function renderFirewallNetwork(network, cur) {
     const curEl = $('fwNetworkCurrent'), knownEl = $('fwNetworkKnown');
     if (!curEl || !knownEl) return;
@@ -1194,7 +1195,7 @@ function firewallDefaults() {
 
 function firewallAddRule(port, proto, action, comment) {
     if (!port) { showToast(t('firewall.rules.need_port'), 'error'); return; }
-    // « action » est déjà la commande envoyée au backend : l'action de la règle voyage sous « rule_action »
+    // "action" is already the command sent to the backend: the rule's action travels as "rule_action"
     sendToBackend({ action: 'security_action', cmd: 'firewall_rule_add', port, proto, rule_action: String(action || 'allow').toLowerCase(), comment: comment || '' });
 }
 
@@ -1215,7 +1216,7 @@ async function sshToggle(enabled) {
 }
 
 
-// ─── Paramètres ─────────────────────────────────────────────────────────────
+// ─── Settings ───────────────────────────────────────────────────────────────
 
 function loadSettings() {
     sendToBackend({ action: 'get_settings' });
@@ -1223,7 +1224,7 @@ function loadSettings() {
     sendToBackend({ action: 'get_trusted' });
 }
 
-// ─── « C'est moi » : programmes et entrées approuvés (plus d'alerte) ─────────
+// ─── "It's me": approved programs and entries (no more alerts) ──────────────
 
 let trustedData = { programs: [], acknowledged: [], usb: [] };
 
@@ -1257,7 +1258,8 @@ function renderTrusted() {
             <button class="btn btn-secondary btn-sm" onclick="${js}">${t('settings.trusted.remove')}</button>
         </div>`;
     el.innerHTML = [
-        // Habitudes apprises : rafales d'écritures déclarées normales deux fois, ignorées d'office depuis (« Retirer » = oublier)
+        // Learned habits: write bursts declared normal twice, ignored automatically since then
+        // ("Remove" = forget)
         ...habits.map(h => row(t('settings.trusted.habit'), h.key.startsWith('dir:') ? h.key.slice(4) : h.key.split('/').pop(), h.key.startsWith('dir:') ? t('settings.trusted.habit_folder') : h.key, h.last, `sendToBackend({action:'forget_habit', key:'${escapeJs(h.key)}'})`)),
         ...priv.map(p => row(t(`settings.trusted.privacy_${p.device === 'microphone' ? 'microphone' : 'camera'}`), p.comm || p.exe, p.exe, p.at, `sendToBackend({action:'privacy_allow', remove:true, exe:'${escapeJs(p.exe)}'})`)),
         ...certs.map(c => row(t('settings.trusted.cert'), c.name || c.fp, `SHA-256 ${(c.fp || '').slice(0, 16)}…`, c.at, `sendToBackend({action:'guard_ack', group:'certs', remove:true, keys:['${escapeJs(c.fp)}']})`)),
@@ -1476,7 +1478,7 @@ function updateDashboardStatus(data) {
     if (typeof onCenterStatus === 'function') onCenterStatus(data);
     const prevExtras = lastExtrasKey;
     lastStatus = data;
-    // Les compléments de la checklist (Spices, Flatpak) viennent de l'état : re-rendre la checklist quand ils changent
+    // The checklist extras (Spices, Flatpak) come from the state: re-render the checklist when they change
     lastExtrasKey = JSON.stringify(data.auto_updates_user || null);
     if (lastExtrasKey !== prevExtras && secData.checklist) renderChecklist();
     if (data.lang && data.lang !== lang) setLanguage(data.lang);
@@ -1491,8 +1493,8 @@ function updateDashboardStatus(data) {
     if (data.app_update && !secData.app_update) secData.app_update = data.app_update;
     if (data.disclaimer_accepted === false && legalAccepted) { legalAccepted = false; openLegal(); }
     else if (data.disclaimer_accepted === true) legalAccepted = true;
-    if (data.disclaimer_accepted === true && data.telemetry_answered === false) openTelemetryConsent();   // première fois, jamais répondu
-    // Protections avancées (pot de miel…) : toujours proposées, jamais activées sans l'accord de l'utilisateur
+    if (data.disclaimer_accepted === true && data.telemetry_answered === false) openTelemetryConsent();   // first time, never answered
+    // Advanced protections (honeypot…): always offered, never enabled without the user's consent
     if (data.disclaimer_accepted === true && data.telemetry_answered !== false && Array.isArray(data.features_to_ask) && data.features_to_ask.length) openFeatureProposal(data.features_to_ask[0]);
     renderAdmin();
     renderSecurityBadge();
@@ -1502,7 +1504,7 @@ function updateDashboardStatus(data) {
     $('statusDbAge').textContent = data.last_update ? formatRelative(data.last_update) : t('update.unknown');
     $('statusLastScan').textContent = data.last_scan ? formatRelative(data.last_scan.date) : t('dash.protection.none');
 
-    // Service système
+    // System service
     const d = data.daemon || {};
     const pill = $('servicePill');
     pill.classList.toggle('online', !!d.available);
@@ -1540,7 +1542,7 @@ function updateDashboardStatus(data) {
         $('protLastScanSub').textContent = '';
     }
 
-    // Pare-feu / SSH (résumé)
+    // Firewall / SSH (summary)
     const sec = securityStatus;
     const netIcon = $('protNetIcon');
     if (sec && sec.ufw) {
@@ -1559,7 +1561,7 @@ function updateDashboardStatus(data) {
     $('targetsHint').textContent = d.available ? t('scan.targets.hint_on') : t('scan.targets.hint_off');
     updateSourceBadge();
 
-    // État du système (résumé)
+    // System status (summary)
     if (data.system_status && !systemStatus) systemStatus = Object.assign({ summary: true }, data.system_status);
     else if (data.system_status && systemStatus && systemStatus.summary) systemStatus = Object.assign({ summary: true }, data.system_status);
     renderSystemSummary();
@@ -1567,7 +1569,7 @@ function updateDashboardStatus(data) {
 
     toggleInitialScanPrompt(data.never_scanned && data.fully_installed && !d.first_scan_pending && !scan.running);
 
-    // Scan interrompu : proposer la reprise
+    // Interrupted scan: offer to resume
     const resumeEl = $('dashResumeScan');
     const r = data.resumable;
     if (r && r.path && !scan.running) {
@@ -1659,7 +1661,7 @@ function renderDbInfo(files) {
 }
 
 
-// ─── État du système ────────────────────────────────────────────────────────
+// ─── System status ──────────────────────────────────────────────────────────
 
 function onSystemStatus(data) {
     if (data.available === false) {
@@ -1695,8 +1697,8 @@ function systemState(st) {
     return 'ok';
 }
 
-/** « Système à jour », avec les paquets décalés (phasing) ou retenus par apt : on attend notre tour, tout reste vert. */
-/** « Système à jour » + détails (décalées, retenues) : courts pour les tuiles, explicatifs (long) pour l'onglet. */
+/** "System up to date", with packages phased or held back by apt: we wait our turn, everything stays green. */
+/** "System up to date" + details (phased, held back): short for the tiles, explanatory (long) for the tab. */
 function systemOkParts(st, long = false) {
     const parts = [];
     if (st && st.phased) parts.push(t(long ? 'dash.system.phased_note' : 'dash.system.phased_short', { n: st.phased }));
@@ -1722,7 +1724,7 @@ function renderSystemSummary() {
         security: t('dash.system.security', { n: st ? st.security : 0, cves: st ? (st.cve_count || 0) : 0 }),
         reboot: t('dash.system.reboot'),
     };
-    // Tuile du tableau de bord : état court, détails sur une seconde ligne discrète (texte long = colonne écrasée)
+    // Dashboard tile: short state, details on a discreet second line (long text = squashed column)
     const parts = state === 'ok' ? systemOkParts(st) : { main: labels[state], detail: '' };
     $('statusSystem').textContent = parts.main;
     if ($('statusSystemSub')) { $('statusSystemSub').textContent = parts.detail; $('statusSystemSub').hidden = !parts.detail; }
@@ -1812,7 +1814,7 @@ function onAlertEvent(alert) {
     renderAlerts();
 }
 
-// Centre de sécurité : leurre anti-rançongiciel, caméra/micro, mineur, certificat racine, détournement réseau
+// Security centre: anti-ransomware decoy, camera/microphone, miner, root certificate, network hijacking
 const GUARD_KINDS = ['ransomware', 'privacy', 'miner', 'certificate', 'redirect', 'extension', 'ssh_key', 'suid', 'keylogger', 'login', 'dev_package', 'protected'];
 
 function guardAlertText(a) {
@@ -1869,24 +1871,24 @@ function renderGuardAlert(a) {
         </div>`;
 }
 
-// Alerte qui tient le bouclier en rouge pendant 24 h (même règle que le service : grave, hors pot de miel et hors veille
-// d'intégrité, qui ont leurs propres boutons) tant qu'elle n'est pas ignorée.
+// Alert that keeps the shield red for 24 h (same rule as the service: serious, excluding the honeypot and integrity
+// monitoring, which have their own buttons) as long as it is not ignored.
 function alertCountsRed(a) { return a.severity === 'danger' && a.kind !== 'integrity' && a.kind !== 'honeypot'; }
 
 function ackAlert(time, kind, title, remove = false) { sendToBackend({ action: 'acknowledge_alert', time, kind, title, remove }); }
 
-// « C'est OK » sur toute alerte rouge de la liste, quel que soit son gabarit : une fois ignorée, elle passe en bleu avec
-// un badge, le bouclier revient à la normale, et « Annuler » la fait compter à nouveau.
+// "It's OK" on any red alert in the list, whatever its template: once ignored, it turns blue with a badge,
+// the shield returns to normal, and "Undo" makes it count again.
 function decorateAlert(a, html) {
-    // Une rafale d'écritures simplement signalée (bleue) a aussi son « C'est OK » : deux fois pour le même programme ou
-    // le même dossier, et les suivantes sont ignorées d'office (habitude apprise, visible dans Programmes de confiance).
+    // A write burst that is merely reported (blue) also has its "It's OK": twice for the same program or
+    // the same folder, and the following ones are ignored automatically (learned habit, visible in Trusted programs).
     if (!alertCountsRed(a) && a.kind !== 'burst') return html;
     const args = `'${escapeJs(a.time || '')}','${escapeJs(a.kind || '')}','${escapeJs(String(a.title || a.comm || ''))}'`;
     const extra = a.ignored
         ? `<span class="badge badge-green">${t('system.alert.ignored_badge')}</span> <button class="btn btn-secondary btn-sm" onclick="ackAlert(${args}, true)">${t('system.alert.unignore')}</button>`
         : `<button class="btn btn-secondary btn-sm" onclick="ackAlert(${args})">${t('system.alert.its_ok')}</button>`;
     if (a.ignored) html = html.replace(/alert-danger/g, 'alert-info').replace(/badge-red/g, 'badge-blue');
-    // À la suite des boutons existants de l'alerte (la rangée ne contient que des boutons et des badges), sinon sa propre rangée
+    // After the alert's existing buttons (the row only contains buttons and badges), otherwise its own row
     const row = html.lastIndexOf('<div class="alert-actions">');
     const close = row >= 0 ? html.indexOf('</div>', row) : -1;
     if (close >= 0) return `${html.slice(0, close)} ${extra}${html.slice(close)}`;
@@ -1979,7 +1981,7 @@ function alertHtml(a) {
         }
         if (a.kind === 'honeypot') {
             const who = a.host ? `${a.host} (${a.ip})` : (a.ip || '?');
-            // Appareil ignoré : ses balayages ne sont plus qu'une information (bleue), « Réafficher » le fait recompter
+            // Ignored device: its scans are now only information (blue), "Show again" makes it count again
             const hpInfo = a.ignored || a.severity === 'info';
             const hpIgnore = a.ignored
                 ? `<span class="badge badge-green">${t('system.alert.ignored_badge')}</span> <button class="btn btn-secondary btn-sm" onclick="honeypotIgnore('${escapeJs(a.ip || '')}', true)">${t('honeypot.unignore')}</button> `
@@ -1998,15 +2000,16 @@ function alertHtml(a) {
         if (GUARD_KINDS.includes(a.kind)) return renderGuardAlert(a);
         if (a.kind === 'persistence' || a.kind === 'integrity' || a.kind === 'update') {
             const titles = { persistence: t('popup.persistence.title'), integrity: t('popup.integrity.title'), update: t('popup.appupdate.title', { version: a.title || '' }) };
-            // Veille noyau/processus : programme, motif traduit et lignes concernées (pid, nom, chemin)
+            // Kernel/process monitoring: program, translated reason and affected lines (pid, name, path)
             const reasonKey = a.kind === 'integrity' && a.reason ? `security.integrity.reason.${a.reason}` : '';
             const body = reasonKey && t(reasonKey) !== reasonKey
                 ? `${escapeHtml(a.title || '')} — ${escapeHtml(t(reasonKey))}${(a.items || []).length ? `<div class="alert-exe">${(a.items || []).map(escapeHtml).join('<br>')}</div>` : ''}`
                 : a.kind === 'integrity' && !a.text
-                    ? escapeHtml(t('popup.integrity.body', { n: a.title || '0', tools: a.detail || '' }))   // ancien format (avant 1.24.4) : détail non conservé
+                    ? escapeHtml(t('popup.integrity.body', { n: a.title || '0', tools: a.detail || '' }))   // old format (before 1.24.4): detail not kept
                     : a.kind === 'persistence' && a.subtype === 'many' ? escapeHtml(t('popup.persistence.many', { n: a.title || '', list: a.detail || '' }))
                     : `${escapeHtml(a.kind === 'update' ? '' : a.title || '')}${a.detail ? ` — ${escapeHtml(a.detail)}` : ''}`;
-            // Veille des processus : « C'est normal » (avertissement approuvé, même après la fin du processus) et « Faire confiance » (programme)
+            // Process monitoring: "That's normal" (warning approved, even after the process ends) and "Trust"
+            // (program)
             const actions = a.kind === 'integrity' && a.check && a.text
                 ? (a.approved ? `<div class="alert-actions"><span class="badge badge-green">${t('security.integrity.ignored_badge')}</span></div>`
                     : `<div class="alert-actions"><button class="btn btn-secondary btn-sm" onclick="ackWatchAlert('${escapeJs(a.time)}')">${t('security.integrity.ack')}</button>${a.exe ? ` <button class="btn btn-secondary btn-sm" onclick="trustProgram('${escapeJs(a.exe)}','${escapeJs(a.comm || '')}')">${t('popup.btn.its_me')}</button>` : ''}</div>`)
@@ -2055,7 +2058,7 @@ function alertHtml(a) {
 }
 
 
-// ─── Scan : démarrage / annulation ──────────────────────────────────────────
+// ─── Scan: start / cancel ───────────────────────────────────────────────────
 
 function scanNoCache() { return !!($('scanNoCache') && $('scanNoCache').checked); }
 
@@ -2078,8 +2081,8 @@ function startFullSystemScan(withIntegrity = false) {
     sendToBackend({ action: 'scan', path: '/', integrity: !!withIntegrity, nocache: scanNoCache() });
 }
 
-/** Analyse rapide : dossiers personnels et emplacements sensibles (temporaires, démarrage, tâches planifiées, /usr/local,
- *  /opt, programmes en cours d'exécution). Les fichiers inchangés déjà vérifiés ne sont pas relus. */
+/** Quick scan: home folders and sensitive locations (temporary, startup, scheduled tasks, /usr/local,
+ *  /opt, running programs). Unchanged files already checked are not read again. */
 function startQuickScan() {
     if (scan.running) { showToast(t('toast.scan_running'), 'info'); if (viewMode === 'advanced') switchTab('scan'); return; }
     scan.integrity = false;
@@ -2130,7 +2133,7 @@ function onFolderPicked({ path, purpose, extra }) {
     }
 }
 
-/** Réinitialise l'interface de scan avant le lancement (état "préparation"). */
+/** Resets the scan UI before launch ("preparing" state). */
 function prepareScanUI(path) {
     Object.assign(scan, {
         running: true, source: null, path, phase: 'prepare',
@@ -2148,7 +2151,7 @@ function prepareScanUI(path) {
 }
 
 
-// ─── Scan : événements du backend ───────────────────────────────────────────
+// ─── Scan: backend events ───────────────────────────────────────────────────
 
 function onScanStarted(data) {
     if (data && data.integrity != null) scan.integrity = !!data.integrity;
@@ -2622,7 +2625,7 @@ function renderQuarantine(files) {
         </div>`).join('');
 }
 
-// ─── Modale de confirmation maison (jamais confirm()/alert() natifs, hors du thème) ─────────────
+// ─── Custom confirmation modal (never the native confirm()/alert(), which ignore the theme) ─────
 let confirmResolve = null;
 
 function appConfirm({ title, message, ok, cancel, danger = false }) {
@@ -2705,7 +2708,7 @@ function handleOperationResult(data) {
         return;
     }
     if (status === 'error' && scan.running && !scan.source) {
-        // Le scan n'a pas pu démarrer
+        // The scan could not start
         stopTicker();
         scan.running = false;
         scan.phase = 'idle';
@@ -2738,7 +2741,7 @@ function escapeJs(str) {
     return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
 }
 
-/** Chemin affiché avec ellipse à gauche (direction: rtl) sans déplacer les barres obliques. */
+/** Path shown with a left-side ellipsis (direction: rtl) without moving the slashes. */
 function rtlPath(path) {
     return path ? `\u200E${path}\u200E` : '';
 }
@@ -2795,9 +2798,9 @@ function showToast(message, type = 'info') {
 
 
 // ─── Dev/Simulation Mode ────────────────────────────────────────────────────
-// Quand on ouvre le HTML directement dans un navigateur (sans le backend Python)
+// When the HTML is opened directly in a browser (without the Python backend)
 
-const DEV_OK = new URLSearchParams(location.search).get('ok') === '1';   // ?ok=1 : simulation « tout est en ordre »
+const DEV_OK = new URLSearchParams(location.search).get('ok') === '1';   // ?ok=1: "everything is in order" simulation
 function simulateBackend(data) {
     const reply = (event, payload, delay = 150) => setTimeout(() => onBackendMessage({ event, data: payload }), delay);
     switch (data.action) {
@@ -2889,7 +2892,7 @@ function simulateBackend(data) {
             break;
         case 'acknowledge_integrity':
             reply('operationResult', { status: 'success', message: t(data.remove ? 'msg.integrity_unacknowledged' : 'msg.integrity_acknowledged') });
-            sendToBackend({ action: 'get_alerts' });                                   // badge « approuvé » sur l'événement
+            sendToBackend({ action: 'get_alerts' });                                   // "approved" badge on the event
             break;
         case 'acknowledge_port': {
             const c = secData.checklist; const set = new Set(data.keys || []);
@@ -2979,7 +2982,7 @@ function simulateBackend(data) {
                     { t: ago(50), src: 'log', cat: 'hardening', sev: 'warn', text: 'harden KRNL-6000 applied (sysctl)' }] } });
                 break;
             }
-            if (data.type === 'integrity' && data.run) {          // dev : progression simulée des outils
+            if (data.type === 'integrity' && data.run) {          // dev: simulated tool progress
                 reply('securityData', { type: 'integrity_running' }, 50);
                 const steps = [['lynis', 20, 'Boot and services'], ['lynis', 55, 'Networking'], ['lynis', 90, 'File Permissions'], ['unhide', 50, 'Searching for Hidden processes through comparison'], ['chkrootkit', 40, 'ifpromisc'], ['debsums', 30, '']];
                 const tools = {};
@@ -3065,7 +3068,7 @@ function simulateBackend(data) {
 
 // ─── Credits Modal ──────────────────────────────────────────────────────────
 
-// ─── Crédits : composants et sources de données ─────────────────────────────
+// ─── Credits: components and data sources ───────────────────────────────────
 const CREDITS_COMPONENTS = [{"g": "antivirus", "id": "clamav", "name": "ClamAV (clamscan, clamd, clamdscan)", "lic": "GPL-2.0", "url": "https://www.clamav.net"}, {"g": "antivirus", "id": "freshclam", "name": "freshclam", "lic": "GPL-2.0", "url": "https://docs.clamav.net/manual/Usage/SignatureManagement.html"}, {"g": "integrity", "id": "lynis", "name": "Lynis", "lic": "GPL-3.0", "url": "https://cisofy.com/lynis/"}, {"g": "integrity", "id": "chkrootkit", "name": "chkrootkit", "lic": "BSD-2-Clause", "url": "https://www.chkrootkit.org"}, {"g": "integrity", "id": "unhide", "name": "unhide, unhide-tcp", "lic": "GPL-3.0", "url": "https://github.com/YJesus/Unhide"}, {"g": "integrity", "id": "debsums", "name": "debsums · rpm -V", "lic": "GPL-2.0", "url": "https://packages.debian.org/debsums"}, {"g": "integrity", "id": "gnupg", "name": "GnuPG (gpgv)", "lic": "GPL-3.0", "url": "https://gnupg.org"}, {"g": "network", "id": "ufw", "name": "UFW · firewalld", "lic": "GPL-3.0 · GPL-2.0", "url": "https://launchpad.net/ufw"}, {"g": "network", "id": "networkmanager", "name": "NetworkManager · iproute2", "lic": "GPL-2.0", "url": "https://networkmanager.dev"}, {"g": "network", "id": "openssh", "name": "OpenSSH", "lic": "BSD", "url": "https://www.openssh.com"}, {"g": "network", "id": "msmtp", "name": "msmtp", "lic": "GPL-3.0", "url": "https://marlam.de/msmtp/"}, {"g": "system", "id": "systemd", "name": "systemd · journald", "lic": "LGPL-2.1", "url": "https://systemd.io"}, {"g": "system", "id": "linux", "name": "Noyau Linux : fanotify, udev, sysfs", "lic": "GPL-2.0", "url": "https://www.kernel.org"}, {"g": "system", "id": "polkit", "name": "polkit (pkexec)", "lic": "LGPL-2.0", "url": "https://github.com/polkit-org/polkit"}, {"g": "system", "id": "packages", "name": "APT (python3-apt) · dnf", "lic": "GPL-2.0", "url": "https://salsa.debian.org/apt-team/apt"}, {"g": "system", "id": "fwupd", "name": "fwupd", "lic": "LGPL-2.1", "url": "https://fwupd.org"}, {"g": "system", "id": "mac", "name": "AppArmor · SELinux · dconf", "lic": "GPL-2.0 · LGPL", "url": "https://apparmor.net"}, {"g": "backup", "id": "timeshift", "name": "Timeshift", "lic": "GPL-3.0", "url": "https://github.com/linuxmint/timeshift"}, {"g": "backup", "id": "rsync", "name": "rsync · rclone", "lic": "GPL-3.0 · MIT", "url": "https://rsync.samba.org"}, {"g": "backup", "id": "gocryptfs", "name": "gocryptfs", "lic": "MIT", "url": "https://nuetzlich.net/gocryptfs/"}, {"g": "backup", "id": "udisks", "name": "UDisks2", "lic": "GPL-2.0", "url": "https://github.com/storaged-project/udisks"}, {"g": "apps", "id": "flatpak", "name": "Flatpak · Snap", "lic": "LGPL-2.1 · GPL-3.0", "url": "https://flatpak.org"}, {"g": "apps", "id": "webext", "name": "Thunderbird · Firefox · Chromium (WebExtensions)", "lic": "MPL-2.0 · BSD", "url": "https://developer.mozilla.org/docs/Mozilla/Add-ons/WebExtensions"}, {"g": "ui", "id": "python", "name": "Python 3 · PyGObject", "lic": "PSF · LGPL-2.1", "url": "https://www.python.org"}, {"g": "ui", "id": "gtk", "name": "GTK 3 · WebKitGTK", "lic": "LGPL-2.1", "url": "https://webkitgtk.org"}, {"g": "ui", "id": "indicator", "name": "Ayatana AppIndicator", "lic": "LGPL-3.0", "url": "https://github.com/AyatanaIndicators"}];
 const CREDITS_SOURCES = [{"id": "talos", "name": "Cisco Talos (signatures ClamAV)", "url": "https://www.clamav.net/documents/clamav-virus-database-faq"}, {"id": "osv", "name": "OSV.dev · Ubuntu CVE Tracker", "url": "https://osv.dev"}, {"id": "fedora", "name": "Fedora (dnf updateinfo)", "url": "https://bodhi.fedoraproject.org"}, {"id": "openphish", "name": "OpenPhish", "url": "https://openphish.com"}, {"id": "phishdb", "name": "Phishing.Database", "url": "https://github.com/Phishing-Database/Phishing.Database"}, {"id": "urlhaus", "name": "URLhaus (abuse.ch) via urlhaus-filter", "url": "https://gitlab.com/malware-filter/urlhaus-filter"}, {"id": "abusech", "name": "Feodo Tracker · SSLBL (abuse.ch)", "url": "https://abuse.ch"}, {"id": "ipapi", "name": "ip-api.com", "url": "https://ip-api.com"}, {"id": "hibp", "name": "Have I Been Pwned · XposedOrNot", "url": "https://haveibeenpwned.com"}, {"id": "lvfs", "name": "LVFS (Linux Vendor Firmware Service)", "url": "https://fwupd.org/lvfs/"}];
 function creditsLink(url) {
@@ -3111,10 +3114,10 @@ document.addEventListener('keydown', (e) => {
 
 // ─── Init ───────────────────────────────────────────────────────────────────
 
-// ─── Sections en accordéon (Pare-feu, Paramètres) ──────────────────────────
-// Chaque carte d'un conteneur .accordion devient une section repliable : le titre (premier élément) reste visible avec
-// ses badges d'état, le reste se replie. Ouverture mémorisée par section (stockage local, facultatif). Par défaut :
-// première section ouverte. Les boutons et champs placés dans le titre restent utilisables sans replier la section.
+// ─── Accordion sections (Firewall, Settings) ───────────────────────────────
+// Each card of an .accordion container becomes a collapsible section: the title (first element) stays visible with
+// its status badges, the rest collapses. Open state remembered per section (local storage, optional). Default:
+// first section open. Buttons and fields placed in the title stay usable without collapsing the section.
 const ACC_STORE = 'dukiwishield.accordion';
 function accLoad() { try { return JSON.parse(localStorage.getItem(ACC_STORE) || '{}') || {}; } catch (e) { return {}; } }
 function accSave(state) { try { localStorage.setItem(ACC_STORE, JSON.stringify(state)); } catch (e) { /* stockage indisponible */ } }
@@ -3143,7 +3146,7 @@ function initAccordions() {
             card.dataset.accGroup = group;
             if (!card.dataset.acc) card.dataset.acc = String(idx);
             head.classList.add('acc-head');
-            if (head.dataset.i18n) {               // la traduction réécrit textContent : le texte passe dans un sous-élément
+            if (head.dataset.i18n) {               // translation rewrites textContent: the text moves into a child element
                 const label = document.createElement('span');
                 label.className = 'acc-label';
                 label.dataset.i18n = head.dataset.i18n;
@@ -3163,7 +3166,7 @@ function initAccordions() {
             while (head.nextSibling) body.appendChild(head.nextSibling);
             card.appendChild(body);
             const toggle = e => {
-                if (acc.classList.contains('pages')) return;          // mode pages : le sous-menu choisit la section
+                if (acc.classList.contains('pages')) return;          // pages mode: the submenu picks the section
                 if (e.target.closest('button, input, select, a, label, textarea') && !e.target.closest('.acc-chevron')) return;
                 setSectionOpen(card, !card.classList.contains('open'));
             };
@@ -3172,7 +3175,7 @@ function initAccordions() {
             const saved = st[`${group}:${card.dataset.acc}`];
             setSectionOpen(card, saved !== undefined ? !!saved : idx === 0, false);
         });
-        // « Tout ouvrir / Tout fermer »
+        // "Expand all / Collapse all"
         if (!acc.classList.contains('pages') && (!acc.previousElementSibling || !acc.previousElementSibling.classList.contains('acc-toolbar'))) {
             const bar = document.createElement('div');
             bar.className = 'acc-toolbar';
@@ -3185,17 +3188,17 @@ function initAccordions() {
     });
 }
 
-// ─── Sous-menus de la barre latérale : une page par section ────────────────
-// Sécurité, Pare-feu et Paramètres s'ouvrent en accordéon dans le menu ; chaque sous-élément affiche une seule section
-// de l'onglet (les autres sont masquées). Dernière page vue mémorisée par onglet.
+// ─── Sidebar submenus: one page per section ────────────────────────────────
+// Security, Firewall and Settings expand as an accordion in the menu; each sub-item shows a single section
+// of the tab (the others are hidden). Last page viewed remembered per tab.
 const SUBPAGE_TABS = ['security', 'firewall', 'settings'];
 const SUBPAGE_STORE = 'dukiwishield.subpage';
 function subpageLoad() { try { return JSON.parse(localStorage.getItem(SUBPAGE_STORE) || '{}') || {}; } catch (e) { return {}; } }
 
 function sectionsOf(tab) { return [...document.querySelectorAll(`#tab-${tab} .accordion.pages > .acc-section`)]; }
 
-// Page principale d'un onglet (clic sur l'élément du menu) : ses sections data-main (Pare-feu : pare-feu et type de réseau ;
-// Paramètres : général et popups ; Sécurité : score et checklist) ; les autres sections sont les pages du sous-menu.
+// Main page of a tab (click on the menu item): its data-main sections (Firewall: firewall and network type;
+// Settings: general and popups; Security: score and checklist); the other sections are the submenu pages.
 function showSubpage(tab, key, persist = true) {
     if (tab === 'security' && key === 'journal' && typeof loadJournal === 'function') { loadJournal(); sendToBackend({ action: 'get_security_data', type: 'weekly_summary' }); }
     if (tab === 'security' && key === 'protected') sendToBackend({ action: 'get_security_data', type: 'protected' });
@@ -3243,7 +3246,7 @@ function buildSubnav() {
             const b = document.createElement('button');
             b.className = 'nav-sub-btn'; b.dataset.acc = sec.dataset.acc;
             const key = sec.dataset.navI18n || (label && label.dataset.i18n);
-            // Libellé dans son propre élément : la traduction ne remplace que lui, la pastille posée à sa droite reste
+            // Label in its own element: translation replaces only that, the badge placed to its right stays
             const text = document.createElement('span'); text.className = 'nav-sub-label';
             if (key) { text.dataset.i18n = key; text.textContent = t(key); } else text.textContent = (label || sec.querySelector('.acc-head')).textContent.trim();
             b.appendChild(text);
@@ -3251,10 +3254,10 @@ function buildSubnav() {
             sub.appendChild(b);
         });
         parent.after(sub);
-        // Clic sur l'élément parent : ouvre l'onglet et son sous-menu ; un second clic replie le sous-menu
+        // Click on the parent item: opens the tab and its submenu; a second click collapses the submenu
         parent.removeAttribute('onclick');
         parent.addEventListener('click', () => {
-            // Déjà sur la page principale, sous-menu ouvert : replier ; sinon page principale de l'onglet
+            // Already on the main page, submenu open: collapse; otherwise the tab's main page
             if (currentTab === tab && sub.classList.contains('open') && parent.classList.contains('on-main')) { sub.classList.remove('open'); parent.setAttribute('aria-expanded', 'false'); return; }
             switchTab(tab);
             showSubpage(tab, null);
@@ -3262,7 +3265,7 @@ function buildSubnav() {
     });
 }
 
-/** Fait défiler jusqu'à un élément en ouvrant d'abord la section accordéon qui le contient. */
+/** Scrolls to an element, first opening the accordion section that contains it. */
 function revealEl(el, block = 'start') {
     if (!el) return;
     const sec = el.closest('.acc-section');
@@ -3272,7 +3275,7 @@ function revealEl(el, block = 'start') {
     setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block }), 60);
 }
 
-/** Ouvre l'onglet puis la section demandée (et la fait défiler à l'écran). */
+/** Opens the tab, then the requested section (and scrolls it into view). */
 function openSection(tab, key) {
     switchTab(tab);
     const card = document.querySelector(`#tab-${tab} .acc-section[data-acc="${key}"]`);
@@ -3295,11 +3298,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (params.get('learn') === '1') showAwareness();
     if (params.get('backup') === '1') setTimeout(openBackupWizard, 400);   // dev : assistant de sauvegarde
     if (params.get('autoscan') === '1') setTimeout(() => startFullSystemScan(true), 500);   // dev : scan en cours
-    if (params.get('integrity') === '1') setTimeout(() => runIntegrityOnly(), 500);           // dev : intégrité en cours
+    if (params.get('integrity') === '1') setTimeout(() => runIntegrityOnly(), 500);           // dev: integrity in progress
     if (params.get('consent') === '1') setTimeout(() => { openTelemetryConsent(); onTelemetryPreview({ available: false }); }, 400);
-    if (params.get('feature')) setTimeout(() => openFeatureProposal(params.get('feature')), 400);   // dev : proposition d'une protection avancée
+    if (params.get('feature')) setTimeout(() => openFeatureProposal(params.get('feature')), 400);   // dev: advanced protection proposal
     if (params.get('modal') === '1') setTimeout(() => appConfirm({ title: t('quarantine.delete_title'), message: t('quarantine.confirm_delete', { name: 'eicar.com' }), ok: t('quarantine.delete'), danger: true }), 500);
-    if (params.get('lesson')) setTimeout(() => openLesson(params.get('lesson')), 300);   // dev : ouvre une leçon
+    if (params.get('lesson')) setTimeout(() => openLesson(params.get('lesson')), 300);   // dev: opens a lesson
     if (location.hash && $(`tab-${location.hash.slice(1)}`)) { setViewMode('advanced', false); switchTab(location.hash.slice(1)); }
     sendToBackend({ action: 'check_status' });
     sendToBackend({ action: 'get_db_info' });
@@ -3308,10 +3311,10 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 
-// ─── Sauvegardes (disponibilité : le « A » du triptyque CIA) ────────────────
+// ─── Backups (availability: the "A" of the CIA triad) ──────────────────────
 
-let backupData = null;        // dernier backupStatus (onglet avancé + assistant)
-let backupRunning = null;     // {dest_id, dest_label, pct, text} pendant une sauvegarde
+let backupData = null;        // last backupStatus (advanced tab + wizard)
+let backupRunning = null;     // {dest_id, dest_label, pct, text} during a backup
 
 function loadBackup(refresh = false) { sendToBackend({ action: 'backup_status', refresh }); }
 
@@ -3352,7 +3355,7 @@ function tsSchedLabel(ts) {
     return (ts.schedule || []).map(k => names[k] || k).join(', ') || '—';
 }
 
-/** État Timeshift → {state:'ok'|'warn'|'danger'|'neutral', text}. */
+/** Timeshift state → {state:'ok'|'warn'|'danger'|'neutral', text}. */
 function timeshiftInfo(ts) {
     if (!ts) return { state: 'neutral', kind: 'unknown', text: t('backup.timeshift.unknown', { sched: '—' }) };
     if (!ts.installed) return { state: 'warn', kind: 'not_installed', text: t('backup.timeshift.not_installed') };
@@ -3366,9 +3369,9 @@ function timeshiftInfo(ts) {
     return { state: 'ok', kind: 'ok', text: t('backup.timeshift.ok', { n: ts.snapshots, rel: formatRelative(ts.last), sched }) };
 }
 
-/** « Ignorer » l'état de Timeshift (réglage timeshift_check du service) : PC sans place pour les instantanés. */
+/** "Ignore" the Timeshift state (service setting timeshift_check): PC without room for snapshots. */
 function daemonSetting(key) {
-    // Réglage du service : statut courant, sinon dernier chargement de l'onglet Paramètres
+    // Service setting: current status, otherwise the last load of the Settings tab
     if (lastStatus && lastStatus.settings && key in lastStatus.settings) return lastStatus.settings[key];
     if (settingsData && settingsData.system && key in settingsData.system) return settingsData.system[key];
     return undefined;
@@ -3384,7 +3387,7 @@ function ignoreCheck(setting, on) {
 
 function timeshiftIgnore(on) { ignoreCheck('timeshift_check', on); }
 
-/** « Ignorer » la sauvegarde des fichiers (réglage backup_check) : sauvegardés autrement, ou rien à sauvegarder. */
+/** "Ignore" the file backup (backup_check setting): backed up some other way, or nothing to back up. */
 function backupIgnored() {
     return daemonSetting('backup_check') === false;
 }
@@ -3416,7 +3419,7 @@ function timeshiftIgnoreBtn(d) {
     return tsOn ? '' : `<button class="btn btn-secondary btn-sm" onclick="timeshiftIgnore(true)" title="${escapeHtml(t('backup.timeshift.ignore_hint'))}">${t('backup.timeshift.ignore')}</button>`;
 }
 
-/** Ligne « Sauvegardes » de la vue simple. */
+/** "Backups" row of the simple view. */
 function backupRowInfo() {
     const b = (lastStatus && lastStatus.backup) || {};
     const u = b.user || { state: 'none' };
@@ -3424,7 +3427,7 @@ function backupRowInfo() {
     const running = b.running || backupRunning;
     if (running) return { state: 'ok', value: t('simple.backup.running', { pct: Math.floor(running.pct || 0) }), action: null };
     const info = backupUserInfo();
-    let state = info.state === 'warn' ? 'warn' : 'ok', value = info.text;   // fichiers ignorés → ne compte plus
+    let state = info.state === 'warn' ? 'warn' : 'ok', value = info.text;   // files ignored → no longer counts
     if ((ts.state === 'warn' || ts.state === 'danger') && timeshiftIgnored()) value += ` · ${t('simple.backup.timeshift_ignored')}`;
     else if (ts.state === 'warn' || ts.state === 'danger') { state = state === 'ok' ? 'warn' : state; value += ` · ${t(`simple.backup.timeshift_${ts.kind || 'off'}`) !== `simple.backup.timeshift_${ts.kind || 'off'}` ? t(`simple.backup.timeshift_${ts.kind || 'off'}`) : t('simple.backup.timeshift_off')}`; }
     else if (ts.state === 'ok') value += ` · ${t('simple.backup.timeshift_ok')}`;
@@ -3500,7 +3503,7 @@ function backupQuick(i) {
     sendToBackend({ action: 'backup_quick', drive: dr });
 }
 
-// ── Onglet avancé ──
+// ── Advanced tab ──
 function renderBackupTab() {
     const d = backupData;
     if (!d || !$('backupTimeshift')) return;
@@ -3601,7 +3604,7 @@ function backupSaveContent() {
 }
 
 
-/** Intégrité seule (Lynis, chkrootkit, debsums, fichiers de l'application), sans analyse antivirus. */
+/** Integrity only (Lynis, chkrootkit, debsums, application files), without antivirus scan. */
 function runIntegrityOnly() {
     if (scan.running || integrityRunning) { showToast(t('scan.integrity_running'), 'info'); return; }
     integrityRunning = true;
@@ -3612,7 +3615,7 @@ function runIntegrityOnly() {
 }
 
 
-// ─── « Régler » : chaque contrôle mène au bon endroit ───────────────────────
+// ─── "Fix": each check leads to the right place ─────────────────────────────
 
 const CHECK_FIX = {
     firewall: () => openSection('firewall', 'firewall'),
@@ -3656,25 +3659,25 @@ const CHECK_FIX = {
     hardening: () => openSection('security', 'hardening'),
 };
 
-// Libellé du bouton quand l'application règle elle-même (sinon « Régler » / « Comment faire »)
+// Button label when the application fixes it itself (otherwise "Fix" / "How to")
 const CHECK_FIX_LABEL = { auto_updates: 'check.auto_updates.action', firmware: 'check.firmware.action', disk_encryption: 'check.disk_encryption.action', filtered_dns: 'check.filtered_dns.action',
     password_policy: 'check.password_policy.action', browser_security: 'check.browser_security.action', internet_exposure: 'check.internet_exposure.action', restore_test: 'check.restore_test.action',
     file_backups: 'check.restore_test.action', system_snapshots: 'check.restore_test.action' };
 
-/** Contrôles que l'utilisateur peut ignorer en connaissance de cause (« Ignorer ») : ports ouverts voulus (développement web…). */
+/** Checks the user can knowingly ignore ("Ignore"): intentionally open ports (web development…). */
 const CHECK_ACK = { open_ports: () => ackAllPorts(), open_vulns: () => ackAllVulns(), nopasswd_sudo: () => ackSudoers(),
     root_ca: () => ackGuard('root_ca', 'certs'), network_redirect: () => ackGuard('network_redirect', 'redirects'), suid_files: () => ackGuard('suid_files', 'suid'),
     flatpak_permissions: () => ackGuard('flatpak_permissions', 'flatpak') };
 
-/** « Ignorer » les certificats racine ajoutés (proxy d'entreprise, outil de développement) ou les détournements voulus. */
+/** "Ignore" added root certificates (corporate proxy, development tool) or intentional hijacks. */
 async function ackGuard(key, group) {
     const it = ((secData.checklist || {}).items || []).find(i => i.key === key) || {};
     const ok = await appConfirm({ title: t(`check.${key}.ack_title`), message: t(`check.${key}.ack_msg`, { list: it.detail || '' }), ok: t('security.ignore'), cancel: t('modal.cancel') });
     if (ok) sendToBackend({ action: 'guard_ack', group });
 }
 
-// ─── Ports joignables voulus : ignorés par port+programme, ne comptent plus dans la checklist ni le score ───
-// ─── Protections avancées proposées (pot de miel…) : toujours demander, jamais activer d'office ────
+// ─── Intentionally reachable ports: ignored by port+program, no longer count in the checklist or score ───
+// ─── Proposed advanced protections (honeypot…): always ask, never enable by default ────────────
 let featureProposalOpen = null;
 const FEATURE_PROPOSALS = ['honeypot'];
 
@@ -3703,7 +3706,7 @@ function answerFeature(accepted) {
     showToast(t(accepted ? 'feature.thanks' : 'feature.declined', { name: t(`feature.${feature}.name`) }), 'info');
 }
 
-// ─── Pot de miel réseau ─────────────────────────────────────────────────────
+// ─── Network honeypot ───────────────────────────────────────────────────────
 function honeypotEnable() { sendToBackend({ action: 'feature_answer', feature: 'honeypot', enabled: true }); }
 function honeypotBlock(ip, remove = false) { if (ip) sendToBackend({ action: 'honeypot_block', ip, remove }); }
 function honeypotIgnore(ip, remove = false) { if (ip) sendToBackend({ action: 'honeypot_ignore', ip, remove }); }
@@ -3746,7 +3749,7 @@ function renderHoneypot() {
     ev.innerHTML = events.length ? events.slice(0, 60).map(e => `<div class="honeypot-event${e.fw ? ' fw' : ''}"><span>${formatDateTime(e.t)}</span><span>${escapeHtml(e.ip || '')}</span><span>${e.port}${e.fw ? '/' + escapeHtml(e.detail || '') : ''}</span><span>${e.fw ? t('honeypot.intent.fw') : t(`honeypot.intent.${e.intent}`)}${!e.fw && e.detail ? ` — ${escapeHtml(e.detail)}` : ''}</span></div>`).join('') : `<p class="text-muted">${t('honeypot.events.none')}</p>`;
 }
 
-// ─── Contrôle des liens et des courriels (extensions) ────────────────────────
+// ─── Link and email checking (extensions) ───────────────────────────────────
 const URLGUARD_APPS = ['thunderbird', 'firefox', 'chrome', 'chromium', 'edge', 'brave'];
 
 function urlguardRefresh() { sendToBackend({ action: 'urlguard_refresh' }); }
@@ -3797,7 +3800,7 @@ async function ackAllPorts() {
     if (ok) sendToBackend({ action: 'acknowledge_port', keys: open.map(p => p.key || `${p.port}/${p.proto}:${p.process || p.service || ''}`) });
 }
 
-/** Compléments d'un contrôle gérés côté utilisateur (Spices Cinnamon, Flatpak) qui ne sont pas encore automatiques. */
+/** User-side extras of a check (Cinnamon Spices, Flatpak) that are not automatic yet. */
 function checkExtrasMissing(key) {
     const u = key === 'auto_updates' && lastStatus ? lastStatus.auto_updates_user : null;
     return u ? ['spices', 'flatpak'].filter(k => u[k] === false) : [];
@@ -3826,9 +3829,9 @@ function firewallQuickDeny(port, proto) {
 }
 
 
-// ─── Boutons de scan : désactivés pendant une analyse ou une vérification d'intégrité ──
+// ─── Scan buttons: disabled during a scan or an integrity check ───────────────────
 let integrityRunning = false;
-let integrityProg = null;                 // progression par outil pendant une vérification d'intégrité
+let integrityProg = null;                 // per-tool progress during an integrity check
 const INTEGRITY_TOOLS = ['lynis', 'unhide', 'unhide-tcp', 'chkrootkit', 'debsums'];
 
 function onIntegrityProgress(data) {
@@ -3836,7 +3839,7 @@ function onIntegrityProgress(data) {
     renderIntegrityProgress();
 }
 
-/** Lignes « outil : étape · pourcentage » dans le scan (phase intégrité) et dans la carte Intégrité. */
+/** "tool: step · percentage" lines in the scan (integrity phase) and in the Integrity card. */
 function integrityProgressHtml() {
     const tools = (integrityProg && integrityProg.tools) || {};
     return `<div class="integrity-progress-title">${t('scan.integrity.title')}</div>` + INTEGRITY_TOOLS.map(name => {
@@ -3871,7 +3874,7 @@ function syncScanButtons() {
 }
 
 
-// ─── Fuites de données (HIBP) ───────────────────────────────────────────────
+// ─── Data breaches (HIBP) ───────────────────────────────────────────────────
 function hibpSave() {
     const emails = ($('hibpEmails').value || '').split('\n').map(x => x.trim()).filter(Boolean);
     const payload = { action: 'hibp_save', emails };
@@ -3913,7 +3916,7 @@ function renderHibpEmails(results, err) {
     el.innerHTML = rows.join('') + (err && err !== 'no_key' ? `<p class="text-muted">${escapeHtml(t('security.leaks.error', { error: err }))}</p>` : '');
 }
 
-// ─── Applications hors dépôts ───────────────────────────────────────────────
+// ─── Applications outside the repositories ──────────────────────────────────
 function renderApps(data) {
     appsData = data;
     renderSubBadges();
@@ -3938,7 +3941,7 @@ function renderApps(data) {
     }).join('');
 }
 
-// ─── Coffre chiffré ─────────────────────────────────────────────────────────
+// ─── Encrypted vault ────────────────────────────────────────────────────────
 function renderVault(v) {
     if (!v) return;
     const badge = $('vaultBadge');
@@ -3956,7 +3959,7 @@ function renderVault(v) {
     if (sb) { sb.hidden = !(v.available && v.exists); $('simpleVaultLabel').textContent = v.mounted ? t('simple.vault_open') : t('simple.vault'); }
 }
 
-// ─── Restauration guidée ────────────────────────────────────────────────────
+// ─── Guided restore ─────────────────────────────────────────────────────────
 let restoreSnapshots = [];
 function restoreFillDests() {
     const sel = $('restoreDest');

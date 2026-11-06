@@ -2,11 +2,11 @@
 Description=Dukiwi Shield - mises à jour tous les jours à 07:00 et 5 minutes après le démarrage
 
 [Timer]
-# Tous les jours à 07:00
+# Every day at 07:00
 OnCalendar=*-*-* 07:00:00
-# ... et 5 minutes après chaque démarrage de l'ordinateur
+# ... and 5 minutes after each computer startup
 OnBootSec=5min
-# Rattraper une exécution de 07:00 manquée (ordinateur éteint)
+# Catch up on a missed 07:00 run (computer switched off)
 Persistent=true
 Unit=dukiwi-shield-update.service
 

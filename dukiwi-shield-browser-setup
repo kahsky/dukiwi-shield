@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Dukiwi Shield — branchement des extensions dans les navigateurs et Thunderbird (root, à l'installation du paquet).
+Dukiwi Shield — hooking the extensions into the browsers and Thunderbird (root, at package installation).
 
-install : écrit le manifeste de l'hôte de messagerie native pour Firefox/Thunderbird (/usr/lib[64]/mozilla) et pour
-          Chrome, Chromium, Edge, Brave ; dépose une politique Chrome/Chromium/Edge/Brave (extension installée depuis
-          l'URL de mise à jour du dépôt Dukiwi, hôte natif autorisé) ; fusionne dans policies.json de Thunderbird
-          (XPI local) et de Firefox (XPI signé sur le dépôt) la clé ExtensionSettings, sans toucher aux autres
-          politiques. Les fichiers créés sont notés dans /var/lib/dukiwi-shield/browser-setup.json.
-remove  : retire tout ce qui a été écrit (les policies.json préexistants retrouvent leur contenu).
+install: writes the native messaging host manifest for Firefox/Thunderbird (/usr/lib[64]/mozilla) and for
+         Chrome, Chromium, Edge, Brave; drops a Chrome/Chromium/Edge/Brave policy (extension installed from
+         the Dukiwi repository update URL, native host allowed); merges the ExtensionSettings key into the
+         policies.json of Thunderbird (local XPI) and Firefox (signed XPI on the repository), without touching the
+         other policies. The created files are recorded in /var/lib/dukiwi-shield/browser-setup.json.
+remove : removes everything that was written (pre-existing policies.json files get their content back).
 (c) 2026 Dukiwi SA - Estavayer-le-Lac
 """
 
@@ -20,7 +20,7 @@ EXT_DIR = os.environ.get("CLAMAV_SETUP_EXT_DIR") or os.path.join(APP_DIR, "exten
 INFO = os.path.join(EXT_DIR, "manifest-info.json")
 HOST = os.path.join(APP_DIR, "dukiwi-shield-native-host")
 NAME = "dukiwi_shield"
-ROOT = os.environ.get("CLAMAV_SETUP_ROOT", "")            # préfixe de test (jamais en production)
+ROOT = os.environ.get("CLAMAV_SETUP_ROOT", "")            # test prefix (never in production)
 STATE = ROOT + "/var/lib/dukiwi-shield/browser-setup.json"
 DESC = "Dukiwi Shield — contrôle des liens et des courriels"
 
@@ -63,7 +63,7 @@ def save_state(st):
     write_json(STATE, st)
 
 
-# Identifiants Gecko des versions précédentes : bloqués (désinstallés) par la politique, remplacés par les nouveaux
+# Gecko IDs of previous versions: blocked (uninstalled) by the policy, replaced by the new ones
 LEGACY_GECKO = {"thunderbird": "mailguard@" + "clamav" + "-antivirus.dukiwi.com", "firefox": "urlguard@" + "clamav" + "-antivirus.dukiwi.com"}
 
 
@@ -124,7 +124,7 @@ def remove():
     written = set(st.get("written") or [])
     for path in sorted(st.get("merged") or []):
         if path in written:
-            continue                                      # fichier créé par nous : supprimé plus bas
+            continue                                      # file created by us: deleted further down
         try:
             with open(path, encoding="utf-8") as f:
                 data = json.load(f)

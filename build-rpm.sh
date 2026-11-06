@@ -1,8 +1,8 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════════════════════
-# CLAMAV ANTIVIRUS — construction du paquet RPM (Fedora et dérivés), noarch, depuis n'importe quelle distribution.
-# Usage : ./build-rpm.sh   →  dukiwi-shield-<VERSION>-1.noarch.rpm
-# Nécessite rpmbuild (paquet « rpm » sur Debian/Mint). Les fichiers viennent de build-deb.sh --stage-only.
+# CLAMAV ANTIVIRUS — building the RPM package (Fedora and derivatives), noarch, from any distribution.
+# Usage: ./build-rpm.sh   →  dukiwi-shield-<VERSION>-1.noarch.rpm
+# Requires rpmbuild ("rpm" package on Debian/Mint). The files come from build-deb.sh --stage-only.
 # ═══════════════════════════════════════════════════════════════════════════
 set -e
 APP_NAME="dukiwi-shield"
@@ -14,7 +14,7 @@ trap 'rm -rf "$WORK"' EXIT
 SRC="$WORK/${APP_NAME}-${VERSION}"
 mkdir -p "$SRC" "$WORK/rpmbuild"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 "$SCRIPT_DIR/build-deb.sh" --stage-only "$SRC/tree" >/dev/null
-# Fedora : les unités et règles udev vivent sous /usr/lib (lib → usr/lib est un lien, mais le RPM doit lister /usr/lib)
+# Fedora: units and udev rules live under /usr/lib (lib → usr/lib is a link, but the RPM must list /usr/lib)
 mkdir -p "$SRC/tree/usr"
 if [ -d "$SRC/tree/lib" ]; then cp -a "$SRC/tree/lib/." "$SRC/tree/usr/lib/"; rm -rf "$SRC/tree/lib"; fi
 cp "$SCRIPT_DIR/dukiwi.repo" "$SRC/"

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Montage README : tableau de bord, onglet Sécurité, vue simple et popup, sur un fond sombre."""
+"""README montage: dashboard, Security tab, simple view and popup, on a dark background."""
 import sys
 from PIL import Image, ImageDraw, ImageFilter
 S = sys.argv[1]; OUT = sys.argv[2]

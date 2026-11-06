@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
 """
-Dukiwi Shield — interface graphique (GTK + WebKit) de la suite de sécurité pour Linux
+Dukiwi Shield — graphical interface (GTK + WebKit) of the security suite for Linux
 A modern HTML/CSS/JS interface for ClamAV with system tray integration.
 
-Les opérations privilégiées (scan complet du système, mise à jour des signatures)
-sont déléguées au service système dukiwi-shield-daemon (root) via un socket
-Unix : aucun mot de passe n'est demandé. Si le service est absent, l'application
-se rabat sur pkexec (demande de mot de passe administrateur).
+Privileged operations (full system scan, signature update)
+are delegated to the dukiwi-shield-daemon system service (root) via a Unix
+socket: no password is asked. If the service is missing, the application
+falls back to pkexec (administrator password prompt).
 
-L'application affiche aussi les notifications glissantes (popups en bas à droite)
-émises par le service : rafales d'écritures, danger potentiel, signatures à jour,
-scan terminé, analyse des clés USB, question pour les disques durs USB.
+The application also shows the sliding notifications (popups at the bottom right)
+issued by the service: write bursts, potential danger, signatures up to date,
+scan finished, USB key scan, question for USB hard disks.
 
 (c) 2026 Dukiwi SA - Estavayer-le-Lac
 """
 
 import os as _os
-# Sous Wayland (Ubuntu), une application ne peut pas placer ses fenêtres : le compositeur centre les popups en plein
-# écran. Avec XWayland (toujours présent sur Ubuntu), le backend X11 de GTK retrouve le glissement depuis le bas.
+# Under Wayland (Ubuntu), an application cannot position its windows: the compositor centres popups on the
+# screen. With XWayland (always present on Ubuntu), the GTK X11 backend gets the slide-in from the bottom back.
 if _os.environ.get("WAYLAND_DISPLAY") and _os.environ.get("DISPLAY") and not _os.environ.get("GDK_BACKEND"):
     _os.environ["GDK_BACKEND"] = "x11"
 
@@ -25,7 +25,7 @@ import gi
 gi.require_version('Gtk', '3.0')
 gi.require_version('Gdk', '3.0')
 gi.require_version('WebKit2', '4.1')
-# Indicateur de zone de notification : Ayatana (maintenu, seul présent sur Ubuntu 26.04) ou l'ancien libappindicator
+# Notification area indicator: Ayatana (maintained, the only one present on Ubuntu 26.04) or the old libappindicator
 try:
     gi.require_version('AyatanaAppIndicator3', '0.1')
     from gi.repository import AyatanaAppIndicator3 as AppIndicator3
@@ -57,9 +57,9 @@ from dukiwi_shield_common import (  # noqa: E402
     quarantine_index_add, quarantine_enrich, parse_moved_line,
 )
 
-# Réglages propres à l'utilisateur (le reste est géré par le daemon)
-import dukiwi_shield_backup as backup   # sauvegarde des fichiers de l'utilisateur (droits utilisateur)
-import dukiwi_shield_extras as extras   # fuites, applications hors dépôts, coffre chiffré, bilan hebdomadaire
+# User-specific settings (the rest is handled by the daemon)
+import dukiwi_shield_backup as backup   # backup of the user's files (user rights)
+import dukiwi_shield_extras as extras   # leaks, applications outside the repositories, encrypted vault, weekly summary
 import dukiwi_shield_distro as distro   # Debian/Mint (apt, ufw) ou Fedora (dnf, firewalld)
 
 USER_DEFAULTS = {
@@ -67,7 +67,7 @@ USER_DEFAULTS = {
     "popups": {"info": True, "upload": True, "scan": True, "update": True, "security": True, "tip": True},
 }
 DISCLAIMER_VERSION = 1
-FEATURES_PROPOSED = ()      # protections proposées par une modale au démarrage (aucune : le pot de miel est actif par défaut)
+FEATURES_PROPOSED = ()      # protections offered by a modal at startup (none: the honeypot is active by default)
 SECURITY_COMMANDS = ("firewall_set", "firewall_defaults", "firewall_rule_add", "firewall_rule_delete", "ssh_set", "firewall_profile",
                      "forget_network")
 UNLOCK_HELPER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dukiwi-shield-unlock")
@@ -108,7 +108,7 @@ def format_size(num):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# État local (utilisateur)
+# Local state (user)
 # ═══════════════════════════════════════════════════════════════════════════
 
 def load_state():
@@ -130,7 +130,7 @@ _AWARENESS = None
 
 
 def load_awareness():
-    """Leçons de sensibilisation (ui/awareness.js : window.AWARENESS = {...};)."""
+    """Awareness lessons (ui/awareness.js: window.AWARENESS = {...};)."""
     global _AWARENESS
     if _AWARENESS is None:
         try:
@@ -142,7 +142,7 @@ def load_awareness():
     return _AWARENESS
 
 
-POPUP_CORNERS = ("right", "left", "top-right", "top-left")     # « right » / « left » : en bas (valeurs d'origine)
+POPUP_CORNERS = ("right", "left", "top-right", "top-left")     # "right" / "left": at the bottom (original values)
 
 
 def user_settings():
@@ -177,11 +177,11 @@ def write_log(text):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Client du service système
+# System service client
 # ═══════════════════════════════════════════════════════════════════════════
 
 class DaemonClient:
-    """Abonnement permanent aux événements du daemon (reconnexion automatique)."""
+    """Permanent subscription to the daemon's events (automatic reconnection)."""
 
     def __init__(self, on_event):
         self.on_event = on_event
@@ -223,7 +223,7 @@ class DaemonClient:
 
 
 def daemon_can_scan(path):
-    """Le service accepte-t-il ce chemin pour l'utilisateur courant ?"""
+    """Does the service accept this path for the current user?"""
     norm = os.path.normpath(path)
     if norm in DAEMON_ALLOWED_ROOTS or norm.startswith(("/media/", "/mnt/")):
         return True
@@ -231,13 +231,13 @@ def daemon_can_scan(path):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Opérations locales (sans le service)
+# Local operations (without the service)
 # ═══════════════════════════════════════════════════════════════════════════
 
 class LocalScan:
-    """Scan exécuté par l'utilisateur lui-même (ou via pkexec pour le scan complet)."""
+    """Scan run by the user themselves (or via pkexec for the full scan)."""
 
-    found_sigs = {}   # chemin infecté → signature (index de quarantaine utilisateur)
+    found_sigs = {}   # infected path → signature (user quarantine index)
 
     def __init__(self, path, callback, resume=False, use_sudo=False):
         self.found_sigs = {}
@@ -321,7 +321,7 @@ class LocalScan:
                     try:
                         line.encode("utf-8")
                     except UnicodeEncodeError:
-                        bad_names += 1                    # nom qui n'est pas de l'UTF-8 : compté et signalé, pas analysé
+                        bad_names += 1                    # name that is not UTF-8: counted and reported, not scanned
                         continue
                     out.write(line)
                     self.found += 1
@@ -490,7 +490,7 @@ class LocalScan:
 
 
 class ClamAVBackend:
-    """Opérations ClamAV exécutées localement (installation, MàJ via pkexec, quarantaine locale)."""
+    """ClamAV operations run locally (installation, update via pkexec, local quarantine)."""
 
     @staticmethod
     def is_installed():
@@ -523,7 +523,7 @@ class ClamAVBackend:
 
     @staticmethod
     def update_database_pkexec(callback):
-        """Mise à jour via pkexec (mot de passe) — utilisée si le service est absent."""
+        """Update via pkexec (password) — used if the service is missing."""
         def run():
             try:
                 update_script = (
@@ -613,7 +613,7 @@ class ClamAVBackend:
 # ═══════════════════════════════════════════════════════════════════════════
 
 def effective_last_update(daemon_status=None):
-    """Date la plus récente connue de mise à jour des signatures (datetime ou None)."""
+    """Most recent known date of a signature update (datetime or None)."""
     candidates = []
     db = db_last_update()
     if db:
@@ -648,7 +648,7 @@ def get_protection_status(lang, daemon_status=None):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Popups glissants (bas à droite, sortent de derrière la barre des tâches)
+# Sliding popups (bottom right, slide out from behind the taskbar)
 # ═══════════════════════════════════════════════════════════════════════════
 
 POPUP_CSS = b"""
@@ -777,7 +777,7 @@ class Popup(Gtk.Window):
             rows.set_margin_top(6)
             row = None
             for i, (label, style, callback) in enumerate(buttons):
-                if i % 3 == 0:                      # 3 boutons par ligne au maximum
+                if i % 3 == 0:                      # at most 3 buttons per row
                     row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
                     rows.pack_start(row, False, False, 0)
                 btn = Gtk.Button(label=label)
@@ -873,8 +873,8 @@ class Popup(Gtk.Window):
 
 
 class PopupManager:
-    """Empile les popups dans le coin choisi (en bas ou en haut, à droite ou à gauche), à l'intérieur de la zone libre du
-    bureau, et les fait glisser depuis le bord de l'écran le plus proche."""
+    """Stacks the popups in the chosen corner (bottom or top, right or left), inside the free area of the
+    desktop, and slides them in from the nearest screen edge."""
 
     def __init__(self):
         self.popups = []
@@ -895,7 +895,7 @@ class PopupManager:
         return self._monitor().get_workarea()
 
     def show(self, popup):
-        # Un popup avec la même clé (ex. même clé USB) remplace le précédent
+        # A popup with the same key (e.g. same USB key) replaces the previous one
         if popup.key:
             for old in list(self.popups):
                 if old.key == popup.key:
@@ -928,14 +928,14 @@ class PopupManager:
 
     @staticmethod
     def corner():
-        """(à gauche ?, en haut ?) d'après le réglage « Position des notifications » ; en bas à droite par défaut."""
+        """(left?, top?) from the "Notification position" setting; bottom right by default."""
         c = user_settings().get("popup_corner") or "right"
         return c.endswith("left"), c.startswith("top")
 
     def usable_area(self):
-        """Zone où poser les notifications, (x0, y0, x1, y1) : la zone de travail du bureau — donc hors barres du haut,
-        du bas et bande réservée par un dock — encore réduite de ce qu'un dock occupe au-delà de sa réserve : Plank
-        agrandit ses icônes au survol dans une fenêtre plus large que la bande qu'il réserve."""
+        """Area where notifications are placed, (x0, y0, x1, y1): the desktop work area — thus excluding the top
+        and bottom panels and the strip reserved by a dock — further reduced by what a dock occupies beyond its
+        reservation: Plank enlarges its icons on hover in a window wider than the strip it reserves."""
         wa, geo = self.workarea(), self.monitor_geometry()
         x0, y0, x1, y1 = wa.x, wa.y, wa.x + wa.width, wa.y + wa.height
         try:
@@ -949,7 +949,7 @@ class PopupManager:
                 r = w.get_frame_extents()
             except Exception:  # noqa: BLE001
                 continue
-            # Dock collé à un bord, dans le sens de ce bord ; jamais plus d'un tiers de l'écran (fenêtre dock géante)
+            # Dock stuck to an edge, along that edge; never more than a third of the screen (giant dock window)
             if r.height >= r.width:
                 if r.x <= geo.x + 2:
                     x0 = max(x0, min(r.x + r.width, geo.x + geo.width // 3))
@@ -962,9 +962,9 @@ class PopupManager:
         return x0, y0, x1, y1
 
     def place(self, height, offset, width=0):
-        """Position d'un popup de hauteur `height` (et de largeur réelle `width`, un texte long l'élargit), `offset`
-        pixels après ceux qui le précèdent dans la pile : vers le haut depuis un coin du bas, vers le bas depuis un
-        coin du haut."""
+        """Position of a popup of height `height` (and actual width `width`, a long text widens it), `offset`
+        pixels after those preceding it in the stack: upwards from a bottom corner, downwards from a
+        top corner."""
         x0, y0, x1, y1 = self.usable_area()
         left, top = self.corner()
         width = max(width or 0, Popup.WIDTH)
@@ -973,7 +973,7 @@ class PopupManager:
         return max(x0, min(x, x1 - width)), y
 
     def offscreen_y(self, height):
-        """Ordonnée hors écran d'où un popup arrive et où il repart : au-dessus pour un coin du haut, sinon en dessous."""
+        """Off-screen y coordinate a popup arrives from and leaves to: above for a top corner, otherwise below."""
         geo = self.monitor_geometry()
         return geo.y - height - 10 if self.corner()[1] else geo.y + geo.height + 10
 
@@ -990,7 +990,7 @@ class PopupManager:
 # ═══════════════════════════════════════════════════════════════════════════
 
 class TrayIcon:
-    """Bouclier dans la barre des tâches avec couleur selon l'état."""
+    """Shield in the taskbar with a colour depending on the state."""
 
     def __init__(self, app):
         self.app = app
@@ -1055,7 +1055,7 @@ class TrayIcon:
         return bool(isinstance(st, dict) and st.get("isolated"))
 
     def on_isolate(self, _item):
-        """Le choix se confirme dans la fenêtre (fenêtre modale de l'application), jamais d'un seul clic dans le menu."""
+        """The choice is confirmed in the window (modal window of the application), never with a single click in the menu."""
         self.app.window.present()
         self.app.run_js("if(typeof confirmIsolate==='function')confirmIsolate(" + ("false" if self.isolated() else "true") + ");")
 
@@ -1069,7 +1069,7 @@ class TrayIcon:
         self.app.report_backup_state(bk)
         if self.app.backup_check_enabled() and bk.get("state") in ("none", "missing", "old"):
             if icon_color == "green":
-                icon_color = "yellow"           # disponibilité (CIA) : fichiers non sauvegardés
+                icon_color = "yellow"           # availability (CIA): files not backed up
             reasons.append(self.app.T(f"overall.reason.backup_{bk['state']}"))
         tooltip = message if not reasons else f"{message} — " + ", ".join(reasons)
         self.indicator.set_icon_full(os.path.join(ICONS_DIR, f"{OVERALL_ICON.get(icon_color, 'shield-green')}.svg"), tooltip)
@@ -1111,7 +1111,7 @@ class TrayIcon:
 # ═══════════════════════════════════════════════════════════════════════════
 
 class ClamAVAntivirusApp:
-    """Fenêtre principale (WebKit2) + tray + popups + pont vers le service système."""
+    """Main window (WebKit2) + tray + popups + bridge to the system service."""
 
     def __init__(self, start_hidden=False):
         self.webview = None
@@ -1148,14 +1148,14 @@ class ClamAVAntivirusApp:
         self.daemon = DaemonClient(self.on_daemon_event)
 
         if start_hidden:
-            # Mode bouclier : les enfants sont prêts mais la fenêtre n'est jamais mappée (un show_all() suivi d'un hide()
-            # laissait sur GNOME/Ubuntu une entrée « dukiwi-shield.py » dans le dock sans fenêtre visible)
+            # Shield mode: the children are ready but the window is never mapped (a show_all() followed by a hide()
+            # left on GNOME/Ubuntu a "dukiwi-shield.py" entry in the dock with no visible window)
             self.webview.show_all()
         else:
             self.window.show_all()
             self.window.present()
-        # Relance après une mise à jour du paquet (le GUI est arrêté par SIGTERM puis relancé en mode bouclier) :
-        # si la fenêtre était ouverte à ce moment-là, elle est rouverte une fois la page chargée
+        # Restart after a package update (the GUI is stopped by SIGTERM then restarted in shield mode):
+        # if the window was open at that moment, it is reopened once the page has loaded
         self.reopen_after_restart = start_hidden and self._window_was_open()
         for signum in (signal.SIGTERM, signal.SIGINT):
             try:
@@ -1172,7 +1172,7 @@ class ClamAVAntivirusApp:
 
     @staticmethod
     def _window_was_open():
-        """La fenêtre était visible lors de l'arrêt précédent (moins de 5 min) ? Témoin effacé après lecture."""
+        """Was the window visible at the previous shutdown (less than 5 min ago)? Marker deleted after reading."""
         state = load_state()
         at = state.get("window_open_at")
         if not at:
@@ -1184,7 +1184,7 @@ class ClamAVAntivirusApp:
             return False
 
     def on_terminate(self, signum):
-        """SIGTERM (mise à jour du paquet, arrêt de session) : mémoriser si la fenêtre était ouverte, puis quitter."""
+        """SIGTERM (package update, session end): remember whether the window was open, then quit."""
         try:
             save_state({"window_open_at": now_iso() if self.window.get_visible() else None})
         except Exception:  # noqa: BLE001
@@ -1192,7 +1192,7 @@ class ClamAVAntivirusApp:
         Gtk.main_quit()
         return False
 
-    # ── Conseil de sécurité du jour (sensibilisation) ───────────────────
+    # ── Security tip of the day (awareness) ─────────────────────────────
     def show_daily_tip(self, force=False):
         state = load_state()
         if not force:
@@ -1206,12 +1206,12 @@ class ClamAVAntivirusApp:
         read = set(state.get("read_lessons") or [])
         unread = [l for l in lessons if l.get("id") not in read]
         if not unread and not force:
-            return False                      # toutes les leçons sont lues : plus de popup
+            return False                      # all lessons have been read: no more popup
         pool = unread or lessons
         idx = int(state.get("tip_index", -1)) + 1
         if idx >= len(lessons):
             idx = 0
-        # prochaine leçon (non lue) à partir de la position courante, en rotation
+        # next (unread) lesson from the current position, rotating
         rotation = lessons[idx:] + lessons[:idx]
         lesson = next((l for l in rotation if l in pool), pool[0])
         idx = next((i for i, l in enumerate(lessons) if l.get("id") == lesson.get("id")), 0)
@@ -1236,7 +1236,7 @@ class ClamAVAntivirusApp:
 
     # ── Session administrateur (pkexec → helper → daemon unlock) ────────
     def run_admin(self, cmd, params, on_result):
-        """Envoie une commande ; si le daemon exige un administrateur, déverrouille via pkexec puis réessaie."""
+        """Sends a command; if the daemon requires an administrator, unlocks via pkexec then retries."""
         def worker():
             resp = daemon_request(cmd, timeout=600, **params)
             if resp.get("error") == "admin_required":
@@ -1256,7 +1256,7 @@ class ClamAVAntivirusApp:
     def msg(self, key, params=None):
         return self.T(key, **(params or {}))
 
-    # ── Fenêtre ─────────────────────────────────────────────────────────
+    # ── Window ──────────────────────────────────────────────────────────
     def on_close(self, widget, event):
         self.window.hide()
         return True
@@ -1362,7 +1362,8 @@ class ClamAVAntivirusApp:
                        timeout=None, buttons=[(T("popup.btn.details"), None, lambda: self.show_tab("system"))], on_activate=lambda: self.show_tab("system"))
             return
         if kind == "usb_keyboard":
-            # BadUSB : nouveau clavier coupé (accord demandé), ou autorisé d'office (seul clavier / seul pointeur)
+            # BadUSB: new keyboard cut off (approval requested), or allowed automatically (only keyboard /
+            # only pointer)
             ident, name = alert.get("id") or "", alert.get("title") or "?"
             if alert.get("blocked"):
                 def allow(_ident=ident):
@@ -1375,7 +1376,7 @@ class ClamAVAntivirusApp:
                 self.popup("info", T("popup.hid.allowed_title"), T("popup.hid.allowed_body", name=name, why=T(f"popup.hid.why.{alert.get('reason')}")), timeout=20)
             return
         if kind == "network":
-            # Réseau piégé : passerelle changée (homme du milieu possible) ou Wi-Fi ouvert sans VPN
+            # Rogue network: gateway changed (possible man-in-the-middle) or open Wi-Fi without VPN
             key, name = alert.get("key") or "", alert.get("title") or "?"
             if alert.get("subtype") == "gateway_changed":
                 def accept(_key=key):
@@ -1392,14 +1393,14 @@ class ClamAVAntivirusApp:
                            timeout=45, buttons=[(T("popup.network.open_ok"), "primary", lambda: None)], on_activate=lambda: self.show_tab("firewall"))
             return
         if kind == "download":
-            # Fichier infecté isolé à l'arrivée (téléchargement, bureau, support amovible) : toujours affiché
+            # Infected file isolated on arrival (download, desktop, removable media): always shown
             body = T("popup.download.body", name=alert.get("title") or "?", signature=alert.get("detail") or "?",
                      folder=os.path.dirname(alert.get("path") or "") or "?")
             self.popup("danger", T("popup.download.title"), body, buttons=[(T("popup.btn.details"), None, lambda: self.show_tab("quarantine"))],
                        on_activate=lambda: self.show_tab("quarantine"))
             return
         if kind == "mail":
-            # Pièce jointe infectée dans un courriel (Thunderbird → hôte natif → clamd) : toujours affiché
+            # Infected attachment in an email (Thunderbird → native host → clamd): always shown
             body = T("popup.mail.body", name=alert.get("title") or "?", signature=alert.get("detail") or "?")
             meta = " · ".join(x for x in (alert.get("sender"), alert.get("subject")) if x)
             self.popup("danger", T("popup.mail.title"), body, meta=meta or None,
@@ -1469,8 +1470,8 @@ class ClamAVAntivirusApp:
         return [(T("popup.btn.details"), None, lambda: self.show_tab("system"))] + ([its_me] if alert.get("exe") else [])
 
     def show_guard_alert(self, alert):
-        """Centre de sécurité : leurre anti-rançongiciel touché, caméra/micro utilisé, mineur, certificat racine ajouté,
-        détournement réseau (hosts, proxy, DNS)."""
+        """Security centre: anti-ransomware decoy touched, camera/microphone used, miner, root certificate added,
+        network hijacking (hosts, proxy, DNS)."""
         T = self.T
         kind, sev = alert.get("kind"), alert.get("severity")
         comm = alert.get("comm") or alert.get("title") or "?"
@@ -1583,7 +1584,7 @@ class ClamAVAntivirusApp:
                    on_activate=lambda: self.show_tab("security"))
 
     def act_protected_allow(self, data):
-        """Autoriser un programme à ouvrir les dossiers protégés (mot de passe administrateur), ou retirer l'autorisation."""
+        """Allow a program to open the protected folders (administrator password), or remove the permission."""
         remove = bool(data.get("remove"))
         exe = str(data.get("exe") or "").replace(" (deleted)", "")
 
@@ -1619,7 +1620,7 @@ class ClamAVAntivirusApp:
         self.run_js(f"if(typeof openSection==='function')openSection({json.dumps(tab)},{json.dumps(key)});")
 
     def act_isolate(self, data):
-        """Isoler l'ordinateur (urgence, sans mot de passe) ou rétablir le réseau (administrateur en mode famille)."""
+        """Isolate the computer (emergency, no password) or restore the network (administrator in family mode)."""
         on = data.get("on", True) is not False
 
         def done(resp):
@@ -1635,7 +1636,7 @@ class ClamAVAntivirusApp:
         self.run_admin("isolate", {"on": on}, done)
 
     def _center_done(self, ok_key, refresh_types=(), with_checklist=True, **params):
-        """Réponse commune des actions du centre de sécurité : message, checklist recalculée, données relues."""
+        """Common response of the security centre actions: message, recomputed checklist, data reloaded."""
         def done(resp):
             if resp.get("ok"):
                 self.send_to_js("operationResult", {"status": "success", "op": "security", "message": self.T(ok_key, **{k: resp.get(k, v) for k, v in params.items()})})
@@ -1667,7 +1668,7 @@ class ClamAVAntivirusApp:
         self.send_to_js("securityData", {"type": "incident", "data": resp.get("incident") or {}, "available": bool(resp.get("ok"))})
 
     def act_privacy_allow(self, data):
-        """« Toujours autoriser » un programme sur la caméra / le micro (ou retirer l'autorisation depuis Programmes de confiance)."""
+        """"Always allow" a program on the camera / microphone (or remove the permission from Trusted programs)."""
         remove = bool(data.get("remove"))
         params = {"exe": str(data.get("exe") or ""), "comm": str(data.get("comm") or ""), "device": str(data.get("device") or ""), "remove": remove}
 
@@ -1679,7 +1680,7 @@ class ClamAVAntivirusApp:
         self.run_admin("privacy_allow", params, done)
 
     def act_guard_ack(self, data):
-        """« Ignorer » un certificat racine ou un détournement réseau voulu (ou le réafficher avec remove)."""
+        """"Ignore" an intended root certificate or network hijacking (or show it again with remove)."""
         remove = bool(data.get("remove"))
         group = "certs" if data.get("group") == "certs" else "redirects"
         params = {"group": group, "keys": [str(k) for k in (data.get("keys") or []) if k][:50], "remove": remove}
@@ -1697,11 +1698,11 @@ class ClamAVAntivirusApp:
         self.run_admin("guard_ack", params, done)
 
     def show_honeypot_alert(self, alert):
-        """Pot de miel : un appareil du réseau a touché un leurre (avertissement) ou balaie les ports / tente de se
-        connecter (danger). Boutons : bloquer l'appareil au pare-feu, l'ignorer (appareil connu), détails."""
+        """Honeypot: a device on the network touched a decoy (warning) or is scanning the ports / trying to
+        connect (danger). Buttons: block the device in the firewall, ignore it (known device), details."""
         T = self.T
         danger = alert.get("severity") == "danger"
-        info = alert.get("severity") == "info"            # appareil ignoré qui balaie à nouveau : simple information
+        info = alert.get("severity") == "info"            # ignored device scanning again: information only
         if not danger and not self.popups_enabled("info"):
             return
         ip = alert.get("ip") or "?"
@@ -1742,7 +1743,7 @@ class ClamAVAntivirusApp:
         self.window.present()
         self.run_js(f'if(typeof startScan==="function")startScan({json.dumps(path)});')
 
-    # ── Événements du service système ───────────────────────────────────
+    # ── System service events ───────────────────────────────────────────
     def on_daemon_event(self, ev):
         et = ev.get("event")
         if et == "connected":
@@ -1756,7 +1757,7 @@ class ClamAVAntivirusApp:
             if sys_status:
                 self.last_security_count = sys_status.get("security")
             self.send_status()
-            self.tray.update_status()   # couleur du tray dès la connexion (état global du service)
+            self.tray.update_status()   # tray colour as soon as connected (global state of the service)
         elif et == "disconnected":
             self.last_daemon_status = None
             if self.scan_source == "daemon":
@@ -1881,7 +1882,7 @@ class ClamAVAntivirusApp:
                                             "available": True})
             self.act_get_alerts({})
         elif et == "integrity" and ev.get("after_scan"):
-            # intégrité vérifiée au début d'une analyse complète : le bilan arrive avec la fin du scan
+            # integrity checked at the start of a full scan: the report arrives with the end of the scan
             self.send_to_js("securityData", {"type": "integrity", "data": ev.get("integrity") or {}, "available": True, "after_scan": True})
         elif et == "mail":
             self.send_to_js("mailStatus", {"mail": ev.get("mail"), "available": True})
@@ -1994,8 +1995,8 @@ class ClamAVAntivirusApp:
                                    (self.T("popup.btn.trust_usb"), None, lambda: self.usb_skip(usb, True))])
 
     def usb_skip(self, usb, trust=False):
-        """« Continuer sans analyse » / « Faire confiance à cette clé » : la clé est remise tout de suite, sans mot de
-        passe (sauf mode famille). Une clé de confiance n'est plus analysée à l'insertion (révocable dans Paramètres)."""
+        """"Continue without scanning" / "Trust this key": the key is handed over right away, without a
+        password (except in family mode). A trusted key is no longer scanned on insertion (revocable in Settings)."""
         def done(resp):
             if not resp.get("ok"):
                 self.send_to_js("operationResult", {"status": "error", "message": self.daemon_error(resp)})
@@ -2068,7 +2069,7 @@ class ClamAVAntivirusApp:
         if ev.get("removed"):
             return
         if ev.get("skipped"):
-            # « Continuer sans analyse » pendant l'analyse : montage privé libéré, la clé est montée pour l'utilisateur
+            # "Continue without scanning" during the scan: private mount released, the key is mounted for the user
             if usb.get("private_mount"):
                 threading.Thread(target=self.mount_for_user, args=(usb, True, False), daemon=True).start()
             return
@@ -2083,7 +2084,7 @@ class ClamAVAntivirusApp:
         else:
             self.popup("warning", self.T("popup.usb.done_title", name=name), message, timeout=15)
         if usb.get("private_mount") and status in ("clean", "infected"):
-            # Le service a démonté la clé : la monter maintenant pour l'utilisateur et l'ouvrir
+            # The service unmounted the key: mount it now for the user and open it
             threading.Thread(target=self.mount_for_user, args=(usb, True, False), daemon=True).start()
 
     def ask_usb(self, usb):
@@ -2103,14 +2104,14 @@ class ClamAVAntivirusApp:
         threading.Thread(target=self.mount_for_user, args=(usb, True, scan), daemon=True).start()
 
     def mount_for_user(self, usb, open_after=True, scan_after=False):
-        """Monte le support via udisks (droits de l'utilisateur) et l'ouvre dans le gestionnaire de fichiers."""
+        """Mounts the media via udisks (user rights) and opens it in the file manager."""
         devnode = usb.get("devnode", "")
         mountpoint = None
         try:
             r = subprocess.run(["udisksctl", "mount", "-b", devnode], capture_output=True, text=True, timeout=60)
             out = (r.stdout or "") + (r.stderr or "")
             if " at " in out:
-                mountpoint = out.rsplit(" at ", 1)[1].strip().rstrip(".").strip("`'\"")     # aussi « already mounted at `/media/…' »
+                mountpoint = out.rsplit(" at ", 1)[1].strip().rstrip(".").strip("`'\"")     # also "already mounted at `/media/…'"
         except Exception:  # noqa: BLE001
             pass
         if not mountpoint:
@@ -2178,7 +2179,7 @@ class ClamAVAntivirusApp:
             self.tray.update_status()
         return False
 
-    # ── Messages du frontend ────────────────────────────────────────────
+    # ── Messages from the frontend ──────────────────────────────────────
     def on_message_from_js(self, ucm, result):
         try:
             data = json.loads(result.get_js_value().to_string())
@@ -2227,12 +2228,12 @@ class ClamAVAntivirusApp:
         ClamAVBackend.update_database_pkexec(self.operation_callback)
 
     def scan_label(self, path):
-        """Libellé lisible d'une analyse : « Analyse rapide », « Système complet » ou le chemin."""
+        """Readable label of a scan: "Quick scan", "Whole system" or the path."""
         return self.T("scan.quick.label") if path == "quick" else (self.T("scan.full_system") if path == "/" else path)
 
     def act_scan(self, data):
         if data.get("path") == "quick":
-            # Analyse rapide : dossiers personnels et emplacements sensibles, par le service ; sans service, le dossier personnel
+            # Quick scan: home folders and sensitive locations, by the service; without the service, the home folder
             if self.scan_source or self.local_scan:
                 self.send_to_js("operationResult", {"status": "error", "message": self.T("msg.scan_running")})
                 return
@@ -2253,17 +2254,17 @@ class ClamAVAntivirusApp:
             self.send_to_js("operationResult", {"status": "error", "message": self.T("msg.not_found", path=path)})
             return
 
-        # 1) Service système (root, sans mot de passe)
+        # 1) System service (root, no password)
         if daemon_can_scan(path):
             resp = DaemonClient.request("scan", path=path, resume=resume, integrity=bool(data.get("integrity")) and full,
                                         nocache=bool(data.get("nocache")))
             if resp.get("ok"):
-                return  # l'événement job_started déclenchera scanStarted
+                return  # the job_started event will trigger scanStarted
             if not resp.get("unavailable"):
                 self.send_to_js("operationResult", {"status": "error", "message": self.daemon_error(resp)})
                 return
 
-        # 2) Repli local : pkexec pour le scan complet, sinon droits de l'utilisateur
+        # 2) Local fallback: pkexec for the full scan, otherwise the user's rights
         use_sudo = full
         self.scan_source = "local"
         self.local_scan = LocalScan(path, self.on_local_scan_event, resume=resume, use_sudo=use_sudo)
@@ -2365,7 +2366,7 @@ class ClamAVAntivirusApp:
         return path
 
     def act_save_text(self, data):
-        """Export (journal CSV/JSON, rapport HTML) : boîte « Enregistrer sous » native, écriture avec les droits de l'utilisateur."""
+        """Export (CSV/JSON log, HTML report): native "Save as" dialog, written with the user's rights."""
         name = os.path.basename(str(data.get("filename") or "dukiwi-shield.txt"))
         ext = os.path.splitext(name)[1] or ".txt"
         path = self._ask_save_path(name, "*" + ext, ext.lstrip(".").upper())
@@ -2379,7 +2380,7 @@ class ClamAVAntivirusApp:
             self.send_to_js("operationResult", {"status": "error", "message": str(e)})
 
     def act_save_report_pdf(self, data):
-        """Rapport de sécurité en PDF : le HTML composé par l'interface est rendu hors écran par WebKit puis imprimé dans un fichier."""
+        """Security report as PDF: the HTML composed by the interface is rendered off-screen by WebKit then printed to a file."""
         path = self._ask_save_path(os.path.basename(str(data.get("filename") or "dukiwi-shield-report.pdf")), "*.pdf", "PDF")
         if not path:
             return
@@ -2420,7 +2421,7 @@ class ClamAVAntivirusApp:
         GLib.timeout_add(30000, lambda: (finished(None), False)[1])
 
     def act_pick_folder(self, data):
-        """Sélecteur de dossier natif GTK (chemin personnalisé, restauration)."""
+        """Native GTK folder chooser (custom path, restore)."""
         purpose = data.get("purpose", "scan")
         dialog = Gtk.FileChooserDialog(
             title=self.T("dialog.choose_folder"), parent=self.window,
@@ -2457,9 +2458,9 @@ class ClamAVAntivirusApp:
         save_state({"disclaimer_accepted": DISCLAIMER_VERSION, "disclaimer_date": now_iso()})
         self.send_status()
 
-    # ── Télémétrie : consentement explicite à la première utilisation ──
+    # ── Telemetry: explicit consent on first use ──
     def act_telemetry_send(self, _data):
-        """« Envoyer la télémétrie maintenant » : hors du fil principal (requête HTTP côté service)."""
+        """"Send telemetry now": off the main thread (HTTP request on the service side)."""
         self.send_to_js("operationResult", {"status": "info", "op": "settings", "message": self.T("msg.telemetry_sending")})
 
         def worker():
@@ -2477,7 +2478,7 @@ class ClamAVAntivirusApp:
         threading.Thread(target=worker, daemon=True).start()
 
     def act_telemetry_preview(self, _data):
-        """Charge utile exacte que le service enverrait (sans envoi), pour la montrer avant de décider."""
+        """Exact payload the service would send (without sending), to show it before deciding."""
         def worker():
             resp = daemon_request("telemetry_preview", timeout=30)
             GLib.idle_add(self.send_to_js, "telemetryPreview",
@@ -2485,7 +2486,7 @@ class ClamAVAntivirusApp:
         threading.Thread(target=worker, daemon=True).start()
 
     def act_telemetry_consent(self, data):
-        """Réponse à la question posée en plein écran : oui/non, mémorisée pour ne plus la poser."""
+        """Answer to the question asked full screen: yes/no, remembered so it is not asked again."""
         accepted = bool(data.get("accepted"))
         save_state({"telemetry_answered": now_iso(), "telemetry_consent": accepted})
 
@@ -2496,7 +2497,7 @@ class ClamAVAntivirusApp:
             return False
         self.run_admin("set_settings", {"settings": {"telemetry": accepted}}, done)
 
-    # ── « C'est moi » : programmes / entrées approuvés ─────────────────
+    # ── "It's me": approved programs / entries ─────────────────────────
     def trust_program(self, exe, comm=""):
         exe = (exe or "").replace(" (deleted)", "").strip()
         if not exe:
@@ -2518,7 +2519,7 @@ class ClamAVAntivirusApp:
         self.trust_program(data.get("exe"), data.get("comm") or "")
 
     def act_forget_habit(self, data):
-        """Oublier une habitude apprise (rafale déclarée normale) : elle sera de nouveau signalée."""
+        """Forget a learned habit (burst declared normal): it will be reported again."""
         def done(resp):
             if resp.get("ok"):
                 self.send_to_js("operationResult", {"status": "success", "message": self.T("msg.habit_forgotten")})
@@ -2545,7 +2546,7 @@ class ClamAVAntivirusApp:
                                             available=ok))
 
     def act_acknowledge_vuln(self, data):
-        """« Ignorer » des failles sans correctif (ou les réafficher avec remove) : elles ne comptent plus dans l'état."""
+        """"Ignore" vulnerabilities without a fix (or show them again with remove): they no longer count in the state."""
         remove = bool(data.get("remove"))
         params = {"remove": remove}
         if data.get("all_open"):
@@ -2565,7 +2566,7 @@ class ClamAVAntivirusApp:
         self.run_admin("acknowledge_vuln", params, done)
 
     def act_acknowledge_integrity(self, data):
-        """« C'est normal » sur un avertissement d'intégrité : approuvé (ou réactivé avec remove)."""
+        """"That's normal" on an integrity warning: approved (or reactivated with remove)."""
         remove = bool(data.get("remove"))
 
         def done(resp):
@@ -2579,7 +2580,7 @@ class ClamAVAntivirusApp:
         self.run_admin("acknowledge_integrity", {"tool": str(data.get("tool") or ""), "text": str(data.get("text") or ""), "remove": remove}, done)
 
     def act_acknowledge_alert(self, data):
-        """« C'est OK » sur une alerte grave de la liste : elle ne tient plus le bouclier en rouge (remove : la recompter)."""
+        """"It's OK" on a serious alert of the list: it no longer keeps the shield red (remove: count it again)."""
         remove = bool(data.get("remove"))
 
         def done(resp):
@@ -2593,9 +2594,9 @@ class ClamAVAntivirusApp:
         self.run_admin("acknowledge_alert", {"time": str(data.get("time") or ""), "kind": str(data.get("kind") or ""),
                                              "title": data.get("title"), "remove": remove}, done)
 
-    # ── Pot de miel : bloquer / ignorer un appareil, proposer une protection avancée ──
+    # ── Honeypot: block / ignore a device, offer an advanced protection ──
     def _honeypot_action(self, cmd, data, ok_key, remove_key=None):
-        """Commande du pot de miel hors du fil principal (ufw / firewall-cmd peuvent dépasser 3 s), puis rechargement."""
+        """Honeypot command off the main thread (ufw / firewall-cmd can exceed 3 s), then reload."""
         ip = str(data.get("ip") or "").strip()
         remove = bool(data.get("remove"))
         if not ip:
@@ -2612,12 +2613,12 @@ class ClamAVAntivirusApp:
             else:
                 self.send_to_js("operationResult", {"status": "error", "op": "security", "message": self.daemon_error(resp)})
             self.act_get_security_data({"type": "honeypot"})
-            self.act_get_alerts({})                      # « Ignorer » depuis la liste des alertes : l'alerte passe en bleu
+            self.act_get_alerts({})                      # "Ignore" from the alert list: the alert turns blue
             self.refresh_daemon_status_now()
             return False
         threading.Thread(target=worker, daemon=True).start()
 
-    # ── Contrôle des liens : listes, sites autorisés ──
+    # ── Link check: lists, allowed sites ──
     def act_urlguard_refresh(self, _data):
         def worker():
             resp = daemon_request("urlguard_refresh", timeout=30)
@@ -2657,8 +2658,8 @@ class ClamAVAntivirusApp:
         self._honeypot_action("honeypot_forget", data, "msg.honeypot_forgotten")
 
     def act_feature_answer(self, data):
-        """Réponse à la proposition d'une protection avancée (pot de miel…) : activer ou non, mémorisée côté service.
-        Jamais de mot de passe pour activer ; la désactivation reste administrateur en mode famille."""
+        """Answer to the offer of an advanced protection (honeypot…): enable or not, remembered on the service side.
+        Never a password to enable; disabling still requires an administrator in family mode."""
         feature = str(data.get("feature") or "")
         enabled = bool(data.get("enabled"))
 
@@ -2676,7 +2677,7 @@ class ClamAVAntivirusApp:
         self.run_admin("feature_answer", {"feature": feature, "enabled": enabled}, done)
 
     def act_acknowledge_sudoers(self, data):
-        """« Ignorer » une règle sudo NOPASSWD voulue (ou la réafficher depuis Programmes de confiance)."""
+        """"Ignore" an intended sudo NOPASSWD rule (or show it again from Trusted programs)."""
         remove = bool(data.get("remove"))
         params = {"remove": remove, "path": str(data.get("path") or "")} if remove else {}
 
@@ -2693,7 +2694,7 @@ class ClamAVAntivirusApp:
         self.run_admin("acknowledge_sudoers", params, done)
 
     def act_acknowledge_port(self, data):
-        """« Ignorer » un port joignable voulu (ou le réafficher avec remove) : la checklist ne le compte plus."""
+        """"Ignore" an intended reachable port (or show it again with remove): the checklist no longer counts it."""
         remove = bool(data.get("remove"))
         params = {"remove": remove}
         if data.get("all_reachable"):
@@ -2730,7 +2731,7 @@ class ClamAVAntivirusApp:
             return False
         self.run_admin("acknowledge_persistence", {"key": data.get("key") or "", "remove": remove}, done)
 
-    # ── Bonnes pratiques : leçons lues ──────────────────────────────────
+    # ── Good practices: lessons read ────────────────────────────────────
     def act_lesson_read(self, data):
         lid = str(data.get("id") or "")
         read = [x for x in (load_state().get("read_lessons") or []) if x != lid]
@@ -2744,7 +2745,7 @@ class ClamAVAntivirusApp:
         save_state({"read_lessons": [x for x in (load_state().get("read_lessons") or []) if x != lid]})
         self.send_status()
 
-    # ── Sauvegardes (disponibilité) ────────────────────────────────────
+    # ── Backups (availability) ─────────────────────────────────────────
     def backup_summary(self):
         try:
             return backup.summary(backup.load_state())
@@ -2752,8 +2753,8 @@ class ClamAVAntivirusApp:
             return {"state": "none", "last": None, "destinations": 0}
 
     def report_backup_state(self, bk):
-        """État des sauvegardes de fichiers de cet utilisateur transmis au service, qui le compte dans le score de
-        sécurité : à chaque changement, et au plus tard toutes les 6 heures (hors du fil principal)."""
+        """File backup state of this user passed to the service, which counts it in the security score:
+        on every change, and at the latest every 6 hours (off the main thread)."""
         key = (bk.get("state"), bk.get("last"))
         now = time.time()
         if bk.get("state") not in ("ok", "none", "missing", "old") or getattr(self, "_backup_report_busy", False):
@@ -2794,7 +2795,7 @@ class ClamAVAntivirusApp:
                 "timeshift_test": ((ds or {}).get("state") or {}).get("timeshift_test")}
 
     def act_backup_restore_test(self, data, auto=False):
-        """Test de restauration : quelques fichiers du dernier instantané restaurés dans un dossier temporaire et vérifiés."""
+        """Restore test: a few files of the last snapshot restored to a temporary folder and verified."""
         if (self.backup_runner and self.backup_runner.is_alive()) or (self.restore_test_thread and self.restore_test_thread.is_alive()):
             if not auto:
                 self.send_to_js("operationResult", {"status": "error", "message": self.T("msg.backup_running")})
@@ -2836,7 +2837,7 @@ class ClamAVAntivirusApp:
 
     def act_backup_status(self, data):
         if data.get("refresh"):
-            # Relevé complet (timeshift --list peut durer plus d'une minute) : hors du fil principal, délai large
+            # Full survey (timeshift --list can take more than a minute): off the main thread, generous timeout
             def worker():
                 resp = daemon_request("backup_status", timeout=180, refresh=True)
                 if resp.get("ok") and isinstance(self.last_daemon_status, dict):
@@ -2912,7 +2913,7 @@ class ClamAVAntivirusApp:
         self._start_backup(dest, auto=False)
 
     def act_backup_quick(self, data):
-        """Vue simple : sauvegarder sur un support détecté (ajouté comme destination s'il est nouveau)."""
+        """Simple view: back up to a detected medium (added as a destination if it is new)."""
         drive = data.get("drive") or {}
         st = backup.load_state()
         dest = next((d for d in st["destinations"] if d.get("type") == "local" and drive.get("uuid") and d.get("uuid") == drive.get("uuid")), None)
@@ -3025,8 +3026,8 @@ class ClamAVAntivirusApp:
                 subprocess.Popen(["xdg-open", os.path.join(target, backup.BACKUP_DIRNAME, backup._hostuser())])
 
     def act_timeshift_enable(self, _data):
-        """Activation (ou planification automatique) : hors du fil principal, délai large — la réponse est immédiate
-        depuis 1.18.7 mais le service peut être occupé (mesure du système, instantané en cours)."""
+        """Activation (or automatic scheduling): off the main thread, generous timeout — the answer is immediate
+        since 1.18.7 but the service may be busy (system measurement, snapshot in progress)."""
         self.send_to_js("operationResult", {"status": "info", "message": self.T("msg.timeshift_enabling")})
 
         def worker():
@@ -3042,7 +3043,7 @@ class ClamAVAntivirusApp:
         return False
 
     def timeshift_enable_result(self, resp):
-        """Résultat d'« Activer Timeshift » (immédiat, ou différé après la mesure du système par le service)."""
+        """Result of "Enable Timeshift" (immediate, or deferred after the system measurement by the service)."""
         T = self.T
         if resp.get("ok"):
             self.send_to_js("operationResult", {"status": "success", "message": T("msg.timeshift_enabled")})
@@ -3066,8 +3067,8 @@ class ClamAVAntivirusApp:
                         "backup_check": ("msg.backup_ignored", "msg.backup_unignored")}
 
     def act_ignore_check(self, data):
-        """« Ignorer » / « Réafficher » un contrôle de disponibilité (état de Timeshift, sauvegarde des fichiers) :
-        réglage du service à False/True, sans mot de passe sauf en mode famille."""
+        """"Ignore" / "Show again" an availability check (Timeshift state, file backup):
+        service setting set to False/True, no password except in family mode."""
         setting = str(data.get("setting") or "")
         if setting not in self.IGNORABLE_CHECKS:
             return
@@ -3087,7 +3088,7 @@ class ClamAVAntivirusApp:
         self.act_ignore_check({"setting": "timeshift_check", "ignore": data.get("ignore", True)})
 
     def refresh_daemon_status_now(self):
-        """Relit le statut du service (réglages, état global) et rafraîchit la vue et l'onglet Sauvegardes."""
+        """Reloads the service status (settings, overall state) and refreshes the view and the Backups tab."""
         def worker():
             resp = DaemonClient.request("status")
             if resp.get("ok"):
@@ -3130,14 +3131,14 @@ class ClamAVAntivirusApp:
         return False
 
     def backup_scheduler(self):
-        """Sauvegarde automatique (quotidienne/hebdomadaire/mensuelle) dès qu'une destination est disponible."""
+        """Automatic backup (daily/weekly/monthly) as soon as a destination is available."""
         try:
             if self.backup_runner and self.backup_runner.is_alive():
                 return True
             st = backup.load_state()
             if not backup.summary(st).get("due"):
                 if backup.restore_test_due(st) and not (self.restore_test_thread and self.restore_test_thread.is_alive()):
-                    self.act_backup_restore_test({}, auto=True)        # test mensuel dès qu'une destination est là
+                    self.act_backup_restore_test({}, auto=True)        # monthly test as soon as a destination is there
                 return True
             drives = backup.detect_drives()
             for dest in st["destinations"]:
@@ -3201,7 +3202,7 @@ class ClamAVAntivirusApp:
         return False
 
     def relative(self, iso):
-        """« il y a N j / N h » à partir d'une date ISO."""
+        """"N d / N h ago" from an ISO date."""
         try:
             delta = datetime.now() - datetime.fromisoformat(str(iso)[:19])
         except ValueError:
@@ -3213,7 +3214,7 @@ class ClamAVAntivirusApp:
     def act_show_report(self, _data):
         self.maybe_weekly_report(force=True)
 
-    # ── Fuites de données (HIBP) ────────────────────────────────────────
+    # ── Data leaks (HIBP) ───────────────────────────────────────────────
     def act_hibp_password(self, data):
         pw = data.get("password") or ""
 
@@ -3278,7 +3279,7 @@ class ClamAVAntivirusApp:
         def worker():
             results, err_all = {}, ""
             for email in emails:
-                breaches, err = extras.check_email(email, api_key=key)   # sans clé : base gratuite XposedOrNot (Dukiwi n'a pas de clé HIBP)
+                breaches, err = extras.check_email(email, api_key=key)   # without a key: free XposedOrNot database (Dukiwi has no HIBP key)
                 results[email] = {"breaches": breaches, "error": err, "checked": now_iso()}
                 if err and err != "":
                     err_all = err
@@ -3307,7 +3308,7 @@ class ClamAVAntivirusApp:
                        timeout=40, buttons=[(self.T("popup.btn.details"), "primary", lambda: self.show_tab("security"))])
         return False
 
-    # ── Applications hors dépôts ────────────────────────────────────────
+    # ── Applications outside the repositories ───────────────────────────
     def act_get_apps(self, _data):
         def worker():
             inv = extras.inventory_apps()
@@ -3323,7 +3324,7 @@ class ClamAVAntivirusApp:
         self.send_to_js("operationResult", {"status": "success", "message": self.T("msg.persistence_acknowledged" if not data.get("remove") else "msg.program_untrusted")})
         self.act_get_apps({})
 
-    # ── Coffre chiffré (gocryptfs) ──────────────────────────────────────
+    # ── Encrypted vault (gocryptfs) ─────────────────────────────────────
     def _password_dialog(self, title, confirm=False):
         dlg = Gtk.Dialog(title=title, transient_for=self.window, modal=True)
         dlg.add_button(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL)
@@ -3386,7 +3387,7 @@ class ClamAVAntivirusApp:
             return
         st = backup.load_state()
         if extras.VAULT_CIPHER not in st["sources"]:
-            st["sources"].append(extras.VAULT_CIPHER)       # le coffre chiffré fait partie des sauvegardes
+            st["sources"].append(extras.VAULT_CIPHER)       # the encrypted vault is part of the backups
             backup.save_state(st)
         self._vault_run(lambda: extras.vault_create(pw), "msg.vault_created")
 
@@ -3411,7 +3412,7 @@ class ClamAVAntivirusApp:
         else:
             self.act_vault_open({})
 
-    # ── Restauration guidée ─────────────────────────────────────────────
+    # ── Guided restore ──────────────────────────────────────────────────
     def act_backup_snapshots(self, data):
         st = backup.load_state()
         dest = next((d for d in st["destinations"] if d.get("id") == data.get("dest_id")), None)
@@ -3475,7 +3476,7 @@ class ClamAVAntivirusApp:
             resp = DaemonClient.request("firewall_profile", profile="public")
             if not resp.get("ok"):
                 self.send_to_js("operationResult", {"status": "error", "message": self.daemon_error(resp)})
-            # sauvegarde si un support est disponible
+            # backup if a medium is available
             st = backup.load_state()
             started = False
             drives = backup.detect_drives()
@@ -3484,7 +3485,7 @@ class ClamAVAntivirusApp:
                 if avail and not (self.backup_runner and self.backup_runner.is_alive()):
                     started = self._start_backup(dest, auto=True)
                     break
-            # mises à jour
+            # updates
             sysst = (ds or {}).get("system_status") or {}
             if sysst.get("upgradable"):
                 DaemonClient.request("system_upgrade")
@@ -3607,7 +3608,7 @@ class ClamAVAntivirusApp:
         return False
 
     def act_get_security_data(self, data):
-        """Données du centre de sécurité : vulns, checklist, intégrité, persistance, connexions, mise à jour."""
+        """Security centre data: vulns, checklist, integrity, persistence, connections, update."""
         kind = data.get("type")
         cmd = {"vulns": "vulns", "checklist": "checklist", "integrity": "integrity", "persistence": "persistence",
                "connections": "connections", "app_update": "check_update", "honeypot": "honeypot", "urlguard": "urlguard",
@@ -3680,7 +3681,7 @@ class ClamAVAntivirusApp:
         self.act_check_status({})
 
     def act_firmware_update(self, _data):
-        """« Régler » sur le contrôle Firmware : fwupdmgr update par le service (administrateur)."""
+        """"Fix" on the Firmware check: fwupdmgr update via the service (administrator)."""
         def done(resp):
             if resp.get("ok"):
                 self.send_to_js("operationResult", {"status": "info", "message": self.T("msg.firmware_updating")})
@@ -3690,7 +3691,7 @@ class ClamAVAntivirusApp:
         self.run_admin("firmware_update", {}, done)
 
     def act_system_upgrade(self, _data):
-        """« Mettre à jour » : apt update + apt upgrade par le service (les paquets décalés/retenus restent en attente)."""
+        """"Update": apt update + apt upgrade via the service (phased/held-back packages stay pending)."""
         def done(resp):
             if resp.get("ok"):
                 self.send_to_js("operationResult", {"status": "info", "op": "system", "message": self.T("msg.system_upgrading")})
@@ -3699,13 +3700,13 @@ class ClamAVAntivirusApp:
             return False
         self.run_admin("system_upgrade", {}, done)
 
-    # ── Mises à jour automatiques : réglages utilisateur (Spices Cinnamon, Flatpak) ──
+    # ── Automatic updates: user settings (Cinnamon Spices, Flatpak) ──
     MINT_UPDATES_SCHEMA = "com.linuxmint.updates"
     _auto_updates_cache = (0.0, None)
 
     def auto_updates_user(self, force=False):
-        """Réglages utilisateur du Gestionnaire de mises à jour de Mint : {spices: bool|None, flatpak: bool|None}
-        (None = outil absent), lus par gsettings et gardés 60 s."""
+        """User settings of the Mint Update Manager: {spices: bool|None, flatpak: bool|None}
+        (None = tool missing), read via gsettings and cached for 60 s."""
         ts, cached = self._auto_updates_cache
         if cached is not None and not force and time.time() - ts < 60:
             return cached
@@ -3725,8 +3726,8 @@ class ClamAVAntivirusApp:
         return result
 
     def enable_user_auto_updates(self):
-        """Active les mises à jour automatiques des Spices Cinnamon et des Flatpak quand ces outils existent ;
-        retourne les clés activées."""
+        """Enables automatic updates of Cinnamon Spices and Flatpaks when those tools exist;
+        returns the keys enabled."""
         done = []
         current = self.auto_updates_user(force=True)
         for key, gkey in (("spices", "auto-update-cinnamon-spices"), ("flatpak", "auto-update-flatpaks")):
@@ -3742,7 +3743,7 @@ class ClamAVAntivirusApp:
         return done
 
     def act_auto_updates_enable(self, _data):
-        """« Activer » : automatisation des mises à jour système par le service, puis Spices et Flatpak pour l'utilisateur."""
+        """"Enable": system update automation via the service, then Spices and Flatpak for the user."""
         def worker():
             resp = daemon_request("auto_updates_enable", timeout=120)
             GLib.idle_add(done, resp)
@@ -3765,7 +3766,7 @@ class ClamAVAntivirusApp:
 
     # ── Durcissement (recommandations Lynis) ──
     def act_harden_apply(self, data):
-        """Application par le service en tâche de fond ; le résultat arrive par l'événement hardening_done."""
+        """Applied by the service in the background; the result arrives through the hardening_done event."""
         params = {"tests": [str(t) for t in (data.get("tests") or [])], "all": bool(data.get("all"))}
         self.run_admin("harden_apply", params, self._harden_started)
 
@@ -3797,8 +3798,8 @@ class ClamAVAntivirusApp:
         self.request_quit()
 
     def request_quit(self):
-        """Fermer le bouclier est réservé à un administrateur : authentification pkexec, puis arrêt propre du service
-        utilisateur (sinon il serait relancé) et information du service système (pas de relance dans cette session)."""
+        """Closing the shield is reserved for an administrator: pkexec authentication, then a clean stop of the user
+        service (otherwise it would be restarted) and notice to the system service (no restart in this session)."""
         if getattr(self, "_quitting", False):
             return
         self._quitting = True
@@ -3829,7 +3830,7 @@ class ClamAVAntivirusApp:
         GLib.timeout_add(300, Gtk.main_quit)
         return False
 
-    # ── Callbacks des opérations pkexec ─────────────────────────────────
+    # ── Callbacks of the pkexec operations ──────────────────────────────
     def operation_callback(self, status, key_or_text, params):
         if status == "progress":
             if self.updating:
@@ -3931,8 +3932,8 @@ class ClamAVAntivirusApp:
             "integrity_summary": (ds or {}).get("integrity_summary"),
             "honeypot_summary": (ds or {}).get("honeypot_summary"),
             "urlguard_summary": (ds or {}).get("urlguard_summary"),
-            # Protections à proposer au démarrage (réponse mémorisée par le service). Le pot de miel est actif par
-            # défaut (décision 2026-10-15) : liste vide, mécanisme conservé pour de futures protections.
+            # Protections to offer at startup (answer remembered by the service). The honeypot is active by
+            # default (decision 2026-10-15): empty list, mechanism kept for future protections.
             "features_to_ask": [f for f in FEATURES_PROPOSED if ds is not None and not dstate.get(f"{f}_answered")],
             "persistence_summary": (ds or {}).get("persistence_summary"),
             "schedule": {
@@ -3960,15 +3961,15 @@ def try_activate_existing():
         return False
 
 
-# Nom propre à Dukiwi Shield : le dossier de données repris d'une version précédente peut contenir son ancien verrou,
-# encore tenu par un bouclier fantôme (fichiers du paquet déjà effacés), qui bloquerait sinon le démarrage
+# Name specific to Dukiwi Shield: the data folder carried over from a previous version may contain its old lock,
+# still held by a ghost shield (package files already deleted), which would otherwise block startup
 INSTANCE_LOCK = os.path.join(DATA_DIR, "tray.lock")
 _instance_lock_fd = None
 
 
 def acquire_instance_lock():
-    """Verrou exclusif par utilisateur : deux lancements simultanés (démarrage automatique du bureau + relance par le
-    service système) ne donnent plus deux boucliers et des notifications en double. Le verrou vit avec le processus."""
+    """Exclusive per-user lock: two simultaneous launches (desktop autostart + restart by the system service)
+    no longer give two shields and duplicate notifications. The lock lives with the process."""
     global _instance_lock_fd
     try:
         os.makedirs(DATA_DIR, exist_ok=True)
@@ -4009,7 +4010,7 @@ def start_instance_server(app):
 
 def main():
     if not acquire_instance_lock():
-        # Une instance tourne déjà (ou démarre à la même seconde) : on la fait apparaître et on s'efface
+        # An instance is already running (or starting in the same second): bring it up and step aside
         for _ in range(10):
             if try_activate_existing():
                 break

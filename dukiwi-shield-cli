@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Dukiwi Shield — commande pour le terminal (serveurs, utilisateurs avancés, scripts).
+Dukiwi Shield — terminal command (servers, advanced users, scripts).
 
-    dukiwi-shield status | quick-scan | scan DOSSIER | full-scan | update | isolate | restore-network
-                  alerts [-n N] | checklist | journal [--days N] | version | help        (--json : sortie brute)
+    dukiwi-shield status | quick-scan | scan FOLDER | full-scan | update | isolate | restore-network
+                  alerts [-n N] | checklist | journal [--days N] | version | help        (--json: raw output)
 
-Sans argument, `dukiwi-shield` ouvre l'application. Les commandes passent par le service système (sans mot de passe,
-comme l'interface) ; une action réservée à l'administrateur se lance avec sudo.
+Without an argument, `dukiwi-shield` opens the application. Commands go through the system service (no password,
+like the interface); an action reserved for the administrator is run with sudo.
 (c) 2026 Dukiwi SA - Estavayer-le-Lac
 """
 
@@ -81,7 +81,7 @@ def cmd_status(as_json):
 
 
 def wait_job(job_id, kind):
-    """Suit la tâche jusqu'à la fin (barre de progression sur une ligne), puis affiche le résultat."""
+    """Follows the task until it ends (progress bar on one line), then shows the result."""
     last = ""
     while True:
         st = request("status", timeout=30)

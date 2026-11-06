@@ -8,7 +8,7 @@
 </head>
 <body class="mode-simple">
     <!-- ═══════════════════════════════════════════════════════════════════ -->
-    <!-- VUE SIMPLE (plein écran, rassurante)                               -->
+    <!-- SIMPLE VIEW (full screen, reassuring)                              -->
     <!-- ═══════════════════════════════════════════════════════════════════ -->
     <div class="simple-view" id="simpleView" data-state="ok">
         <div class="simple-top">
@@ -247,7 +247,7 @@
             <button class="btn btn-sm" onclick="confirmIsolate(false)" data-i18n="isolate.restore">Rétablir le réseau</button>
         </div>
 
-        <!-- ── BARRE DE SCAN STICKY (visible sur tous les onglets) ──── -->
+        <!-- ── STICKY SCAN BAR (visible on all tabs) ──────────────── -->
         <div class="scan-topbar" id="scanTopbar" hidden>
             <div class="scan-topbar-bar">
                 <div class="scan-topbar-fill" id="scanTopbarFill"></div>
@@ -332,7 +332,7 @@
                     <button class="btn btn-primary" onclick="resumeScan()" data-i18n="dash.resume.btn">Reprendre</button>
                 </div>
 
-                <!-- Première utilisation -->
+                <!-- First use -->
                 <div class="card card-initial-scan" id="cardInitialScan" hidden>
                     <div class="initial-scan-icon">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -558,7 +558,7 @@
                 </div>
             </div>
 
-            <!-- Résultats -->
+            <!-- Results -->
             <div class="scan-results" id="scanResults" hidden>
                 <div class="scan-results-header">
                     <h4 id="scanResultsTitle"></h4>
@@ -622,7 +622,7 @@
                 </div>
             </div>
 
-            <!-- Chemin personnalisé -->
+            <!-- Custom path -->
             <div class="custom-scan">
                 <h4 data-i18n="scan.custom.title">Chemin personnalisé</h4>
                 <div class="input-row">
@@ -636,7 +636,7 @@
                 </div>
             </div>
 
-            <!-- Console détaillée -->
+            <!-- Detailed console -->
             <div class="console-box" id="scanConsole" hidden>
                 <div class="console-header">
                     <span class="console-title">
@@ -698,7 +698,7 @@
             </div>
         </section>
 
-        <!-- ── ÉTAT DU SYSTÈME ─────────────────────────────────────── -->
+        <!-- ── SYSTEM STATUS ───────────────────────────────────────── -->
         <section class="tab-panel" id="tab-system">
             <div class="page-header">
                 <h1 data-i18n="system.title">État du système</h1>
@@ -796,7 +796,7 @@
             </div>
         </section>
 
-        <!-- ── CENTRE DE SÉCURITÉ ──────────────────────────────────── -->
+        <!-- ── SECURITY CENTRE ─────────────────────────────────────── -->
         <section class="tab-panel" id="tab-security">
             <div class="page-header">
                 <h1 data-i18n="security.title">Sécurité</h1>
@@ -1028,7 +1028,7 @@
             <div class="awareness-list" id="awarenessList"></div>
         </section>
 
-        <!-- ── SAUVEGARDES (disponibilité) ─────────────────────────── -->
+        <!-- ── BACKUPS (availability) ──────────────────────────────── -->
         <section class="tab-panel" id="tab-backup">
             <div class="page-header">
                 <h1 data-i18n="backup.title">Sauvegardes</h1>
@@ -1243,7 +1243,7 @@
             </div>
         </section>
 
-        <!-- ── PARAMÈTRES ──────────────────────────────────────────── -->
+        <!-- ── SETTINGS ────────────────────────────────────────────── -->
         <section class="tab-panel" id="tab-settings">
             <div class="page-header">
                 <h1 data-i18n="settings.title">Paramètres</h1>

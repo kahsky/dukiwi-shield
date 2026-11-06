@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Dukiwi Shield — sauvegarde des fichiers de l'utilisateur (disponibilité, le « A » du triptyque CIA).
+Dukiwi Shield — backup of the user's files (availability, the "A" of the CIA triad).
 
-Tourne avec les droits de l'utilisateur (aucun root nécessaire) :
-- clé USB / disque externe / dossier : instantanés rsync incrémentaux (--link-dest, historique conservé
-  avec la rétention choisie) ; sur FAT32/exFAT/NTFS, miroir simple (pas de liens durs) ;
-- cloud : rclone (S3 compatible, Infomaniak Swiss Backup S3 ou Swift, kDrive WebDAV, ou un remote
-  rclone déjà configuré), synchronisation avec archivage des fichiers remplacés (--backup-dir).
-L'état (destinations, contenu, planification, historique) vit dans ~/.local/share/dukiwi-shield/backup.json.
-Les instantanés système restent l'affaire de Timeshift (lu par le service, voir dukiwi-shield-daemon.py).
+Runs with the user's rights (no root needed):
+- USB key / external disk / folder: incremental rsync snapshots (--link-dest, history kept
+  with the chosen retention); on FAT32/exFAT/NTFS, plain mirror (no hard links);
+- cloud: rclone (S3 compatible, Infomaniak Swiss Backup S3 or Swift, kDrive WebDAV, or an already
+  configured rclone remote), synchronisation with archiving of the replaced files (--backup-dir).
+The state (destinations, content, schedule, history) lives in ~/.local/share/dukiwi-shield/backup.json.
+System snapshots remain Timeshift's job (read by the service, see dukiwi-shield-daemon.py).
 """
 
 import json
@@ -31,11 +31,11 @@ PORTABLE_FS = ("vfat", "exfat", "ntfs", "ntfs3", "fuseblk", "msdos", "fat32")
 DEFAULT_EXCLUDES = [".cache", ".local/share/Trash", ".Trash-*", "node_modules", "__pycache__", "*.tmp", "*.part",
                     "*.crdownload", ".thumbnails", "lost+found", ".npm", ".cargo/registry", "Cache", "CachedData"]
 SCHEDULE_DAYS = {"daily": 1, "weekly": 7, "monthly": 30, "manual": None}
-MAX_AGE_OK_DAYS = 7          # au-delà : « ancienne » (orange)
+MAX_AGE_OK_DAYS = 7          # beyond: "old" (orange)
 HISTORY_MAX = 40
 
 PROVIDERS = {
-    # kind : (type rclone, champs demandés dans l'interface, paramètres fixes)
+    # kind: (rclone type, fields asked for in the interface, fixed parameters)
     "s3": ("s3", ["endpoint", "access_key", "secret_key", "bucket"], {"provider": "Other", "env_auth": "false", "acl": "private"}),
     "infomaniak_s3": ("s3", ["endpoint", "access_key", "secret_key", "bucket"], {"provider": "Other", "env_auth": "false", "acl": "private", "region": "other-v2-signature"}),
     "infomaniak_swift": ("swift", ["auth", "user", "key", "container"], {"auth_version": "3", "domain": "default", "tenant_domain": "default"}),
@@ -43,7 +43,7 @@ PROVIDERS = {
 }
 
 
-# ─── État ────────────────────────────────────────────────────────────────────
+# ─── State ───────────────────────────────────────────────────────────────────
 def _defaults():
     return {"destinations": [], "sources": default_sources(), "excludes": list(DEFAULT_EXCLUDES),
             "retention": 8, "schedule": "weekly", "history": [], "last_ok": None, "last_dest": ""}
@@ -70,7 +70,7 @@ def save_state(st):
 
 
 def default_sources():
-    """Dossiers XDG de l'utilisateur (Documents, Images, Vidéos, Musique, Bureau) qui existent."""
+    """The user's XDG folders (Documents, Pictures, Videos, Music, Desktop) that exist."""
     home = os.path.expanduser("~")
     dirs = {}
     try:
@@ -108,7 +108,7 @@ def _run(cmd, timeout=60, **kw):
 
 # ─── Supports amovibles ─────────────────────────────────────────────────────
 def detect_drives():
-    """Clés USB, disques externes et autres volumes montés utilisables comme destination."""
+    """USB keys, external disks and other mounted volumes usable as a destination."""
     r = _run(["lsblk", "-J", "-o", "NAME,PATH,MOUNTPOINTS,LABEL,SIZE,RM,TRAN,FSTYPE,TYPE,HOTPLUG,MODEL,VENDOR,UUID"], timeout=20)
     try:
         tree = json.loads(r.stdout or "{}").get("blockdevices") or []
@@ -166,7 +166,7 @@ def rclone_remotes():
 
 
 def cloud_configure(kind, name, params):
-    """Crée (ou remplace) un remote rclone. Retourne (ok, détail)."""
+    """Creates (or replaces) an rclone remote. Returns (ok, detail)."""
     if not rclone_path():
         return False, "rclone_missing"
     if kind not in PROVIDERS:
@@ -189,13 +189,13 @@ def cloud_configure(kind, name, params):
 
 
 def cloud_test(remote):
-    """Vérifie l'accès (liste le dossier racine). remote = 'nom:bucket/chemin'."""
+    """Checks access (lists the root folder). remote = 'name:bucket/path'."""
     if not rclone_path():
         return False, "rclone_missing"
     r = _run(["rclone", "lsd", "--max-depth", "1", "--contimeout", "20s", "--timeout", "60s", remote + ("" if ":" in remote else ":")], timeout=90)
     if r.returncode == 0:
         return True, "ok"
-    # un bucket/dossier encore vide ou inexistant : tenter de le créer
+    # a bucket/folder still empty or non-existent: try to create it
     r2 = _run(["rclone", "mkdir", "--contimeout", "20s", remote], timeout=90)
     if r2.returncode == 0:
         return True, "created"
@@ -241,7 +241,7 @@ def format_size(n):
     return f"{n:.1f} Tio"
 
 
-# ─── Résumé pour l'interface ────────────────────────────────────────────────
+# ─── Summary for the interface ──────────────────────────────────────────────
 def summary(st, now=None):
     now = now or time.time()
     last = st.get("last_ok")
@@ -252,9 +252,9 @@ def summary(st, now=None):
         except ValueError:
             age = None
     if not st.get("destinations"):
-        state = "none"                   # rien de configuré
+        state = "none"                   # nothing configured
     elif age is None:
-        state = "missing"                # destination configurée mais jamais sauvegardé
+        state = "missing"                # destination configured but never backed up
     elif age > max(MAX_AGE_OK_DAYS, SCHEDULE_DAYS.get(st.get("schedule")) or 0) * 2:
         state = "old"
     else:
@@ -277,9 +277,9 @@ def record_result(st, result):
         st["last_dest"] = result.get("dest_label", "")
 
 
-# ─── Exécution ──────────────────────────────────────────────────────────────
+# ─── Execution ──────────────────────────────────────────────────────────────
 class BackupRunner(threading.Thread):
-    """Sauvegarde vers une destination ; progression 0-100 via on_progress(pct, text), fin via on_done(result)."""
+    """Backup to a destination; progress 0-100 via on_progress(pct, text), end via on_done(result)."""
 
     def __init__(self, dest, st, on_progress=None, on_done=None, auto=False):
         super().__init__(daemon=True)
@@ -335,13 +335,13 @@ class BackupRunner(threading.Thread):
         stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         latest = os.path.join(base, "latest")
         if portable:
-            target = latest                     # miroir simple : pas de liens durs ni symboliques sur FAT/NTFS
+            target = latest                     # plain mirror: no hard or symbolic links on FAT/NTFS
             prev = None
         else:
             target = os.path.join(base, stamp)
             prev = os.path.realpath(latest) if os.path.islink(latest) and os.path.isdir(os.path.realpath(latest)) else None
         os.makedirs(target, exist_ok=True)
-        args = ["rsync", "--delete", "--delete-excluded", "--info=progress2,stats2", "--no-inc-recursive"]   # tailles brutes : stats lisibles par le programme
+        args = ["rsync", "--delete", "--delete-excluded", "--info=progress2,stats2", "--no-inc-recursive"]   # raw sizes: stats readable by the program
         args += ["-rt", "--modify-window=2", "--no-perms", "--no-owner", "--no-group", "--no-links"] if portable else ["-a"]
         for ex in self.excludes:
             args.append(f"--exclude={ex}")
@@ -353,7 +353,7 @@ class BackupRunner(threading.Thread):
             if not portable:
                 shutil.rmtree(target, ignore_errors=True)
             return self._result(False, "cancelled", path=target)
-        if rc not in (0, 23, 24):               # 23/24 : quelques fichiers ignorés (permissions, fichiers disparus)
+        if rc not in (0, 23, 24):               # 23/24: a few files skipped (permissions, vanished files)
             return self._result(False, f"rsync_{rc}", detail="\n".join(self.log_tail[-5:])[-300:], path=target)
         if not portable:
             tmp_link = latest + ".new"
@@ -467,12 +467,12 @@ def _parse_size(text):
     return int(n)
 
 
-# ─── Restauration guidée ────────────────────────────────────────────────────
+# ─── Guided restore ─────────────────────────────────────────────────────────
 RESTORE_DIR = os.path.expanduser("~/Restauration")
 
 
 def list_snapshots(dest):
-    """Instantanés disponibles sur une destination : [{name, label, folders:[...]}], le plus récent d'abord."""
+    """Snapshots available on a destination: [{name, label, folders:[...]}], most recent first."""
     ok, target = destination_available(dest)
     if not ok:
         return [], "destination_unavailable"
@@ -510,7 +510,7 @@ def list_snapshots(dest):
 
 
 class RestoreRunner(threading.Thread):
-    """Copie un dossier d'un instantané vers ~/Restauration/<instantané>/ (jamais par-dessus les fichiers actuels)."""
+    """Copies a folder of a snapshot to ~/Restauration/<snapshot>/ (never over the current files)."""
 
     def __init__(self, dest, snapshot, folder, on_progress=None, on_done=None):
         super().__init__(daemon=True)
@@ -572,9 +572,9 @@ def _sha256(path):
 
 
 def restore_test(dest, sources, sample=RESTORE_TEST_FILES):
-    """Restaure quelques fichiers tirés au sort du dernier instantané dans un dossier temporaire, vérifie qu'ils se lisent
-    entièrement et, quand le fichier d'origine n'a pas changé depuis (même taille, même date), qu'il est identique.
-    Une sauvegarde qu'on n'a jamais essayé de restaurer n'est pas une sauvegarde."""
+    """Restores a few files drawn at random from the last snapshot into a temporary folder, checks that they can be
+    read in full and, when the original file has not changed since (same size, same date), that it is identical.
+    A backup you have never tried to restore is not a backup."""
     import random
     import tempfile
     started = time.time()
@@ -586,7 +586,7 @@ def restore_test(dest, sources, sample=RESTORE_TEST_FILES):
         return res
     snap = snaps[0]
     cloud = dest.get("type") == "cloud"
-    files = []                                       # chemins relatifs à l'instantané : <dossier>/<chemin>
+    files = []                                       # paths relative to the snapshot: <folder>/<path>
     if cloud:
         r = _run(["rclone", "lsjson", "-R", "--files-only", "--no-mimetype", "--max-depth", "6", snap["path"]], timeout=300)
         try:
@@ -602,7 +602,7 @@ def restore_test(dest, sources, sample=RESTORE_TEST_FILES):
                     files.append((os.path.relpath(p, snap["path"]), os.path.getsize(p)))
             if len(files) > 20000:
                 break
-    files = [f for f in files if f[1] <= 200 * 1024 * 1024]   # gros fichiers (images disque) laissés de côté
+    files = [f for f in files if f[1] <= 200 * 1024 * 1024]   # large files (disk images) left aside
     if not files:
         res["error"] = "no_files"
         return res
@@ -636,7 +636,7 @@ def restore_test(dest, sources, sample=RESTORE_TEST_FILES):
                     if _sha256(live) == digest:
                         res["identical"] += 1
                     elif remote_mtime is not None:
-                        res["failed"].append({"path": rel, "error": "content_differs"})   # même date, contenu différent : corrompu
+                        res["failed"].append({"path": rel, "error": "content_differs"})   # same date, different content: corrupted
                 except OSError:
                     pass
     res["ok"] = res["restored"] > 0 and not res["failed"]

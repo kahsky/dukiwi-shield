@@ -1,6 +1,6 @@
-/* Dukiwi Shield — script injecté dans chaque message affiché (Thunderbird).
-   Relève les liens, demande leur verdict au fond d'écran, marque les liens dangereux (clic intercepté → confirmation
-   dans le message, jamais de dialogue natif) et affiche un bandeau : liens vérifiés, pièces jointes analysées. */
+/* Dukiwi Shield — script injected into each displayed message (Thunderbird).
+   Collects the links, asks the background script for their verdict, marks dangerous links (click intercepted →
+   confirmation inside the message, never a native dialog) and shows a banner: links checked, attachments scanned. */
 (() => {
     'use strict';
     if (window.__clamavUrlGuard) return;
@@ -8,7 +8,7 @@
     const api = (typeof messenger !== 'undefined') ? messenger : browser;
     const t = (k, s) => { try { return api.i18n.getMessage(k, s) || k; } catch (e) { return k; } };
     const reasonText = r => { const x = t('reason_' + r); return x === 'reason_' + r ? r : x; };
-    const verdicts = new Map();          // href → résultat
+    const verdicts = new Map();          // href → result
     let banner, authLine, linksLine, attsLine, confirmBox;
 
     function ensureBanner() {
@@ -127,7 +127,8 @@
         }
     }
 
-    // Expéditeur : authentifié (SPF, DKIM ou DMARC aligné), non vérifiable, douteux, ou non authentifié (usurpation possible)
+    // Sender: authenticated (aligned SPF, DKIM or DMARC), unverifiable, doubtful, or not authenticated (possible
+    // spoofing)
     function showAuth(auth) {
         ensureBanner();
         if (!auth) { authLine.textContent = ''; return; }

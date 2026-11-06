@@ -1,7 +1,7 @@
-/* Dukiwi Shield — authentification de l'expéditeur (Thunderbird). SPF, DKIM et DMARC sont lus dans les en-têtes
-   Authentication-Results (et ARC-Authentication-Results, Received-SPF) posés par le serveur de réception, avec
-   alignement sur le domaine de l'expéditeur ; plus deux heuristiques d'usurpation : adresse de réponse d'un autre
-   domaine (fraude au président) et nom affiché contenant une autre adresse e-mail. Fonctions pures (testables avec node). */
+/* Dukiwi Shield — sender authentication (Thunderbird). SPF, DKIM and DMARC are read from the
+   Authentication-Results headers (and ARC-Authentication-Results, Received-SPF) set by the receiving server, with
+   alignment on the sender's domain; plus two spoofing heuristics: reply address in another domain (CEO fraud)
+   and display name containing another e-mail address. Pure functions (testable with node). */
 'use strict';
 const MailAuth = (() => {
     const TWO_LEVEL = new Set(['co.uk', 'org.uk', 'ac.uk', 'gov.uk', 'me.uk', 'ltd.uk', 'plc.uk', 'co.jp', 'ne.jp', 'or.jp', 'ac.jp',
@@ -9,8 +9,8 @@ const MailAuth = (() => {
         'co.za', 'org.za', 'com.mx', 'com.ar', 'com.tr', 'com.cn', 'com.hk', 'com.sg', 'com.tw', 'co.in', 'co.kr', 'com.my',
         'com.ph', 'com.pl', 'com.pe', 'com.co', 'com.ve', 'com.ec', 'com.uy', 'com.ua', 'com.eg', 'com.sa', 'com.ng', 'co.ke',
         'co.il', 'org.il', 'co.th', 'co.id', 'com.vn', 'com.pk', 'com.bd', 'com.lb', 'com.qa', 'com.tn', 'co.ma']);
-    // Fournisseurs grand public : une adresse de réponse chez eux, pour un expéditeur d'entreprise, est la signature de la
-    // fraude au président (« From: direction@entreprise.ch, Reply-To: direction.entreprise@gmail.com »)
+    // Consumer providers: a reply address with them, for a business sender, is the hallmark of CEO fraud
+    // ("From: direction@entreprise.ch, Reply-To: direction.entreprise@gmail.com")
     const FREE_MAIL = new Set(['gmail.com', 'googlemail.com', 'outlook.com', 'hotmail.com', 'live.com', 'yahoo.com', 'yahoo.fr',
         'yahoo.de', 'yahoo.it', 'aol.com', 'protonmail.com', 'proton.me', 'gmx.com', 'gmx.net', 'gmx.ch', 'gmx.de', 'gmx.fr',
         'icloud.com', 'me.com', 'mail.com', 'yandex.com', 'yandex.ru', 'mail.ru', 'bluewin.ch', 'sunrise.ch', 'orange.fr',
@@ -41,7 +41,7 @@ const MailAuth = (() => {
         const spf = [], dkim = [], dmarc = [];
         for (const raw of values) {
             const clauses = unfold(raw).split(';');
-            for (const clause of clauses.slice(1)) {                   // la première partie est l'identifiant du serveur
+            for (const clause of clauses.slice(1)) {                   // the first part is the server identifier
                 const c = clause.trim();
                 let m;
                 if ((m = c.match(/^spf=(\w+)/i))) {
@@ -76,7 +76,7 @@ const MailAuth = (() => {
             else if (r.spf.some(s => s.result === 'softfail' && aligned(s.mailfrom)) || (!r.spf.length && receivedSpf.includes('softfail'))) reasons.push('spf_softfail');
             if (reasons.length) verdict = 'fail';
         }
-        // Heuristiques d'usurpation, indépendantes des en-têtes d'authentification
+        // Spoofing heuristics, independent of the authentication headers
         const replyTo = addressOf(headerList(headers, 'reply-to')[0] || '');
         const replyOrg = replyTo ? orgDomain(domainOf(replyTo)) : '';
         if (replyTo && fromDomain && replyOrg !== fromOrg && (verdict !== 'ok' || FREE_MAIL.has(replyOrg))) reasons.push('reply_to_differs');

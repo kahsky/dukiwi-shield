@@ -1,4 +1,4 @@
-/* Page d'avertissement : adresse bloquée, raisons, retour / ouvrir quand même / toujours autoriser. */
+/* Warning page: blocked address, reasons, back / open anyway / always allow. */
 'use strict';
 (() => {
     const api = (typeof browser !== 'undefined' && browser.runtime) ? browser : chrome;

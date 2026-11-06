@@ -1,9 +1,9 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════════════════════
-# Dukiwi Shield — suppression définitive (clic droit › « Supprimer définitivement »)
-# Chaque fichier est écrasé (une passe aléatoire puis des zéros) avant d'être supprimé, sans passer par la corbeille.
-# Limite : sur un SSD (blocs déplacés par le disque) ou un système de fichiers copie-sur-écriture (btrfs), l'ancienne
-# copie peut survivre ailleurs sur le disque ; seul le chiffrement complet du disque protège vraiment.
+# Dukiwi Shield — permanent deletion (right-click › "Delete permanently")
+# Each file is overwritten (one random pass then zeros) before being deleted, without going through the trash.
+# Limitation: on an SSD (blocks moved by the drive) or a copy-on-write file system (btrfs), the old
+# copy may survive elsewhere on the disk; only full disk encryption really protects.
 # ═══════════════════════════════════════════════════════════════════════════
 
 case "${LANGUAGE:-${LC_ALL:-${LC_MESSAGES:-$LANG}}}" in
@@ -17,7 +17,7 @@ say() { zenity --"$1" --title="Dukiwi Shield — $T_TITLE" --text="$2" --width=4
 
 [ "$#" -gt 0 ] || { say error "$T_NONE"; exit 1; }
 
-# SSD ou btrfs pour le premier élément : avertissement honnête
+# SSD or btrfs for the first item: honest warning
 WARN=""
 SRC=$(df --output=source "$1" 2>/dev/null | tail -1)
 FST=$(df --output=fstype "$1" 2>/dev/null | tail -1)

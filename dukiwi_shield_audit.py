@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-Dukiwi Shield — contrôles d'audit du centre de sécurité (service système).
+Dukiwi Shield — security centre audit checks (system service).
 
-1. Espions du clavier : programme qui lit directement un clavier (/dev/input/event*) sans être le serveur graphique,
-   le gestionnaire de sessions ou un outil de remappage connu ; enregistreurs X11 connus (logkeys, xinput test…).
-2. Connexions inhabituelles : connexion SSH depuis une adresse ou un pays jamais vu pour ce compte, connexion root,
-   connexion (SSH ou locale) au milieu de la nuit. Référence : les 30 derniers jours du journal.
-3. Conteneurs : socket Docker accessible à tous ou ouvert sur le réseau, comptes des groupes docker/lxd (équivalent
-   administrateur), conteneurs privilégiés ou qui montent / ou le socket Docker.
-4. Permissions Flatpak : applications qui voient tout le système de fichiers ou le dossier personnel, tous les
-   périphériques, ou qui peuvent parler au service Flatpak (sortie du bac à sable).
-5. Paquets de développement malveillants : paquets pip et npm installés hors du système comparés aux fiches « MAL- »
-   d'OSV (paquets publiés pour voler des données ou ouvrir une porte dérobée).
+1. Keyboard spies: a program that reads a keyboard directly (/dev/input/event*) without being the display server,
+   the session manager or a known remapping tool; known X11 loggers (logkeys, xinput test…).
+2. Unusual logins: SSH login from an address or country never seen for this account, root login,
+   login (SSH or local) in the middle of the night. Baseline: the last 30 days of the journal.
+3. Containers: Docker socket accessible to everyone or open on the network, accounts in the docker/lxd groups
+   (equivalent to administrator), privileged containers or containers that mount / or the Docker socket.
+4. Flatpak permissions: applications that see the whole file system or the home folder, all devices,
+   or that can talk to the Flatpak service (sandbox escape).
+5. Malicious development packages: pip and npm packages installed outside the system, compared with the OSV
+   "MAL-" advisories (packages published to steal data or open a backdoor).
 (c) 2026 Dukiwi SA - Estavayer-le-Lac
 """
 
@@ -26,8 +26,8 @@ import subprocess
 import time
 from datetime import datetime
 
-# Programmes qui lisent normalement les claviers : serveur graphique, compositeurs, gestion des sessions et de
-# l'alimentation, outils de remappage et de gestes, manettes de jeu
+# Programs that normally read keyboards: display server, compositors, session and power management,
+# remapping and gesture tools, game controllers
 INPUT_READERS = {"Xorg", "Xwayland", "X", "gnome-shell", "mutter", "kwin_wayland", "kwin_wayland_wr", "sway", "Hyprland",
                  "weston", "labwc", "wayfire", "river", "niri", "cosmic-comp", "muffin", "cinnamon", "systemd-logind",
                  "gdm-wayland-ses", "gdm-x-session", "sddm-greeter", "lightdm", "gsd-media-keys", "gsd-power", "acpid",
@@ -58,9 +58,9 @@ def is_public(ip):
     return a.is_global and not a.is_multicast
 
 
-# ═══ 1. Espions du clavier ════════════════════════════════════════════════
+# ═══ 1. Keyboard spies ════════════════════════════════════════════════════
 def keyboard_devices():
-    """{"/dev/input/eventN": nom} des périphériques que udev déclare claviers."""
+    """{"/dev/input/eventN": name} of the devices that udev declares as keyboards."""
     out = {}
     for ev in glob.glob("/sys/class/input/event*"):
         name = os.path.basename(ev)
@@ -82,8 +82,8 @@ def keyboard_devices():
 
 
 def keyboard_readers(self_pid=None):
-    """[{pid, comm, exe, cmdline, uid, device, reason}] des programmes qui ont un clavier ouvert, ou qui ressemblent à un
-    enregistreur de frappes X11, sans être un lecteur légitime connu."""
+    """[{pid, comm, exe, cmdline, uid, device, reason}] of the programs that have a keyboard open, or that look like an
+    X11 keystroke logger, without being a known legitimate reader."""
     kbds = keyboard_devices()
     out = []
     for entry in os.listdir("/proc"):
@@ -133,7 +133,7 @@ def keyboard_readers(self_pid=None):
 
 # ═══ 2. Connexions inhabituelles ══════════════════════════════════════════
 def journal_logins(since=None, cursor=None):
-    """([événements], curseur) : connexions SSH acceptées et ouvertures de session locales depuis `cursor` (ou `since`)."""
+    """([events], cursor): accepted SSH logins and local session openings since `cursor` (or `since`)."""
     if not shutil.which("journalctl"):
         return [], cursor
     cmd = ["journalctl", "-o", "json", "--no-pager", "-q"]
@@ -166,7 +166,7 @@ def journal_logins(since=None, cursor=None):
 
 
 def journal_cursor():
-    """Curseur de la dernière entrée du journal (point de départ de la veille des connexions)."""
+    """Cursor of the last journal entry (starting point for login monitoring)."""
     r = run(["journalctl", "-n", "1", "-o", "json", "--no-pager", "-q"], timeout=30)
     try:
         return json.loads((r.stdout or "").strip().splitlines()[-1]).get("__CURSOR")
@@ -176,7 +176,7 @@ def journal_cursor():
 
 # ═══ 3. Conteneurs ════════════════════════════════════════════════════════
 def container_audit(users):
-    """{available, issues:[{key, level, detail}]} pour Docker, Podman (root) et LXD."""
+    """{available, issues:[{key, level, detail}]} for Docker, Podman (root) and LXD."""
     issues = []
     docker = shutil.which("docker")
     sock = "/var/run/docker.sock"
@@ -224,7 +224,7 @@ def container_audit(users):
 
 # ═══ 4. Permissions Flatpak ═══════════════════════════════════════════════
 def flatpak_apps(users):
-    """[{app, user, installation}] des applications Flatpak (installation système + installation de chaque utilisateur)."""
+    """[{app, user, installation}] of the Flatpak applications (system installation + each user's installation)."""
     if not shutil.which("flatpak"):
         return []
     apps = []
@@ -239,7 +239,7 @@ def flatpak_apps(users):
 
 
 def parse_flatpak_permissions(text):
-    """Permissions sensibles d'un bloc « flatpak info --show-permissions » (ou d'un fichier metadata / override)."""
+    """Sensitive permissions from a "flatpak info --show-permissions" block (or from a metadata / override file)."""
     risks = set()
     section = ""
     for ln in text.splitlines():
@@ -290,9 +290,9 @@ def flatpak_audit(users):
     return out
 
 
-# ═══ 5. Paquets de développement (pip, npm) ═══════════════════════════════
+# ═══ 5. Development packages (pip, npm) ═══════════════════════════════════
 def pip_packages(users):
-    """{nom: {version, where}} des paquets Python installés hors des paquets du système (pip --user, /usr/local, pipx)."""
+    """{name: {version, where}} of the Python packages installed outside the system packages (pip --user, /usr/local, pipx)."""
     out = {}
     dirs = glob.glob("/usr/local/lib/python3*/dist-packages") + glob.glob("/usr/local/lib/python3*/site-packages")
     for pw in users:
@@ -321,7 +321,7 @@ def pip_packages(users):
 
 
 def npm_packages(users):
-    """{nom: {version, where}} des paquets npm installés globalement (système, ~/.npm-global, nvm)."""
+    """{name: {version, where}} of the npm packages installed globally (system, ~/.npm-global, nvm)."""
     out = {}
     dirs = ["/usr/lib/node_modules", "/usr/local/lib/node_modules"]
     for pw in users:
@@ -345,15 +345,15 @@ def npm_packages(users):
 
 
 _ADVISORY_CACHE = {}
-# Titre d'une fiche de logiciel malveillant (GitHub : « Malicious Package in X », « Embedded Malicious Code in X ») ; une
-# faille dont le titre parle de « malicious code execution » reste une faille (ex. GHSA-m3mh-3mpg-37hw d'openclaw).
+# Title of a malware advisory (GitHub: "Malicious Package in X", "Embedded Malicious Code in X"); a vulnerability
+# whose title mentions "malicious code execution" is still a vulnerability (e.g. GHSA-m3mh-3mpg-37hw of openclaw).
 MALWARE_TITLE_RE = re.compile(r"^(malicious (package|code|version)s?\b|embedded malicious code\b)|\bcontains? malware\b|"
                               r"\b(is|was|are|were) (considered )?malicious\b|\bcompromised (package|version|release)s?\b", re.I)
 VULN_WORDS_RE = re.compile(r"vulnerab|execution|injection|bypass|traversal|overflow|denial of service|xss|csrf|ssrf|escalation", re.I)
 
 
 def is_malware_advisory(vuln_id):
-    """Fiche OSV qui décrit un paquet malveillant (et non une simple faille) : MAL-, CWE-506 ou résumé explicite."""
+    """OSV advisory that describes a malicious package (not a mere vulnerability): MAL-, CWE-506 or explicit summary."""
     if vuln_id in _ADVISORY_CACHE:
         return _ADVISORY_CACHE[vuln_id]
     import urllib.request
@@ -365,13 +365,14 @@ def is_malware_advisory(vuln_id):
         summary = (d.get("summary") or "").strip()
         verdict = "CWE-506" in cwes or (bool(MALWARE_TITLE_RE.search(summary)) and not VULN_WORDS_RE.search(summary))
     except (OSError, ValueError):
-        return False                                   # réessayé au prochain relevé
+        return False                                   # retried at the next reading
     _ADVISORY_CACHE[vuln_id] = verdict
     return verdict
 
 
 def malicious_packages(users, osv_query):
-    """Paquets pip/npm qui ont une fiche OSV « MAL- » (paquet malveillant). `osv_query(sources, écosystème)` vient du service."""
+    """pip/npm packages that have an OSV "MAL-" advisory (malicious package). `osv_query(sources, ecosystem)` comes from the
+service."""
     found = []
     counts = {}
     for eco, pkgs in (("PyPI", pip_packages(users)), ("npm", npm_packages(users))):
@@ -387,15 +388,15 @@ def malicious_packages(users, osv_query):
     return {"checked_at": datetime.now().isoformat(timespec="seconds"), "counts": counts, "malicious": found}
 
 
-# ═══ 6. Extensions des éditeurs de code ═══════════════════════════════════
+# ═══ 6. Code editor extensions ════════════════════════════════════════════
 EDITOR_DIRS = (("vscode", ".vscode/extensions"), ("vscodium", ".vscode-oss/extensions"), ("cursor", ".cursor/extensions"),
                ("windsurf", ".windsurf/extensions"), ("vscode-server", ".vscode-server/extensions"),
                ("vscodium", ".var/app/com.vscodium.codium/data/codium/extensions"))
 
 
 def editor_extensions(user, home):
-    """Extensions VS Code, VSCodium, Cursor, Windsurf : [{browser, user, profile, id, name, version, from_store, enabled,
-    perms, key}] au même format que les extensions des navigateurs (veille et alertes communes)."""
+    """VS Code, VSCodium, Cursor, Windsurf extensions: [{browser, user, profile, id, name, version, from_store, enabled,
+    perms, key}] in the same format as browser extensions (shared monitoring and alerts)."""
     out = []
     for editor, sub in EDITOR_DIRS:
         base = os.path.join(home, sub)
@@ -435,7 +436,7 @@ def editor_extensions(user, home):
             if prev is None:
                 out.append(entry)
             elif _version_key(entry["version"]) > _version_key(prev["version"]):
-                out[out.index(prev)] = entry           # anciennes versions laissées sur le disque par l'éditeur
+                out[out.index(prev)] = entry           # old versions left on disk by the editor
     return out
 
 

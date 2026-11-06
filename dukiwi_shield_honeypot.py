@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """
-Dukiwi Shield — pot de miel réseau (service système, opt-in).
+Dukiwi Shield — network honeypot (system service, opt-in).
 
-Quelques ports TCP « leurres » sont mis à l'écoute : deux ports hauts tirés au sort (mémorisés d'un démarrage à
-l'autre) et les ports telnet 23 et 2323, que plus aucun programme légitime n'utilise sur un poste de travail et que
-tous les outils de balayage essaient. Aucun service ne se trouve derrière : toute connexion est suspecte.
+A few "decoy" TCP ports are put in listening mode: two high ports drawn at random (remembered from one boot to
+the next) and the telnet ports 23 and 2323, which no legitimate program uses on a workstation any more and which
+every scanning tool tries. There is no service behind them: any connection is suspicious.
 
-Pour chaque connexion, le service note la source (adresse, nom, adresse matérielle, passerelle ou non), lit les
-premiers octets reçus pour deviner l'intention (simple sondage, SSH, HTTP, requête d'exploitation, TLS, SMB, RDP,
-SOCKS, tentative de connexion telnet avec identifiant…), et signale un balayage de ports quand une même source touche
-plusieurs leurres ou quand le journal du pare-feu (ufw / firewalld) la montre frapper d'autres ports fermés.
+For each connection, the service records the source (address, name, hardware address, gateway or not), reads the
+first bytes received to guess the intent (simple probe, SSH, HTTP, exploit request, TLS, SMB, RDP, SOCKS, telnet
+login attempt with a username…), and reports a port scan when the same source hits several decoys or when the
+firewall log (ufw / firewalld) shows it knocking on other closed ports.
 
-Le pot de miel ne répond rien d'utile, ne fait tourner aucun service et ne ralentit pas la machine : les leurres sont
-de simples sockets en attente.
+The honeypot answers nothing useful, runs no service and does not slow the machine down: the decoys are
+plain waiting sockets.
 (c) 2026 Dukiwi SA - Estavayer-le-Lac
 """
 
@@ -31,23 +31,24 @@ from datetime import datetime
 
 import dukiwi_shield_distro as distro
 
-TAG = "cav-honeypot"                      # commentaire des règles de pare-feu gérées ici
-DECOY_PORTS = (23, 2323)                  # telnet : jamais utilisé sur un poste de travail, toujours balayé
-RANDOM_RANGE = (20000, 32000)             # hors plage éphémère (32768+) : pas de collision avec les connexions sortantes
+TAG = "cav-honeypot"                      # comment of the firewall rules managed here
+DECOY_PORTS = (23, 2323)                  # telnet: never used on a workstation, always scanned
+RANDOM_RANGE = (20000, 32000)             # outside the ephemeral range (32768+): no collision with outgoing connections
 RANDOM_COUNT = 2
-# Ports que chkrootkit (test bindshell) considère comme des portes dérobées : jamais tirés au sort
+# Ports that chkrootkit (bindshell test) considers backdoors: never drawn at random
 BINDSHELL_PORTS = {114, 145, 465, 511, 1008, 1524, 1999, 3879, 4369, 5665, 10008, 12321, 23132, 27374, 29364,
                    31336, 31337, 45454, 47017, 47889, 60001, 65535}
-READ_TIMEOUT = 4.0                        # s d'attente des premiers octets
+READ_TIMEOUT = 4.0                        # s of waiting for the first bytes
 MAX_PAYLOAD = 512
 SOURCES_MAX = 60
 EVENTS_MAX = 150
-ALERT_COOLDOWN = 600                      # s entre deux alertes pour la même source (sauf aggravation)
-IGNORED_ALERT_COOLDOWN = 6 * 3600         # s entre deux informations pour un appareil ignoré
-SCAN_WINDOW = 180                         # s : fenêtre dans laquelle plusieurs ports touchés = balayage
-FW_SCAN_WARN = 5                          # ports distincts (leurres + refus du pare-feu) → balayage
+ALERT_COOLDOWN = 600                      # s between two alerts for the same source (unless it escalates)
+IGNORED_ALERT_COOLDOWN = 6 * 3600         # s between two information notices for an ignored device
+SCAN_WINDOW = 180                         # s: window in which several ports hit = scan
+FW_SCAN_WARN = 5                          # distinct ports (decoys + firewall denials) → scan
 FW_SCAN_DANGER = 15
-# Bruit UDP normal d'un réseau local, jamais compté : DHCP, NetBIOS, SSDP, mDNS, LLMNR, WS-Discovery, Dropbox, Spotify, Plex…
+# Normal UDP noise of a local network, never counted: DHCP, NetBIOS, SSDP, mDNS, LLMNR, WS-Discovery, Dropbox,
+# Spotify, Plex…
 FW_NOISE_UDP = {7, 9, 67, 68, 137, 138, 546, 547, 1900, 3702, 5353, 5355, 6771, 8612, 17500, 32412, 32414, 57621}
 PERSIST_INTERVAL = 5
 FW_RULES_INTERVAL = 300
@@ -55,7 +56,7 @@ FW_RULES_INTERVAL = 300
 FW_LINE_RE = re.compile(r"IN=(?P<in>\S*)\s+OUT=(?P<out>\S*)\s.*?SRC=(?P<src>[0-9a-fA-F.:]+)\s+DST=(?P<dst>[0-9a-fA-F.:]+)\s"
                         r".*?PROTO=(?P<proto>\w+)(?:\s.*?DPT=(?P<dpt>\d+))?")
 HTTP_RE = re.compile(rb"^(GET|POST|HEAD|PUT|OPTIONS|DELETE|CONNECT|PROPFIND|TRACE|PATCH)\s+(\S+)")
-# Chemins typiques des robots d'exploitation (routeurs, caméras, WordPress, phpMyAdmin, Spring, Tomcat, traversée…)
+# Typical paths of exploit bots (routers, cameras, WordPress, phpMyAdmin, Spring, Tomcat, traversal…)
 EXPLOIT_PATH_RE = re.compile(r"(\.env\b|cgi-bin|wp-login|wp-admin|xmlrpc\.php|phpmyadmin|boaform|GponForm|HNAP1|manager/html|"
                              r"\.git/|actuator|/solr|/console|setup\.cgi|/shell|/cmd|eval-stdin|\.\./|%2e%2e|login\.cgi|"
                              r"formLogin|/admin|/owa/|/autodiscover|/vendor/|/\.aws|/config\.|/backup|/id_rsa)", re.I)
@@ -81,7 +82,7 @@ def _run(cmd, timeout=20):
 
 
 def valid_ip(text):
-    """Adresse IP normalisée (v4 ou v6, « ::ffff:1.2.3.4 » → « 1.2.3.4 »), ou None."""
+    """Normalised IP address (v4 or v6, "::ffff:1.2.3.4" → "1.2.3.4"), or None."""
     try:
         addr = ipaddress.ip_address(str(text or "").strip().split("%")[0])
     except ValueError:
@@ -100,7 +101,7 @@ def is_local_ip(ip):
 
 
 def classify_payload(data):
-    """Premiers octets reçus → (intention, détail lisible). Rien reçu = simple sondage de port."""
+    """First bytes received → (intent, readable detail). Nothing received = simple port probe."""
     if not data:
         return "probe", ""
     if re.match(rb"^(INVITE|REGISTER|OPTIONS)\s+sip:", data):
@@ -135,12 +136,12 @@ def classify_payload(data):
 
 
 def _clean_line(raw):
-    """Ligne telnet → texte : négociations IAC (≥ 0x80) et caractères de contrôle retirés."""
+    """Telnet line → text: IAC negotiations (≥ 0x80) and control characters removed."""
     return "".join(chr(b) for b in raw if 32 <= b < 127).strip()[:32]
 
 
 class Honeypot(threading.Thread):
-    """Leurres TCP + lecture du journal du pare-feu. `helpers` : log, write_log, ufw(*args), parse_ufw_numbered."""
+    """TCP decoys + firewall log reading. `helpers`: log, write_log, ufw(*args), parse_ufw_numbered."""
 
     def __init__(self, daemon, helpers):
         super().__init__(daemon=True, name="honeypot")
@@ -183,7 +184,7 @@ class Honeypot(threading.Thread):
         except Exception:  # noqa: BLE001
             pass
 
-    # ── Identité locale ──────────────────────────────────────────────────
+    # ── Local identity ───────────────────────────────────────────────────
     def own_ips(self):
         ts, ips = self._own
         if time.time() - ts < 300:
@@ -310,7 +311,7 @@ class Honeypot(threading.Thread):
         return sorted(self.socks)
 
     def close(self):
-        """Arrêt du service : leurres fermés et lecteur du journal du pare-feu tué, état enregistré (règles conservées)."""
+        """Service shutdown: decoys closed and firewall log reader killed, state saved (rules kept)."""
         if self.socks or self.fw_proc:
             self._stop(remove_rules=False)
 
@@ -371,7 +372,7 @@ class Honeypot(threading.Thread):
         return buf
 
     def _telnet_dialog(self, conn):
-        """Leurre telnet : invite « login: » puis « Password: » ; on garde l'identifiant essayé, jamais le mot de passe."""
+        """Telnet decoy: "login:" prompt, then "Password:"; the username tried is kept, never the password."""
         try:
             conn.sendall(b"\r\nlogin: ")
         except OSError:
@@ -381,7 +382,7 @@ class Honeypot(threading.Thread):
             return "probe", "", b""
         intent, detail = classify_payload(first)
         if intent not in ("text", "login", "telnet", "probe"):
-            return intent, detail, first                 # un scanner de versions (nmap -sV) parle un autre protocole
+            return intent, detail, first                 # a version scanner (nmap -sV) speaks another protocol
         user = _clean_line(first)
         if not user:
             return ("telnet" if first else "probe"), "", first
@@ -414,7 +415,7 @@ class Honeypot(threading.Thread):
             except OSError:
                 pass
         if (ip in self.own_ips() or ip.startswith("127.") or ip == "::1") and not os.environ.get("DUKIWI_SHIELD_HONEYPOT_SELF"):
-            return                                        # test depuis cet ordinateur : pas une menace (sauf en test)
+            return                                        # test from this computer: not a threat (except in test)
         self._record(ip, port, intent, detail)
 
     def _new_source(self, ip, now):
@@ -490,7 +491,7 @@ class Honeypot(threading.Thread):
                 src["mac"] = mac or src.get("mac", "")
                 self.dirty = True
 
-    # ── Évaluation et alertes ────────────────────────────────────────────
+    # ── Evaluation and alerts ────────────────────────────────────────────
     def _evaluate(self, ip):
         now = time.time()
         with self.lock:
@@ -511,18 +512,18 @@ class Honeypot(threading.Thread):
             if src["intents"].get("exploit"):
                 reasons.append("exploit_attempt")
             if not reasons:
-                return                                    # refus isolés du pare-feu : bruit, pas (encore) un balayage
+                return                                    # isolated firewall denials: noise, not (yet) a scan
             danger = any(r in reasons for r in ("port_scan", "login_attempt", "exploit_attempt")) or len(fw_hits) >= FW_SCAN_DANGER
             severity = "danger" if danger else "warn"
-            # Appareil ignoré (imprimante, box, NAS… qui sonde le réseau par construction) : ses balayages de ports ne sont
-            # plus qu'une information de temps en temps, sans couleur du bouclier. Une tentative de connexion ou
-            # d'intrusion faite depuis qu'il est ignoré reste une alerte rouge.
+            # Ignored device (printer, router, NAS… that probes the network by design): its port scans are now only
+            # an occasional information notice, with no shield colour. A login or intrusion attempt made since it
+            # was ignored remains a red alert.
             base = src.get("ignored_intents") or {}
             intrusion = any(int(src["intents"].get(k) or 0) > int(base.get(k) or 0) for k in ("login", "exploit"))
             quiet = ignored and not intrusion
             if quiet:
                 severity = "info"
-                reasons = [r for r in reasons if r not in ("login_attempt", "exploit_attempt")]   # tentatives d'avant « Ignorer »
+                reasons = [r for r in reasons if r not in ("login_attempt", "exploit_attempt")]   # attempts from before "Ignore"
             src["severity"] = "" if quiet else severity
             escalated = severity == "danger" and src.get("alerted_severity") != "danger"
             if src.get("blocked"):
@@ -551,7 +552,7 @@ class Honeypot(threading.Thread):
         except Exception:  # noqa: BLE001
             pass
 
-    # ── Journal du pare-feu ──────────────────────────────────────────────
+    # ── Firewall log ─────────────────────────────────────────────────────
     def _fw_log_cmd(self):
         path = os.environ.get("DUKIWI_SHIELD_FW_LOG")
         if path:
@@ -630,12 +631,12 @@ class Honeypot(threading.Thread):
         if daddr.is_multicast or dst.endswith(".255") or dst == "255.255.255.255":
             return
         if proto == "TCP" and ("SYN" not in line or " ACK" in line):
-            return                                        # seuls les SYN comptent (pas les restes d'une connexion)
+            return                                        # only SYNs count (not the leftovers of a connection)
         if proto == "UDP" and dpt in FW_NOISE_UDP:
             return
         self._fw_hit(src, dpt, proto.lower())
 
-    # ── Pare-feu : ouverture des leurres, blocage d'une source ──────────
+    # ── Firewall: opening the decoys, blocking a source ─────────────────
     def _fw_managed(self):
         if os.environ.get("DUKIWI_SHIELD_HONEYPOT_FW") == "1":
             return True
@@ -673,7 +674,7 @@ class Honeypot(threading.Thread):
                 self._log_denied_set = True
                 ok, cur = self._fwcmd("--get-log-denied", timeout=20)
                 if ok and cur.strip() == "off":
-                    self._fwcmd("--set-log-denied", "unicast")     # journal des refus → détection des balayages
+                    self._fwcmd("--set-log-denied", "unicast")     # denial log → scan detection
                     changed = True
             if changed:
                 self._fwcmd("--reload")
@@ -709,12 +710,13 @@ class Honeypot(threading.Thread):
                 self.h["ufw"]("delete", str(r["number"]))
 
     def block(self, ip, remove=False):
-        """Bloque (ou débloque) toute connexion venant de cette adresse : règle DENY en tête (ufw) ou rich rule drop (firewalld)."""
+        """Blocks (or unblocks) every connection coming from this address: DENY rule at the top (ufw) or drop rich rule
+(firewalld)."""
         ip = valid_ip(ip)
         if not ip:
             return False, "invalid_ip"
         if ip in self.own_ips() or ip == self.gateway() and not remove:
-            return False, "invalid_ip"                    # jamais soi-même ni la passerelle (plus de réseau du tout)
+            return False, "invalid_ip"                    # never ourselves nor the gateway (no network at all any more)
         ok, text = True, ""
         if self._fw_managed():
             if distro.firewall_backend() == "firewalld":
@@ -758,7 +760,7 @@ class Honeypot(threading.Thread):
             src["ignored"] = not remove
             if not remove:
                 src["severity"] = ""
-                # Tentatives de connexion / d'intrusion déjà vues : seules les suivantes rallumeront l'alerte rouge
+                # Login / intrusion attempts already seen: only the following ones will relight the red alert
                 src["ignored_intents"] = {k: int(v or 0) for k, v in (src.get("intents") or {}).items()}
             else:
                 src.pop("ignored_intents", None)
@@ -776,7 +778,7 @@ class Honeypot(threading.Thread):
         self._persist()
         return True
 
-    # ── État ─────────────────────────────────────────────────────────────
+    # ── State ────────────────────────────────────────────────────────────
     @staticmethod
     def _public(src):
         out = {k: v for k, v in src.items() if k not in ("port_times", "alerted_at", "alerted_severity")}
@@ -804,7 +806,7 @@ class Honeypot(threading.Thread):
         with self.lock:
             recent_all = [s for s in self.sources.values() if now - _parse_iso(s.get("last")) <= 86400]
             recent = [s for s in recent_all if not s.get("ignored")]
-            # Un appareil ignoré n'a une gravité que s'il a tenté une connexion ou une intrusion depuis : il compte alors
+            # An ignored device only has a severity if it has attempted a login or an intrusion since: it then counts
             return {"enabled": bool(self.daemon.settings.get("honeypot")), "active": bool(self.socks), "ports": sorted(self.socks),
                     "fw_log": self.fw_log, "sources_24h": len(recent),
                     "danger_24h": sum(1 for s in recent_all if s.get("severity") == "danger" and not s.get("blocked")),

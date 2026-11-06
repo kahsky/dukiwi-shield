@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Dukiwi Shield — module partagé entre le GUI et le daemon système.
-Chemins, exclusions de scan, protocole socket (JSON par ligne) et utilitaires.
+Dukiwi Shield — module shared between the GUI and the system daemon.
+Paths, scan exclusions, socket protocol (JSON per line) and utilities.
 (c) 2026 Dukiwi SA - Estavayer-le-Lac
 """
 
@@ -15,8 +15,8 @@ from datetime import datetime
 
 VERSION = "2.7.11"
 
-# ─── Chemins système (daemon root) ───────────────────────────────────────────
-# Surchargeables par variables d'environnement pour les tests sans root.
+# ─── System paths (root daemon) ─────────────────────────────────────────────
+# Can be overridden by environment variables for tests without root.
 SYSTEM_STATE_DIR = os.environ.get("DUKIWI_SHIELD_STATE_DIR", "/var/lib/dukiwi-shield")
 SYSTEM_LOG_DIR   = os.environ.get("DUKIWI_SHIELD_LOG_DIR",   "/var/log/dukiwi-shield")
 DAEMON_SOCKET    = os.environ.get("DUKIWI_SHIELD_SOCKET",    "/run/dukiwi-shield/daemon.sock")
@@ -25,8 +25,8 @@ SYSTEM_STATE_FILE      = os.path.join(SYSTEM_STATE_DIR, "state.json")
 SYSTEM_QUARANTINE_DIR  = os.path.join(SYSTEM_STATE_DIR, "quarantine")
 SYSTEM_PROGRESS_FILE   = os.path.join(SYSTEM_STATE_DIR, "scan_progress.json")
 SYSTEM_FILELIST_CACHE  = os.path.join(SYSTEM_STATE_DIR, "scan_filelist.txt")
-SYSTEM_SCAN_CACHE_DB   = os.path.join(SYSTEM_STATE_DIR, "scan-cache.db")     # fichiers sains déjà vérifiés (empreintes)
-SYSTEM_SECRET_FILE     = os.path.join(SYSTEM_STATE_DIR, "secret")            # HMAC des manifestes .clamav (jamais sur la clé)
+SYSTEM_SCAN_CACHE_DB   = os.path.join(SYSTEM_STATE_DIR, "scan-cache.db")     # clean files already checked (fingerprints)
+SYSTEM_SECRET_FILE     = os.path.join(SYSTEM_STATE_DIR, "secret")            # HMAC of the .clamav manifests (never on the key)
 FIRST_SCAN_FLAG        = os.path.join(SYSTEM_STATE_DIR, "first-scan-pending")
 SYSTEM_LOG_FILE        = os.path.join(SYSTEM_LOG_DIR, "scan.log")
 SYSTEM_SETTINGS_FILE   = os.path.join(SYSTEM_STATE_DIR, "settings.json")
@@ -35,22 +35,22 @@ CLAMAV_DB_DIR = "/var/lib/clamav"
 
 USB_MOUNT_ROOT         = os.path.join(os.path.dirname(DAEMON_SOCKET), "mnt")
 
-# Unités systemd
+# systemd units
 UPDATE_TIMER_UNIT  = "dukiwi-shield-update.timer"
 DAEMON_UNIT        = "dukiwi-shield-daemon.service"
 
-# ─── Détection avancée ───────────────────────────────────────────────────────
-# Supports USB : en dessous de cette taille, scan automatique avant montage ;
-# au-dessus (disque dur USB), on demande à l'utilisateur.
+# ─── Advanced detection ─────────────────────────────────────────────────────
+# USB media: below this size, automatic scan before mounting;
+# above it (USB hard disk), the user is asked.
 USB_AUTO_SCAN_MAX_BYTES = 128 * 1024 ** 3
-# Rafales d'écritures : un processus qui modifie autant de fichiers distincts
-# dans la fenêtre donnée déclenche une alerte (info, ou danger si suspect).
+# Write bursts: a process that modifies this many distinct files
+# within the given window triggers an alert (info, or danger if suspicious).
 BURST_WINDOW_SEC        = 15
 BURST_INFO_THRESHOLD    = 50
-BURST_DANGER_THRESHOLD  = 25      # fichiers du répertoire personnel, processus non fiable
+BURST_DANGER_THRESHOLD  = 25      # files in the home directory, untrusted process
 BURST_PID_COOLDOWN_SEC  = 600
 BURST_GLOBAL_COOLDOWN   = 30
-# Écritures ignorées par le moniteur (caches, journaux, fichiers temporaires)
+# Writes ignored by the monitor (caches, logs, temporary files)
 BURST_IGNORE_PREFIXES = (
     "/proc/", "/sys/", "/dev/", "/run/", "/tmp/", "/var/tmp/", "/var/log/",
     "/var/cache/", "/var/lib/apt/lists/", "/var/lib/clamav/", "/var/lib/dukiwi-shield/",
@@ -65,13 +65,13 @@ BURST_IGNORE_PARTS = (
 
 LANGUAGES = ("fr", "en", "de", "it")
 
-# ─── Réglages système (modifiables depuis la page Paramètres, appliqués par le daemon) ──
+# ─── System settings (editable from the Settings page, applied by the daemon) ──
 DEFAULT_SETTINGS = {
-    # Envoi Internet : popup quand le volume envoyé dépasse le seuil dans la fenêtre donnée
+    # Internet upload: popup when the volume sent exceeds the threshold within the given window
     "upload_monitor": True,
     "upload_alert_gb": 5.0,
     "upload_window_hours": 1,
-    # Rafales d'écritures (fanotify)
+    # Write bursts (fanotify)
     "burst_monitor": True,
     "burst_info_threshold": BURST_INFO_THRESHOLD,
     "burst_danger_threshold": BURST_DANGER_THRESHOLD,
@@ -79,65 +79,65 @@ DEFAULT_SETTINGS = {
     # Supports USB
     "usb_auto_scan": True,
     "usb_auto_scan_max_gib": 128,
-    # Recherche de mises à jour des signatures (timer systemd)
+    # Signature update check (systemd timer)
     "update_hour": 7,
     "update_minute": 0,
     # Scan complet automatique hebdomadaire (0 = lundi … 6 = dimanche)
     "weekly_scan": False,
     "weekly_scan_day": 6,
     "weekly_scan_hour": 12,
-    # Cache de scan : un fichier sain et inchangé (taille, dates, inode) n'est pas relu pendant N jours (0 = désactivé)
+    # Scan cache: a clean, unchanged file (size, dates, inode) is not read again for N days (0 = disabled)
     "scan_cache_days": 30,
-    # Mode famille : réglages et actions sensibles réservés à un administrateur authentifié
+    # Family mode: sensitive settings and actions reserved for an authenticated administrator
     "family_mode": False,
-    # Réponse automatique : suspendre (SIGSTOP) un programme jugé dangereux, puis demander
+    # Automatic response: suspend (SIGSTOP) a program judged dangerous, then ask
     "auto_response": True,
-    # Apprendre des choix de l'utilisateur : rafales d'écritures connues ignorées d'office (action lancée par un
-    # gestionnaire de paquets, application dans son propre dossier, rafale déjà déclarée normale deux fois)
+    # Learn from the user's choices: known write bursts ignored automatically (action started by a
+    # package manager, application in its own folder, burst already declared normal twice)
     "auto_ignore_known": True,
-    # Connexions sortantes : programmes inconnus, listes d'IP malveillantes, géolocalisation
+    # Outgoing connections: unknown programs, malicious IP lists, geolocation
     "connection_monitor": True,
-    # Analyse à l'arrivée : fichiers écrits dans les dossiers de téléchargement, sur le bureau ou sur un support amovible
-    # passés à clamd dès leur fermeture ; infectés → quarantaine avant d'être ouverts
+    # On-arrival scan: files written to download folders, the desktop or removable media
+    # passed to clamd as soon as they are closed; infected → quarantine before being opened
     "on_access_scan": True,
-    # BadUSB : un nouveau clavier USB est coupé dès son branchement jusqu'à l'accord de l'utilisateur (popup)
+    # BadUSB: a new USB keyboard is blocked as soon as it is plugged in until the user approves (popup)
     "usb_keyboard_guard": True,
-    # Centre de sécurité : leurres anti-rançongiciel (fichiers cachés surveillés), caméra et micro, mineurs de cryptomonnaie
+    # Security centre: anti-ransomware decoys (watched hidden files), camera and microphone, cryptocurrency miners
     "ransomware_decoys": True,
     "privacy_watch": True,
     "miner_watch": True,
-    # Espions du clavier (lecture directe de /dev/input) et connexions inhabituelles (SSH, nuit)
+    # Keyboard spies (direct reads of /dev/input) and unusual logins (SSH, night)
     "keylogger_watch": True,
     "login_watch": True,
-    # Dossiers protégés : seuls les programmes approuvés ouvrent Documents, Images, Bureau (désactivé par défaut)
+    # Protected folders: only approved programs open Documents, Pictures, Desktop (disabled by default)
     "protected_folders": False,
-    # DNS filtré (systemd-resolved) : "" (désactivé), "quad9", "cloudflare" ; suspendu sur un réseau Entreprise
+    # Filtered DNS (systemd-resolved): "" (disabled), "quad9", "cloudflare"; suspended on an Enterprise network
     "filtered_dns": "",
     "geoip_lookup": True,
-    # Clé ip-api.com Pro (optionnelle) : HTTPS et sans limite ; vide = service gratuit (15 requêtes groupées/min, HTTP)
+    # ip-api.com Pro key (optional): HTTPS and unlimited; empty = free service (15 batched requests/min, HTTP)
     "geoip_api_key": "",
-    # Disponibilité : sauvegarde des fichiers de l'utilisateur comptée dans l'état global (False = « Ignorer »)
+    # Availability: backup of the user's files counted in the overall state (False = "Ignore")
     "backup_check": True,
-    # État de Timeshift compté dans l'état global (False = « Ignorer » : PC sans place pour les instantanés)
+    # Timeshift state counted in the overall state (False = "Ignore": PC without room for snapshots)
     "timeshift_check": True,
-    # Profil réseau du pare-feu : "" (non choisi), "home", "public", "enterprise"
+    # Firewall network profile: "" (not chosen), "home", "public", "enterprise"
     "firewall_profile": "",
-    # Télémétrie anonyme (opt-in) : version, système, score, faux positifs approuvés, sans identifiant personnel
+    # Anonymous telemetry (opt-in): version, system, score, approved false positives, no personal identifier
     "telemetry": False,
-    # Durcissement automatique : recommandations Lynis sans risque appliquées après chaque audit
+    # Automatic hardening: risk-free Lynis recommendations applied after each audit
     "auto_harden": False,
-    # Vérification d'intégrité hebdomadaire (Lynis, unhide, chkrootkit, debsums, fichiers de l'app)
+    # Weekly integrity check (Lynis, unhide, chkrootkit, debsums, app files)
     "integrity_weekly": True,
     "integrity_day": 6,
     "integrity_hour": 13,
-    # Mises à jour de l'application (manifeste signé sur le dépôt Dukiwi)
+    # Application updates (signed manifest on the Dukiwi repository)
     "app_update_check": True,
     "app_update_auto": False,
-    # Pot de miel réseau : ports leurres à l'écoute, balayages signalés. Actif par défaut (décision 2026-10-15),
-    # désactivable dans Paramètres › Sécurité et famille (administrateur en mode famille)
+    # Network honeypot: decoy ports listening, scans reported. Enabled by default (decision 2026-10-15),
+    # can be disabled in Settings › Security and family (administrator in family mode)
     "honeypot": True,
-    # Contrôle des liens (extensions Thunderbird et navigateurs) : listes de sites malveillants + heuristiques ;
-    # raccourcisseurs résolus par le service ; pièces jointes des courriels analysées par clamd
+    # Link checking (Thunderbird and browser extensions): malicious site lists + heuristics;
+    # shorteners resolved by the service; email attachments scanned by clamd
     "url_guard": True,
     "url_guard_resolve": True,
     "mail_scan_attachments": True,
@@ -155,8 +155,8 @@ SETTINGS_LIMITS = {
 
 
 def sanitize_settings(current, incoming):
-    """Fusionne des réglages entrants (dict) dans `current` en respectant types et limites.
-    Retourne (settings, erreurs)."""
+    """Merges incoming settings (dict) into `current`, respecting types and limits.
+    Returns (settings, errors)."""
     result = dict(DEFAULT_SETTINGS)
     result.update(current or {})
     errors = []
@@ -183,24 +183,24 @@ def sanitize_settings(current, incoming):
         result[key] = value
     return result, errors
 
-# ─── Chemins que le daemon accepte de scanner pour n'importe quel utilisateur ──
-# (en plus du répertoire personnel de l'utilisateur qui fait la demande)
+# ─── Paths the daemon agrees to scan for any user ──────────────────────────
+# (in addition to the home directory of the requesting user)
 DAEMON_ALLOWED_ROOTS = ["/", "/home", "/etc", "/var", "/opt", "/usr", "/tmp", "/boot", "/root", "/srv"]
 
-# ─── Répertoires exclus du scan (inutiles ou problématiques sur Linux Mint 22) ─
+# ─── Directories excluded from the scan (useless or problematic on Linux Mint 22) ─
 SCAN_EXCLUDE = [
-    '/proc/*', '/sys/*', '/dev/*', '/run/*',           # systèmes de fichiers virtuels
-    '/home/.ecryptfs/*',                               # vault eCryptFS (chiffré)
-    '/snap/*', '/var/lib/snapd/*',                     # paquets snap (squashfs protégés)
+    '/proc/*', '/sys/*', '/dev/*', '/run/*',           # virtual file systems
+    '/home/.ecryptfs/*',                               # eCryptFS vault (encrypted)
+    '/snap/*', '/var/lib/snapd/*',                     # snap packages (protected squashfs)
     '/var/cache/apt/*', '/var/cache/debconf/*',        # cache paquets APT
     '/var/cache/man/*',                                # cache man pages
     '/var/lib/clamav/*',                               # bases virales (faux positifs garantis)
-    '/var/lib/dukiwi-shield/quarantine/*',          # quarantaine système
+    '/var/lib/dukiwi-shield/quarantine/*',          # system quarantine
     '/usr/share/doc/*', '/usr/share/man/*',            # documentation
-    '/usr/share/info/*', '/usr/share/locale/*',        # données de locale
+    '/usr/share/info/*', '/usr/share/locale/*',        # locale data
     '/usr/share/i18n/*', '/usr/share/fonts/*',         # polices
-    '/usr/share/icons/*', '/usr/share/themes/*',       # icônes / thèmes
-    '/usr/share/pixmaps/*', '/usr/share/backgrounds/*',# images décoratives
+    '/usr/share/icons/*', '/usr/share/themes/*',       # icons / themes
+    '/usr/share/pixmaps/*', '/usr/share/backgrounds/*',# decorative images
     '/home/*/.cache/*',                                # caches utilisateurs
     '/home/*/.local/share/Trash/*',                    # corbeilles
     '/home/*/.local/share/dukiwi-shield/*',         # quarantaine / logs utilisateur
@@ -210,12 +210,12 @@ SCAN_EXCLUDE = [
     '/root/.cache/*',                                  # cache root
 ]
 
-# Lignes de sortie clamscan --verbose qui sont du bruit (ne pas journaliser)
+# clamscan --verbose output lines that are noise (do not log)
 NOISE_PREFIXES = ("traverse_to:", "LibClamAV", "Scanning ")
 NOISE_SUFFIXES = (": Empty file", ": No such file or directory", ": Excluded", ": Symbolic link")
 
 
-# ── Index de quarantaine : fichier isolé → chemin d'origine et signature (alimenté par les lignes « moved to ») ──
+# ── Quarantine index: isolated file → original path and signature (fed by the "moved to" lines) ──
 def quarantine_index_path(quarantine_dir):
     return os.path.join(os.path.dirname(quarantine_dir.rstrip("/")), "quarantine-index.json")
 
@@ -230,7 +230,7 @@ def quarantine_index_load(quarantine_dir):
 
 
 def quarantine_index_add(quarantine_dir, dest, origin, signature):
-    """Mémorise, pour le fichier isolé `dest`, son chemin d'origine et la signature détectée."""
+    """Records, for the isolated file `dest`, its original path and the detected signature."""
     index = quarantine_index_load(quarantine_dir)
     index[os.path.basename(dest)] = {"origin": origin, "signature": signature or "",
                                      "time": datetime.now().isoformat(timespec="seconds")}
@@ -250,13 +250,13 @@ def quarantine_index_add(quarantine_dir, dest, origin, signature):
 
 
 def parse_moved_line(line):
-    """« /chemin/origine: moved to '/quarantaine/nom' » → (origine, destination) ou None."""
+    """"/path/origin: moved to '/quarantine/name'" → (origin, destination) or None."""
     m = re.match(r"^(.*): moved to '(.*)'$", line)
     return (m.group(1), m.group(2)) if m else None
 
 
 def quarantine_enrich(files, quarantine_dir):
-    """Ajoute origine, signature et date de détection aux entrées de la liste de quarantaine."""
+    """Adds origin, signature and detection date to the quarantine list entries."""
     index = quarantine_index_load(quarantine_dir)
     for f in files:
         info = index.get(f.get("name") or "")
@@ -268,8 +268,8 @@ def quarantine_enrich(files, quarantine_dir):
 
 
 def find_command(path, exclude=SCAN_EXCLUDE, stat=False):
-    """Commande find listant les fichiers réguliers à scanner sous `path` (un chemin ou une liste de chemins). Avec `stat`, chaque ligne porte aussi
-    l'empreinte (taille, mtime, ctime, inode) séparée par des tabulations, pour le cache des fichiers sains."""
+    """find command listing the regular files to scan under `path` (a path or a list of paths). With `stat`, each
+    line also carries the fingerprint (size, mtime, ctime, inode) separated by tabs, for the clean-file cache."""
     cmd = ['find'] + (list(path) if isinstance(path, (list, tuple)) else [path]) + ['-type', 'f']
     for excl in exclude:
         cmd += ['!', '-path', excl]
@@ -279,7 +279,7 @@ def find_command(path, exclude=SCAN_EXCLUDE, stat=False):
 
 
 def is_noise_line(line):
-    """True si la ligne clamscan n'apporte rien à l'utilisateur."""
+    """True if the clamscan line is of no use to the user."""
     if not line:
         return True
     if line.startswith(NOISE_PREFIXES):
@@ -288,7 +288,7 @@ def is_noise_line(line):
 
 
 def classify_line(line):
-    """Classe une ligne de sortie clamscan : 'found', 'denied', 'error', 'summary', 'info'."""
+    """Classifies a clamscan output line: 'found', 'denied', 'error', 'summary', 'info'."""
     if line.endswith(" FOUND"):
         return "found"
     if line.endswith(": Access denied") or line.endswith(": Permission denied"):
@@ -305,7 +305,7 @@ def classify_line(line):
 
 
 def db_last_update():
-    """Date (datetime) de la signature la plus récente dans /var/lib/clamav, ou None."""
+    """Date (datetime) of the most recent signature in /var/lib/clamav, or None."""
     newest = None
     try:
         for name in os.listdir(CLAMAV_DB_DIR):
@@ -319,7 +319,7 @@ def db_last_update():
 
 
 def db_files_info():
-    """Liste des fichiers de signatures avec taille et date."""
+    """List of signature files with size and date."""
     files = []
     try:
         for name in sorted(os.listdir(CLAMAV_DB_DIR)):
@@ -336,7 +336,7 @@ def db_files_info():
 
 
 def systemd_next_elapse(unit=UPDATE_TIMER_UNIT):
-    """Prochaine exécution d'un timer systemd (datetime) ou None. Fonctionne sans root."""
+    """Next run of a systemd timer (datetime) or None. Works without root."""
     try:
         r = subprocess.run(
             ["systemctl", "show", unit, "-p", "NextElapseUSecRealtime", "--value"],
@@ -355,7 +355,7 @@ def systemd_next_elapse(unit=UPDATE_TIMER_UNIT):
 
 
 def systemd_is_active(unit):
-    """True si l'unité systemd est active. Fonctionne sans root."""
+    """True if the systemd unit is active. Works without root."""
     try:
         r = subprocess.run(["systemctl", "is-active", unit],
                            capture_output=True, text=True, timeout=5)
@@ -364,10 +364,10 @@ def systemd_is_active(unit):
         return False
 
 
-# ─── Pare-feu UFW : analyse des sorties de commande ──────────────────────────
+# ─── UFW firewall: parsing command output ───────────────────────────────────
 
 def parse_ufw_verbose(text):
-    """Analyse `ufw status verbose` : statut et politiques par défaut."""
+    """Parses `ufw status verbose`: status and default policies."""
     info = {"active": False, "default_incoming": "", "default_outgoing": "", "default_routed": "", "logging": ""}
     for line in (text or "").splitlines():
         line = line.strip()
@@ -388,7 +388,7 @@ def parse_ufw_verbose(text):
 
 
 def parse_ufw_numbered(text):
-    """Analyse `ufw status numbered` : liste de règles [{number, to, action, from, v6, raw}]."""
+    """Parses `ufw status numbered`: list of rules [{number, to, action, from, v6, raw}]."""
     rules = []
     for line in (text or "").splitlines():
         line = line.rstrip()
@@ -401,7 +401,7 @@ def parse_ufw_numbered(text):
         rest = line[line.index("]") + 1:].strip()
         v6 = "(v6)" in rest
         rest = rest.replace("(v6)", "").strip()
-        # Colonnes séparées par 2 espaces ou plus : To | Action | From
+        # Columns separated by 2 or more spaces: To | Action | From
         cols = [c.strip() for c in re.split(r"\s{2,}", rest) if c.strip()]
         to = cols[0] if cols else rest
         action = cols[1] if len(cols) > 1 else ""
@@ -421,7 +421,7 @@ _I18N_CACHE = None
 
 
 def load_i18n():
-    """Charge ui/i18n.js (window.I18N = {...};) et retourne le dictionnaire par langue."""
+    """Loads ui/i18n.js (window.I18N = {...};) and returns the per-language dictionary."""
     global _I18N_CACHE
     if _I18N_CACHE is not None:
         return _I18N_CACHE
@@ -437,9 +437,9 @@ def load_i18n():
 
 
 def home_mounted(pw):
-    """Faux tant que le dossier personnel chiffré avec eCryptfs n'est pas monté (avant l'ouverture de session, après la
-    fermeture) : /home/<nom> est alors le dossier vide caché sous le montage. Y écrire laisserait des fichiers invisibles
-    une fois la session ouverte, et ses vrais fichiers n'y sont pas."""
+    """False while the eCryptfs-encrypted home folder is not mounted (before login, after
+    logout): /home/<name> is then the empty folder hidden under the mount. Writing there would leave files that are
+    invisible once the session is open, and its real files are not there."""
     if not os.path.isdir(f"/home/.ecryptfs/{pw.pw_name}/.Private"):
         return True
     home = pw.pw_dir.rstrip("/")
@@ -455,8 +455,8 @@ def home_mounted(pw):
 
 
 def migrate_user_data():
-    """Dossier de données de l'utilisateur des versions précédentes (sauvegardes, coffre, réglages de l'interface) repris
-    une fois, au premier lancement de Dukiwi Shield."""
+    """User data folder of previous versions (backups, vault, interface settings) taken over
+    once, on the first launch of Dukiwi Shield."""
     if os.geteuid() == 0:
         return
     new = os.path.expanduser("~/.local/share/dukiwi-shield")
@@ -471,12 +471,12 @@ def migrate_user_data():
 migrate_user_data()
 
 
-LOCALE_FILES = ("/etc/default/locale", "/etc/locale.conf")      # locale système (Debian / Ubuntu / Mint, puis Fedora)
+LOCALE_FILES = ("/etc/default/locale", "/etc/locale.conf")      # system locale (Debian / Ubuntu / Mint, then Fedora)
 
 
 def system_locale(files=LOCALE_FILES):
-    """LANG de la locale système configurée (« fr_CH.UTF-8 »), quand l'environnement n'en donne pas : bouclier relancé
-    par le service, session sans variables de langue. Chaîne vide si rien n'est configuré."""
+    """LANG of the configured system locale ("fr_CH.UTF-8"), when the environment provides none: shield restarted
+    by the service, session without language variables. Empty string if nothing is configured."""
     for path in files:
         try:
             with open(path, encoding="utf-8", errors="replace") as f:
@@ -495,14 +495,14 @@ def system_locale(files=LOCALE_FILES):
 
 
 def _language_code(value):
-    """« fr_CH.UTF-8 » / « en_US:fr » → « fr » / « en » ; vide pour C / POSIX."""
+    """"fr_CH.UTF-8" / "en_US:fr" → "fr" / "en"; empty for C / POSIX."""
     code = (value or "").split(":")[0].split("_")[0].split(".")[0].split("@")[0].lower()
     return "" if code in ("", "c", "posix") else code
 
 
 def pick_language(preferred=None):
-    """Langue de l'interface : préférence explicite (Paramètres), sinon langue du système (variables d'environnement,
-    puis locale configurée dans /etc), sinon anglais. Une langue du système sans traduction donne l'anglais."""
+    """Interface language: explicit preference (Settings), otherwise the system language (environment variables,
+    then the locale configured in /etc), otherwise English. A system language without a translation gives English."""
     if preferred in LANGUAGES:
         return preferred
     for var in ("LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"):
@@ -514,7 +514,7 @@ def pick_language(preferred=None):
 
 
 def t(lang, key, **params):
-    """Traduit une clé (repli : anglais, puis français, puis la clé elle-même)."""
+    """Translates a key (fallback: English, then French, then the key itself)."""
     i18n = load_i18n()
     text = None
     for candidate in (lang, "en", "fr"):
@@ -532,7 +532,7 @@ def t(lang, key, **params):
 
 
 def format_duration(seconds):
-    """Durée lisible : '1 h 12 min', '4 min 05 s', '32 s'."""
+    """Readable duration: '1 h 12 min', '4 min 05 s', '32 s'."""
     seconds = int(max(0, seconds))
     h, rem = divmod(seconds, 3600)
     m, s = divmod(rem, 60)
@@ -543,10 +543,10 @@ def format_duration(seconds):
     return f"{s} s"
 
 
-# ─── Protocole socket : une ligne JSON par message ───────────────────────────
+# ─── Socket protocol: one JSON line per message ─────────────────────────────
 
 class LineSocket:
-    """Enveloppe un socket Unix pour échanger des messages JSON ligne par ligne."""
+    """Wraps a Unix socket to exchange JSON messages line by line."""
 
     def __init__(self, sock):
         self.sock = sock
@@ -557,7 +557,7 @@ class LineSocket:
         self.sock.sendall(data)
 
     def recv(self):
-        """Retourne le prochain objet JSON, ou None si la connexion est fermée."""
+        """Returns the next JSON object, or None if the connection is closed."""
         while b"\n" not in self._buf:
             chunk = self.sock.recv(65536)
             if not chunk:
@@ -577,13 +577,13 @@ class LineSocket:
 
 
 def peer_credentials(sock):
-    """(pid, uid, gid) du processus connecté sur un socket Unix (SO_PEERCRED)."""
+    """(pid, uid, gid) of the process connected on a Unix socket (SO_PEERCRED)."""
     creds = sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i"))
     return struct.unpack("3i", creds)
 
 
 def daemon_connect(timeout=2.0):
-    """Ouvre une connexion vers le daemon. Lève OSError si indisponible."""
+    """Opens a connection to the daemon. Raises OSError if unavailable."""
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     sock.settimeout(timeout)
     sock.connect(DAEMON_SOCKET)
@@ -591,8 +591,8 @@ def daemon_connect(timeout=2.0):
 
 
 def daemon_request(cmd, timeout=2.0, **kwargs):
-    """Envoie une commande unique au daemon et retourne la réponse (dict).
-    Retourne {"ok": False, "error": ..., "unavailable": True} si le daemon ne répond pas."""
+    """Sends a single command to the daemon and returns the response (dict).
+    Returns {"ok": False, "error": ..., "unavailable": True} if the daemon does not respond."""
     try:
         conn = daemon_connect(timeout=timeout)
     except OSError as e:

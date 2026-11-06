@@ -1,13 +1,13 @@
-/* Dukiwi Shield — Protection des courriels (Thunderbird).
-   À l'affichage d'un message : les liens sont soumis au service système (script de contenu), les pièces jointes
-   sont analysées par clamd (par l'hôte natif). Les courriels entrants sont aussi analysés en arrière-plan.
-   Un lien dangereux n'ouvre pas le navigateur sans confirmation ; une pièce jointe infectée est signalée dans le
-   message, par une notification et par le popup du service. */
+/* Dukiwi Shield — E-mail Protection (Thunderbird).
+   When a message is displayed: links are submitted to the system service (content script), attachments
+   are scanned by clamd (through the native host). Incoming e-mails are also scanned in the background.
+   A dangerous link does not open the browser without confirmation; an infected attachment is reported in the
+   message, by a notification and by the service popup. */
 'use strict';
 const { api, call, hello, state, msg, reasonText } = UG;
 const messenger = api;
 const perTab = new Map();              // tabId → { links: [...], attachments: [...], messageId }
-const scanned = new Map();             // messageId → résultats des pièces jointes (évite une seconde analyse)
+const scanned = new Map();             // messageId → attachment results (avoids a second scan)
 const MAX_ATTACHMENT = 50 * 1024 * 1024;
 
 function remember(tabId, key, value, messageId) {
@@ -27,7 +27,7 @@ function updateBadge(tabId) {
         messenger.messageDisplayAction.setBadgeText({ tabId, text });
         messenger.messageDisplayAction.setBadgeBackgroundColor({ tabId, color: danger ? '#dc2626' : warn ? '#d97706' : '#16a34a' });
         messenger.messageDisplayAction.setTitle({ tabId, title: msg('mail_name') + (danger ? ' — ' + msg('verdict_danger') : '') });
-    } catch (e) { /* onglet fermé */ }
+    } catch (e) { /* tab closed */ }
 }
 
 function b64(buf) {
@@ -70,7 +70,7 @@ function notifyInfected(message, results) {
     } catch (e) { /* notifications indisponibles */ }
 }
 
-// Authentification de l'expéditeur : en-têtes complets du message (SPF, DKIM, DMARC posés par le serveur de réception)
+// Sender authentication: full message headers (SPF, DKIM, DMARC set by the receiving server)
 async function analyzeAuth(message) {
     try {
         const full = await messenger.messages.getFull(message.id);
@@ -86,7 +86,7 @@ async function authForTab(tabId, message) {
     updateBadge(tabId);
     messenger.tabs.sendMessage(tabId, { type: 'auth', auth }).catch(() => {});
     if ((auth.verdict === 'fail' || auth.verdict === 'warn') && !scanned.has('auth:' + message.id)) {
-        scanned.set('auth:' + message.id, true);                     // signalé une fois au service (carte Liens et courriels)
+        scanned.set('auth:' + message.id, true);                     // reported once to the service (Links and e-mails card)
         call({ cmd: 'report', url: 'mailto:' + (auth.from || ''), verdict: auth.verdict === 'fail' ? 'danger' : 'warn',
                action: auth.verdict === 'fail' ? 'auth_fail' : 'auth_warn', app: 'thunderbird' }).catch(() => {});
     }
@@ -105,12 +105,12 @@ messenger.messageDisplay.onMessageDisplayed.addListener(async (tab, message) => 
     notifyInfected(message, results);
 });
 
-// Courriels entrants : pièces jointes analysées dès l'arrivée (notification + popup du service si infectées)
+// Incoming e-mails: attachments scanned on arrival (notification + service popup if infected)
 if (messenger.messages.onNewMailReceived) {
     messenger.messages.onNewMailReceived.addListener(async (folder, list) => {
         if (!state.mailScan) return;
         for (const message of (list && list.messages) || []) {
-            try { notifyInfected(message, await scanMessageAttachments(message)); } catch (e) { /* message retiré */ }
+            try { notifyInfected(message, await scanMessageAttachments(message)); } catch (e) { /* message removed */ }
         }
     });
 }

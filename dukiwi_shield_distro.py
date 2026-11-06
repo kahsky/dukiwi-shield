@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Dukiwi Shield — couche de distribution.
-Debian / Ubuntu / Linux Mint : apt, dpkg, ufw. Fedora / RHEL et dérivés : dnf, rpm, firewalld, SELinux.
-Tout ce qui dépend de la distribution passe par ici ; le reste du programme ne parle ni apt ni dnf.
-Test : DUKIWI_SHIELD_OS_RELEASE=<fichier> simule une autre distribution.
+Dukiwi Shield — distribution layer.
+Debian / Ubuntu / Linux Mint: apt, dpkg, ufw. Fedora / RHEL and derivatives: dnf, rpm, firewalld, SELinux.
+Everything that depends on the distribution goes through here; the rest of the program speaks neither apt nor dnf.
+Test: DUKIWI_SHIELD_OS_RELEASE=<file> simulates another distribution.
 """
 import os
 import re
@@ -42,7 +42,7 @@ def is_rpm():
     return FAMILY == "rpm"
 
 
-# ── Ubuntu sous-jacente (Linux Mint, Pop!_OS, Zorin… reposent sur une version d'Ubuntu) ──────────────
+# ── Underlying Ubuntu (Linux Mint, Pop!_OS, Zorin… are based on an Ubuntu release) ───────────────────
 UPSTREAM_RELEASE = os.environ.get("DUKIWI_SHIELD_UPSTREAM_RELEASE") or \
     ("" if os.environ.get("DUKIWI_SHIELD_OS_RELEASE") else "/etc/upstream-release/lsb-release")
 UBUNTU_CODENAMES = {"focal": "20.04", "jammy": "22.04", "noble": "24.04", "oracular": "24.10",
@@ -51,9 +51,9 @@ _UBUNTU_VERSION_RE = re.compile(r"^\d\d\.\d\d$")
 
 
 def ubuntu_release():
-    """Version d'Ubuntu sous-jacente (« 24.04 », « 26.04 »…) : VERSION_ID sur Ubuntu même,
-    /etc/upstream-release/lsb-release sur Linux Mint, sinon UBUNTU_CODENAME ou VERSION_ID d'un dérivé.
-    Chaîne vide si elle est inconnue : une version devinée afficherait les failles d'un autre système."""
+    """Underlying Ubuntu release ("24.04", "26.04"…): VERSION_ID on Ubuntu itself,
+    /etc/upstream-release/lsb-release on Linux Mint, otherwise UBUNTU_CODENAME or VERSION_ID of a derivative.
+    Empty string if unknown: a guessed release would show the vulnerabilities of another system."""
     d = _os_release()
     ident, version = d.get("ID", "").lower(), d.get("VERSION_ID", "")
     if ident == "ubuntu" and _UBUNTU_VERSION_RE.match(version):
@@ -76,7 +76,7 @@ def ubuntu_release():
 
 
 def ubuntu_is_lts(release):
-    """Les LTS sortent en avril des années paires (20.04, 22.04, 24.04, 26.04…)."""
+    """LTS releases come out in April of even years (20.04, 22.04, 24.04, 26.04…)."""
     return bool(_UBUNTU_VERSION_RE.match(release or "")) and release.endswith(".04") and int(release[:2]) % 2 == 0
 
 
@@ -92,7 +92,7 @@ def run(cmd, timeout=60, env=None):
 
 # ── Paquets ──────────────────────────────────────────────────────────────────
 def install_shell(pkgs):
-    """Commande shell d'installation (unité systemd transitoire) — sans question."""
+    """Shell command for installation (transient systemd unit) — non-interactive."""
     names = " ".join(pkgs)
     if is_rpm():
         return f"dnf -y install {names}"
@@ -112,7 +112,7 @@ def upgrade_shell():
 
 
 def tools_packages():
-    """Outils d'intégrité installables : debsums n'existe pas sur Fedora (rpm -Va intégré)."""
+    """Installable integrity tools: debsums does not exist on Fedora (rpm -Va built in)."""
     return ["lynis", "unhide", "chkrootkit"] if is_rpm() else ["lynis", "unhide", "chkrootkit", "debsums"]
 
 
@@ -129,7 +129,7 @@ def clamav_install_shell():
 
 
 def owners(paths):
-    """{chemin: paquet} pour les chemins livrés par un paquet installé (rpm -qf, un appel par chemin)."""
+    """{path: package} for the paths shipped by an installed package (rpm -qf, one call per path)."""
     out = {}
     for p in [x for x in dict.fromkeys(paths) if x.startswith("/")][:400]:
         r = run(["rpm", "-qf", "--queryformat", "%{NAME}\n", p], timeout=20)
@@ -141,7 +141,7 @@ def owners(paths):
 
 
 def owner_verify(path):
-    """(paquet, modifié) pour un fichier : propriétaire rpm et vérification du contenu (rpm -V, drapeau 5)."""
+    """(package, modified) for a file: rpm owner and content check (rpm -V, flag 5)."""
     r = run(["rpm", "-qf", "--queryformat", "%{NAME}\n", path], timeout=20)
     if r.returncode != 0:
         return "", False
@@ -163,7 +163,7 @@ def _nevra_name(nevra):
 
 
 def pending_updates(status):
-    """État des mises à jour avec dnf : paquets installables, avis de sécurité (CVE) et redémarrage requis."""
+    """Update status with dnf: installable packages, security advisories (CVEs) and reboot required."""
     r = run(["dnf", "-q", "-y", "check-update"], timeout=900)
     if r.returncode not in (0, 100):
         status["ok"] = False
@@ -177,7 +177,7 @@ def pending_updates(status):
         if len(parts) >= 3 and "." in parts[0] and re.match(r"^\d", parts[1]):
             packages.append({"name": parts[0].rsplit(".", 1)[0], "arch": parts[0].rsplit(".", 1)[1], "candidate": parts[1],
                              "archive": parts[2], "installed": "", "security": False, "category": "recommended", "phase": None, "cves": {}})
-    # Avis de sécurité : paquets concernés et CVE
+    # Security advisories: affected packages and CVEs
     sec_names, adv_by_name = set(), {}
     s = run(["dnf", "-q", "updateinfo", "list", "--security"], timeout=300)
     for ln in (s.stdout or "").splitlines():
@@ -223,7 +223,7 @@ def pending_updates(status):
     status["held"] = 0
     status["cves"] = sorted(all_cves)
     status["cve_count"] = len(all_cves)
-    # Redémarrage : dnf needs-restarting -r (code 1 = redémarrage nécessaire), sinon noyau installé ≠ noyau en cours
+    # Reboot: dnf needs-restarting -r (code 1 = reboot required), otherwise installed kernel ≠ running kernel
     nr = run(["dnf", "needs-restarting", "-r"], timeout=120)
     if nr.returncode == 1:
         status["reboot_required"] = True
@@ -254,12 +254,12 @@ def _unit_enabled(unit):
 
 
 def auto_updates_enabled():
-    """Mises à jour automatiques actives (dnf-automatic) ; False sur Debian (logique apt dans le service)."""
+    """Automatic updates enabled (dnf-automatic); False on Debian (apt logic in the service)."""
     return is_rpm() and any(_unit_enabled(u) for u in AUTO_TIMERS)
 
 
 def auto_updates_enable():
-    """Active dnf-automatic (installation si besoin, apply_updates = yes, minuterie). Retourne (ok, méthode, détail)."""
+    """Enables dnf-automatic (installed if needed, apply_updates = yes, timer). Returns (ok, method, detail)."""
     if not shutil.which("dnf-automatic") and not os.path.exists("/usr/lib/systemd/system/dnf-automatic.timer") \
             and not os.path.exists("/usr/lib/systemd/system/dnf5-automatic.timer"):
         r = run(["dnf", "-y", "install", "dnf-automatic"], timeout=900)
@@ -285,9 +285,9 @@ def auto_updates_enable():
     return False, "dnf-automatic", "aucune minuterie dnf-automatic"
 
 
-# ── Contrôle d'accès obligatoire ─────────────────────────────────────────────
+# ── Mandatory access control ─────────────────────────────────────────────────
 def mac():
-    """(« apparmor » | « selinux », actif)."""
+    """("apparmor" | "selinux", active)."""
     if is_rpm():
         r = run(["getenforce"], timeout=10)
         return "selinux", (r.stdout or "").strip() == "Enforcing"
@@ -310,7 +310,7 @@ def clamd_unit():
 
 
 def clamdscan_args():
-    """Fedora : clamdscan ne lit pas /etc/clamd.d/scan.conf sans -c."""
+    """Fedora: clamdscan does not read /etc/clamd.d/scan.conf without -c."""
     return ["-c", clamd_conf()] if is_rpm() else []
 
 
@@ -320,7 +320,7 @@ def ssh_unit():
 
 # ── Pare-feu ─────────────────────────────────────────────────────────────────
 def firewall_backend():
-    """« firewalld » (Fedora, ou firewalld seul présent) sinon « ufw »."""
+    """"firewalld" (Fedora, or only firewalld present) otherwise "ufw"."""
     has_fwd, has_ufw = shutil.which("firewall-cmd") is not None, shutil.which("ufw") is not None
     if has_fwd and (is_rpm() or not has_ufw):
         return "firewalld"
@@ -329,7 +329,7 @@ def firewall_backend():
 
 # ── Courrier ─────────────────────────────────────────────────────────────────
 def sendmail_cmd():
-    """Commande d'envoi : sendmail du système, sinon msmtp directement (Fedora ne l'enregistre pas comme sendmail)."""
+    """Mail command: the system's sendmail, otherwise msmtp directly (Fedora does not register it as sendmail)."""
     p = os.environ.get("DUKIWI_SHIELD_SENDMAIL") or shutil.which("sendmail") or ("/usr/sbin/sendmail" if os.path.exists("/usr/sbin/sendmail") else "")
     if not p and shutil.which("msmtp"):
         return [shutil.which("msmtp"), "-t"]

@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
-Dukiwi Shield — dossiers protégés (service système, désactivé par défaut).
+Dukiwi Shield — protected folders (system service, disabled by default).
 
-Seuls les programmes approuvés peuvent ouvrir les fichiers des dossiers protégés (Documents, Images, Bureau et les
-dossiers ajoutés) : programmes des paquets du système, /opt, snap, Flatpak, et ceux que l'utilisateur a autorisés.
-Un programme déposé dans /tmp, dans un dossier personnel ou dans /usr/local, ou un interpréteur (python, bash…) qui
-exécute un script venu d'un tel endroit, reçoit « permission refusée » et une alerte propose de l'autoriser.
+Only approved programs can open the files of protected folders (Documents, Pictures, Desktop and the added
+folders): programs from system packages, /opt, snap, Flatpak, and those the user has allowed.
+A program dropped in /tmp, in a home folder or in /usr/local, or an interpreter (python, bash…) running
+a script from such a place, gets "permission denied" and an alert offers to allow it.
 
-Linux ne permet pas de bloquer seulement les écritures : la décision se prend à l'ouverture du fichier (fanotify,
-FAN_OPEN_PERM), lecture comme écriture. Pendant la décision le programme attend ; le fil qui décide ne lit donc que
-/proc, ne prend aucun verrou partagé et autorise en cas d'erreur. Un auto-test à chaque activation (programme du
-système autorisé, copie hors système refusée, aucune attente) désactive la protection si quelque chose cloche.
+Linux cannot block only writes: the decision is made when the file is opened (fanotify, FAN_OPEN_PERM),
+for reading as well as writing. During the decision the program waits; so the deciding thread reads only
+/proc, takes no shared lock and allows on error. A self-test at each activation (system program allowed,
+copy outside the system denied, no waiting) disables the protection if something is wrong.
 (c) 2026 Dukiwi SA - Estavayer-le-Lac
 """
 
@@ -56,8 +56,8 @@ class ProtectedFolders(threading.Thread):
         self.write_log = helpers["write_log"]
         self.fd = None
         self.active = False
-        self.allowed = set()                      # exécutables autorisés (copie lue par le fil de décision)
-        self.verdicts = {}                        # (exe, script) → bool, cache du fil de décision
+        self.allowed = set()                      # allowed executables (copy read by the decision thread)
+        self.verdicts = {}                        # (exe, script) → bool, decision thread cache
         self.pending_alerts = queue.Queue()
         self.alerted = {}
         self.marked = 0
@@ -65,11 +65,11 @@ class ProtectedFolders(threading.Thread):
         self.stop_event = threading.Event()
         self.reload = threading.Event()
         self.self_pid = os.getpid()
-        self.test_pids = {}                       # pid de l'auto-test → résultat attendu
+        self.test_pids = {}                       # self-test pid → expected result
         self.status = {"active": False, "tested": False, "error": "", "marked": 0, "denied": 0}
         self.libc = None
 
-    # ── réglage ──────────────────────────────────────────────────────────
+    # ── setting ──────────────────────────────────────────────────────────
     def enabled(self):
         return self.d.settings.get("protected_folders") is True
 
@@ -89,11 +89,11 @@ class ProtectedFolders(threading.Thread):
         import pwd
         from dukiwi_shield_common import home_mounted
         return [pw for pw in pwd.getpwall() if pw.pw_uid >= 1000 and pw.pw_dir.startswith("/home/") and os.path.isdir(pw.pw_dir)
-                and home_mounted(pw)]                     # dossier chiffré non monté : rien à protéger, et le montage le cachera
+                and home_mounted(pw)]                     # encrypted folder not mounted: nothing to protect, and the mount will hide it
 
     def refresh_allowed(self):
-        # Seulement les programmes autorisés pour les dossiers protégés (par un administrateur) : la liste générale des
-        # programmes de confiance se modifie sans mot de passe, un programme malveillant pourrait s'y inscrire lui-même.
+        # Only the programs allowed for protected folders (by an administrator): the general list of trusted
+        # programs can be changed without a password, so a malicious program could add itself to it.
         allowed = set(self.d.state.get("protected_allowed") or [])
         self.allowed = allowed
         self.verdicts = {}
@@ -110,7 +110,7 @@ class ProtectedFolders(threading.Thread):
         return fd
 
     def mark_tree(self, root, limit=200000):
-        """Marque chaque dossier de l'arbre : les ouvertures de fichiers de ses enfants passent par la décision."""
+        """Marks every folder of the tree: file opens of its children go through the decision."""
         n = 0
         for dirpath, dirs, _files in os.walk(root):
             dirs[:] = [d for d in dirs if not os.path.islink(os.path.join(dirpath, d))]
@@ -129,7 +129,7 @@ class ProtectedFolders(threading.Thread):
         self.status["marked"] = total
         return total
 
-    # ── décision (fil critique : /proc seulement, jamais de fichier des dossiers protégés) ──
+    # ── decision (critical thread: /proc only, never a file from the protected folders) ──
     def trusted(self, pid):
         if pid == self.self_pid:
             return True
@@ -137,11 +137,11 @@ class ProtectedFolders(threading.Thread):
         try:
             exe = os.readlink(f"/proc/{pid}/exe")
         except OSError:
-            return True if expected is None else expected     # processus déjà terminé : rien à protéger
+            return True if expected is None else expected     # process already finished: nothing to protect
         deleted = exe.endswith(" (deleted)")
         exe = exe.replace(" (deleted)", "")
         if exe.startswith("/tmp/.mount_"):
-            exe = appimage_of(pid) or exe                 # AppImage : identifiée par son fichier .AppImage, pas par le montage
+            exe = appimage_of(pid) or exe                 # AppImage: identified by its .AppImage file, not by the mount
         script = ""
         base = os.path.basename(exe)
         if base.startswith(INTERPRETERS):
@@ -159,13 +159,13 @@ class ProtectedFolders(threading.Thread):
             elif deleted:
                 verdict = False
             elif script and script.startswith(("/tmp/", "/var/tmp/", "/dev/shm/")):
-                verdict = False                           # interpréteur du système, script déposé dans un dossier temporaire
+                verdict = False                           # system interpreter, script dropped in a temporary folder
             elif exe.startswith(TRUSTED_PREFIXES) and not exe.startswith("/usr/local/"):
                 verdict = True
             elif exe.startswith(UNTRUSTED_PREFIXES):
                 verdict = False
             else:
-                verdict = True                            # emplacement inhabituel mais pas suspect (ex. /srv) : pas de blocage
+                verdict = True                            # unusual but not suspicious location (e.g. /srv): no blocking
             if len(self.verdicts) > 5000:
                 self.verdicts = {}
             self.verdicts[key] = verdict
@@ -212,7 +212,7 @@ class ProtectedFolders(threading.Thread):
                     if mask & FAN_OPEN_PERM:
                         allow = self.trusted(pid)
                 except Exception:  # noqa: BLE001
-                    allow = True                          # jamais de blocage sur une erreur du service
+                    allow = True                          # never block on a service error
                 finally:
                     if mask & FAN_OPEN_PERM:
                         self.respond(fd, allow)
@@ -220,7 +220,7 @@ class ProtectedFolders(threading.Thread):
                 if not allow:
                     self.status["denied"] += 1
 
-    # ── alertes (hors du fil critique) ───────────────────────────────────
+    # ── alerts (outside the critical thread) ─────────────────────────────
     def alert_worker(self):
         while not self.d.shutdown.is_set():
             try:
@@ -246,7 +246,7 @@ class ProtectedFolders(threading.Thread):
 
     # ── auto-test ────────────────────────────────────────────────────────
     def self_test(self):
-        """Un programme du système doit lire un fichier protégé, une copie hors système ne doit pas ; sans attente."""
+        """A system program must read a protected file, a copy outside the system must not; without waiting."""
         base = "/var/lib/dukiwi-shield/protected-test"
         os.makedirs(base, exist_ok=True)
         probe = os.path.join(base, "probe.txt")
@@ -299,7 +299,7 @@ class ProtectedFolders(threading.Thread):
             if self.active:
                 self.loop()
             self.stop_protection()
-            self.d.shutdown.wait(5)                       # pas de boucle serrée si le groupe fanotify tombe
+            self.d.shutdown.wait(5)                       # no tight loop if the fanotify group goes down
 
     def start_protection(self):
         self.stop_event.clear()
@@ -312,7 +312,7 @@ class ProtectedFolders(threading.Thread):
             self.d.shutdown.wait(300)
             return
         self.refresh_allowed()
-        # Le fil de décision doit tourner pendant l'auto-test (sinon le test attendrait sa propre réponse)
+        # The decision thread must run during the self-test (otherwise the test would wait for its own answer)
         tester = threading.Thread(target=self.loop, daemon=True, name="protected-test-loop")
         tester.start()
         ok, err = False, "internal"
@@ -348,7 +348,7 @@ class ProtectedFolders(threading.Thread):
         self.status["active"] = False
         if self.fd is not None:
             try:
-                os.close(self.fd)                         # le noyau autorise toute ouverture encore en attente
+                os.close(self.fd)                         # the kernel allows any open still pending
             except OSError:
                 pass
             self.fd = None

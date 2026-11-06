@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Dukiwi Shield — durcissement du système : application (et annulation) des recommandations Lynis.
+"""Dukiwi Shield — system hardening: applying (and undoing) the Lynis recommendations.
 
-Exécuté par le service (root). Chaque correctif écrit ses propres fichiers (90-dukiwi-shield-*) ou retient la
-valeur précédente, pour pouvoir revenir en arrière. Les recommandations qui pourraient gêner un usage courant sont
-marquées « caution » (jamais appliquées automatiquement), celles sans objet sur un poste de travail « skip ».
+Run by the service (root). Each fix writes its own files (90-dukiwi-shield-*) or keeps the
+previous value, so it can be rolled back. Recommendations that could hinder everyday use are
+marked "caution" (never applied automatically), those not applicable to a workstation "skip".
 
-Tests : DUKIWI_SHIELD_HARDEN_ROOT=<dossier> préfixe tous les chemins et n'exécute aucune commande."""
+Tests: DUKIWI_SHIELD_HARDEN_ROOT=<folder> prefixes all paths and runs no command."""
 import os
 import re
 import shutil
@@ -27,9 +27,9 @@ SSHD_FILE = "/etc/ssh/sshd_config.d/90-dukiwi-shield.conf"
 NEEDRESTART_FILE = "/etc/needrestart/conf.d/90-dukiwi-shield.conf"
 LOGIN_DEFS = "/etc/login.defs"
 
-# Profil Lynis (KRNL-6000). Volontairement absents : kernel.modules_disabled (bloquerait tout pilote jusqu'au
-# redémarrage), net.ipv4.conf.all.rp_filter=1 (Ubuntu choisit 2 : VPN, conteneurs, routages asymétriques),
-# kernel.perf_event_paranoid (Ubuntu est déjà plus strict que le profil).
+# Lynis profile (KRNL-6000). Deliberately left out: kernel.modules_disabled (would block every driver until
+# reboot), net.ipv4.conf.all.rp_filter=1 (Ubuntu picks 2: VPNs, containers, asymmetric routing),
+# kernel.perf_event_paranoid (Ubuntu is already stricter than the profile).
 SYSCTL = [
     ("kernel.core_uses_pid", "1"), ("kernel.dmesg_restrict", "1"), ("kernel.kptr_restrict", "2"), ("kernel.sysrq", "0"),
     ("kernel.unprivileged_bpf_disabled", "1"), ("kernel.yama.ptrace_scope", "1"), ("net.core.bpf_jit_harden", "2"),
@@ -61,8 +61,8 @@ if distro.is_rpm():
                 "pam_tmpdir": [], "apt_show_versions": []}
 RPM_NOT_APPLICABLE = ("purge_rc", "old_kernels", "needrestart", "apt_show_versions", "pam_tmpdir")
 
-# Catalogue : test Lynis → traitement. kind : apply (bouton), gui (réglage ailleurs dans l'application),
-# manual (explication), skip (sans objet ou déconseillé ici). caution : jamais automatique, à lire avant.
+# Catalogue: Lynis test → handling. kind: apply (button), gui (setting elsewhere in the application),
+# manual (explanation), skip (not applicable or not advised here). caution: never automatic, read first.
 CATALOG = {
     "KRNL-6000": {"kind": "apply", "fn": "sysctl"},
     "KRNL-5820": {"kind": "apply", "fn": "coredumps"},
@@ -103,8 +103,8 @@ CATALOG = {
 
 
 def catalog_public():
-    """Catalogue pour l'interface (kind, caution, no_revert, action). Sur Fedora, les traitements propres à
-    dpkg/apt (restes de configuration, anciens noyaux, needrestart…) sont sans objet."""
+    """Catalogue for the interface (kind, caution, no_revert, action). On Fedora, the dpkg/apt-specific handling
+    (configuration leftovers, old kernels, needrestart…) is not applicable."""
     out = {}
     for t, e in CATALOG.items():
         pub = {k: v for k, v in e.items() if k != "fn"}
@@ -182,7 +182,7 @@ def _apt(args, timeout=1200):
 
 
 def _login_defs_set(changes):
-    """Modifie /etc/login.defs (clé → valeur, lignes marquées) ; retourne {clé: ancienne valeur ou None}."""
+    """Edits /etc/login.defs (key → value, marked lines); returns {key: old value or None}."""
     lines = _read(LOGIN_DEFS).splitlines()
     prev = {}
     for key, value in changes.items():
@@ -209,17 +209,17 @@ def _login_defs_restore(prev):
         if m and m.group(1) in prev:
             if prev[m.group(1)] is not None:
                 out.append(f"{m.group(1)}\t\t{prev[m.group(1)]}")
-            continue                                    # ligne ajoutée par nous : retirée
+            continue                                    # line added by us: removed
         out.append(ln)
     _write(LOGIN_DEFS, "\n".join(out) + "\n")
 
 
-# ── Correctifs : apply_<fn>(ctx) → (détail, prev) ; revert_<fn>(prev) → détail ──
+# ── Fixes: apply_<fn>(ctx) → (detail, prev); revert_<fn>(prev) → detail ──
 def apply_sysctl(_ctx):
     body = f"{TAG} : profil Lynis (KRNL-6000). Supprimer ce fichier pour revenir aux valeurs par défaut.\n"
     body += "".join(f"{k} = {v}\n" for k, v in SYSCTL)
     _write(SYSCTL_FILE, body)
-    r = _run(["sysctl", "-q", "-p", SYSCTL_FILE])       # une clé absente de ce noyau n'est pas bloquante
+    r = _run(["sysctl", "-q", "-p", SYSCTL_FILE])       # a key missing from this kernel is not blocking
     return f"{len(SYSCTL)} clés dans {SYSCTL_FILE}" + ("" if r.returncode == 0 else " (clés inconnues ignorées)"), {}
 
 
@@ -368,7 +368,7 @@ def apply_banner(_ctx):
     prev = {}
     for path in ("/etc/issue", "/etc/issue.net"):
         old = _read(path)
-        prev[path] = old if os.path.exists(_p(path)) else None     # None : le fichier n'existait pas
+        prev[path] = old if os.path.exists(_p(path)) else None     # None: the file did not exist
         first = (old.splitlines() or [""])[0] if path == "/etc/issue" else ""
         _write(path, (first + "\n\n" if first.strip() else "") + BANNER)
     return "bannières légales dans /etc/issue et /etc/issue.net", prev
@@ -407,8 +407,8 @@ def revert_firewire(_prev):
 
 
 def apply_purge_rc(_ctx):
-    # ${binary:Package} garde l'architecture (libvdpau1:i386) : sans elle, dpkg --purge visait l'amd64 installé
-    # dont d'autres paquets dépendent (« problèmes de dépendance ») alors que seul le reste i386 était à purger
+    # ${binary:Package} keeps the architecture (libvdpau1:i386): without it, dpkg --purge targeted the installed amd64
+    # that other packages depend on ("dependency problems") while only the i386 leftover needed purging
     r = _run(["dpkg-query", "-W", "-f", "${binary:Package}\t${db:Status-Abbrev}\n"])
     rc = [ln.split("\t")[0] for ln in (r.stdout or "").splitlines()
           if len(ln.split("\t")) > 1 and ln.split("\t")[1].strip().startswith("rc")]
@@ -418,7 +418,7 @@ def apply_purge_rc(_ctx):
     if r.returncode == 0:
         return f"{len(rc)} paquet(s) purgé(s) : " + ", ".join(rc[:8]) + ("…" if len(rc) > 8 else ""), {}
     done, failed = [], []
-    for pkg in rc:                                   # un par un : un échec n'empêche pas les autres
+    for pkg in rc:                                   # one at a time: one failure does not stop the others
         rr = _run(["dpkg", "--purge", pkg], timeout=300)
         (done if rr.returncode == 0 else failed).append(pkg)
     if not done:
@@ -437,8 +437,8 @@ def _kernel_family(rel):
 
 
 def old_kernels(installed_packages, running):
-    """Noyaux installés mais à supprimer : tous sauf celui qui tourne et le plus récent de chaque famille
-    (6.8 generic, 7.0 generic…). Retourne (releases, paquets)."""
+    """Kernels installed but to be removed: all except the running one and the most recent of each family
+    (6.8 generic, 7.0 generic…). Returns (releases, packages)."""
     releases = set()
     for pkg in installed_packages:
         m = re.match(r"linux-image-(?:unsigned-)?(\d+\.\d+\.\d+-\d+-\S+)$", pkg)
@@ -529,7 +529,7 @@ def apply_ntp(_ctx):
 
 
 def apply_ntp_restart(_ctx):
-    """Synchronisation activée et service relancé ; attend un alignement effectif (20 s au plus)."""
+    """Synchronisation enabled and service restarted; waits for an actual alignment (20 s at most)."""
     _check(_run(["timedatectl", "set-ntp", "true"]), "timedatectl")
     _run(["systemctl", "restart", "systemd-timesyncd"])
     import time as _t
@@ -567,7 +567,7 @@ def revert_file_perms(prev):
 
 
 def apply(fn, ctx=None):
-    """Applique le correctif `fn` ; retourne (détail, valeurs précédentes pour l'annulation). Lève RuntimeError."""
+    """Applies the fix `fn`; returns (detail, previous values for undoing). Raises RuntimeError."""
     func = globals().get(f"apply_{fn}")
     if not func:
         raise RuntimeError(f"correctif inconnu : {fn}")

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Dukiwi Shield — déverrouillage administrateur.
+Dukiwi Shield — administrator unlock.
 
-Lancé via pkexec (polkit demande le mot de passe d'un administrateur), ce script
-s'exécute en root et informe le service que l'utilisateur d'origine (PKEXEC_UID)
-est autorisé, pendant quelques minutes, à effectuer les actions réservées :
-désactiver le pare-feu, ouvrir un port, activer SSH, modifier les réglages en
-mode famille, installer une mise à jour.
+Started via pkexec (polkit asks for an administrator's password), this script
+runs as root and tells the service that the original user (PKEXEC_UID)
+is allowed, for a few minutes, to perform the restricted actions:
+disable the firewall, open a port, enable SSH, change the settings in
+family mode, install an update.
 """
 import os
 import sys

@@ -1,7 +1,7 @@
-/* Dukiwi Shield — Contrôle des liens (Firefox, Chrome, Chromium, Edge, Brave).
-   Avant chaque navigation principale, l'adresse est soumise au service système par l'hôte natif.
-   Danger → page d'avertissement (« Retour », « Ouvrir quand même », « Toujours autoriser ce site »).
-   Prudence → notification. Service injoignable → navigation laissée libre, badge « ? ». */
+/* Dukiwi Shield — Link Guard (Firefox, Chrome, Chromium, Edge, Brave).
+   Before each main-frame navigation, the address is submitted to the system service through the native host.
+   Danger → warning page ("Back", "Open anyway", "Always allow this site").
+   Caution → notification. Service unreachable → navigation left free, "?" badge. */
 'use strict';
 if (typeof importScripts === 'function') { importScripts('client.js'); }
 
@@ -9,8 +9,8 @@ const { api, call, hello, state, msg, reasonText } = UG;
 const IS_GECKO = typeof browser !== 'undefined' && !!browser.runtime && !!browser.runtime.getBrowserInfo;
 const action = api.action || api.browserAction;
 const cache = new Map();           // url → { r, t }
-const allowOnce = new Map();       // tabId → url autorisée une fois
-const recentBack = new Map();      // tabId → { url, t } : « Retour » depuis la page d'avertissement
+const allowOnce = new Map();       // tabId → url allowed once
+const recentBack = new Map();      // tabId → { url, t }: "Back" from the warning page
 const stats = { checked: 0, blocked: 0, warned: 0 };
 let appName = 'chrome';
 
@@ -48,7 +48,7 @@ function setBadge(tabId, text, color) {
     try {
         action.setBadgeText({ tabId, text: text || '' });
         if (color) action.setBadgeBackgroundColor({ tabId, color });
-    } catch (e) { /* onglet fermé */ }
+    } catch (e) { /* tab closed */ }
 }
 
 function notifyWarn(url, r) {
@@ -66,7 +66,7 @@ async function handleNavigation(tabId, url) {
     if (allowOnce.get(tabId) === url) { allowOnce.delete(tabId); return null; }
     const back = recentBack.get(tabId);
     if (back && back.url === url && Date.now() - back.t < 4000) {
-        // « Retour » est retombé sur l'adresse bloquée (historique) : encore un pas en arrière
+        // "Back" landed on the blocked address again (history): one more step back
         recentBack.delete(tabId);
         if (api.tabs.goBack) { try { api.tabs.goBack(tabId); } catch (e) { /* rien */ } }
         return 'about:blank';
@@ -92,12 +92,12 @@ async function handleNavigation(tabId, url) {
 }
 
 if (IS_GECKO && api.webRequest && api.webRequest.onBeforeRequest) {
-    // Firefox : requête bloquante (promesse) → redirigée avant tout chargement de la page
+    // Firefox: blocking request (promise) → redirected before the page loads at all
     api.webRequest.onBeforeRequest.addListener(
         d => handleNavigation(d.tabId, d.url).then(w => (w ? { redirectUrl: w } : {})).catch(() => ({})),
         { urls: ['http://*/*', 'https://*/*'], types: ['main_frame'] }, ['blocking']);
 } else {
-    // Chrome, Chromium, Edge, Brave (MV3) : vérification au début de la navigation, onglet redirigé si danger
+    // Chrome, Chromium, Edge, Brave (MV3): check at the start of navigation, tab redirected if danger
     api.webNavigation.onBeforeNavigate.addListener(d => {
         if (d.frameId !== 0) return;
         handleNavigation(d.tabId, d.url).then(w => { if (w && w !== 'about:blank') api.tabs.update(d.tabId, { url: w }); }).catch(() => {});

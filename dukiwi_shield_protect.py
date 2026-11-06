@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """
-Dukiwi Shield — protections actives (service système).
+Dukiwi Shield — active protections (system service).
 
-1. DNS filtré : systemd-resolved interroge un résolveur qui bloque les domaines malveillants (Quad9 ou Cloudflare
-   « Security »), en DNS-over-TLS quand le réseau le permet. Fichier unique 90-dukiwi-shield-dns.conf, testé après
-   application (annulé si plus rien ne se résout) ; suspendu sur un réseau au profil Entreprise (DNS interne).
-2. Isoler l'ordinateur : réseau coupé (NetworkManager, sinon mode panique de firewalld, sinon ufw tout refusé),
-   programmes suspects suspendus, analyse complète lancée ; « Rétablir le réseau » annule la coupure.
-3. Chiffrement du dossier personnel (fscrypt) : vérifications et marche à suivre seulement, rien d'automatique.
+1. Filtered DNS: systemd-resolved queries a resolver that blocks malicious domains (Quad9 or Cloudflare
+   "Security"), over DNS-over-TLS when the network allows it. Single file 90-dukiwi-shield-dns.conf, tested
+   after being applied (undone if nothing resolves any more); suspended on a network with the Enterprise profile
+   (internal DNS).
+2. Isolate the computer: network cut (NetworkManager, otherwise firewalld panic mode, otherwise ufw deny all),
+   suspicious programs suspended, full scan started; "Restore the network" undoes the cut.
+3. Home folder encryption (fscrypt): checks and instructions only, nothing automatic.
 (c) 2026 Dukiwi SA - Estavayer-le-Lac
 """
 
@@ -40,9 +41,9 @@ def unit_active(name):
     return run(["systemctl", "is-active", "--quiet", name], timeout=10).returncode == 0
 
 
-# ═══ 1. DNS filtré ════════════════════════════════════════════════════════
+# ═══ 1. Filtered DNS ══════════════════════════════════════════════════════
 def resolved_usable():
-    """systemd-resolved actif et /etc/resolv.conf pointant sur son résolveur local (sinon le réglage n'aurait aucun effet)."""
+    """systemd-resolved active and /etc/resolv.conf pointing to its local resolver (otherwise the setting has no effect)."""
     if not shutil.which("resolvectl") or not unit_active("systemd-resolved"):
         return False, "resolved_missing"
     try:
@@ -92,8 +93,8 @@ def restart_resolved():
 
 
 def dns_apply(provider):
-    """Écrit le fichier de configuration, redémarre systemd-resolved et vérifie que la résolution marche encore ;
-    sinon annule. Retourne (ok, erreur)."""
+    """Writes the configuration file, restarts systemd-resolved and checks that resolution still works;
+    otherwise undoes it. Returns (ok, error)."""
     if provider not in DNS_PROVIDERS:
         return False, "invalid_provider"
     usable, why = resolved_usable()
@@ -119,7 +120,7 @@ def dns_apply(provider):
     restart_resolved()
     if dns_resolves():
         return True, ""
-    # Le réseau bloque ce résolveur (pare-feu d'entreprise, portail captif) : retour à la configuration précédente
+    # The network blocks this resolver (corporate firewall, captive portal): back to the previous configuration
     if previous is None:
         os.unlink(DNS_DROPIN)
     else:
@@ -143,7 +144,7 @@ def nm_running():
 
 
 def network_cut():
-    """Coupe le réseau ; retourne (méthode, état précédent à restaurer) ou (None, erreur)."""
+    """Cuts the network; returns (method, previous state to restore) or (None, error)."""
     if nm_running():
         r = run(["nmcli", "networking", "off"], timeout=30)
         if r.returncode == 0:
@@ -181,8 +182,8 @@ def network_restore(method, prev):
 
 
 def suspicious_processes(alert_pids=(), trusted=(), self_pid=None):
-    """Processus à suspendre pendant l'isolement : exécutable dans un dossier temporaire ou effacé du disque, ou
-    programme d'une alerte « danger » récente, jamais un programme approuvé ni un fil du noyau."""
+    """Processes to suspend during isolation: executable in a temporary folder or deleted from disk, or
+    program from a recent "danger" alert, never an approved program nor a kernel thread."""
     out = []
     for entry in os.listdir("/proc"):
         if not entry.isdigit():
@@ -211,7 +212,7 @@ def suspicious_processes(alert_pids=(), trusted=(), self_pid=None):
     return out
 
 
-# ═══ 3. Chiffrement du dossier personnel ══════════════════════════════════
+# ═══ 3. Home folder encryption ════════════════════════════════════════════
 def _findmnt(path):
     r = run(["findmnt", "-no", "SOURCE,FSTYPE,TARGET", "-T", path], timeout=10)
     parts = (r.stdout or "").split()
@@ -224,8 +225,8 @@ def disk_encrypted():
 
 
 def home_encryption_check(users, sessions_uids=()):
-    """État pour l'assistant : disque déjà chiffré, système de fichiers de /home, fonction « encrypt » d'ext4, outils
-    installés, et pour chaque utilisateur : dossier chiffré ou non, connecté, taille et place libre."""
+    """State for the assistant: disk already encrypted, file system of /home, ext4 "encrypt" feature, installed
+    tools, and for each user: folder encrypted or not, logged in, size and free space."""
     source, fstype, target = _findmnt("/home")
     feature = None
     if fstype == "ext4" and source.startswith("/dev/") and shutil.which("tune2fs"):
@@ -233,7 +234,7 @@ def home_encryption_check(users, sessions_uids=()):
         feats = re.search(r"^Filesystem features:\s*(.*)$", r.stdout or "", re.M)
         feature = bool(feats and "encrypt" in feats.group(1).split())
     elif fstype == "f2fs":
-        feature = True                                  # f2fs : chiffrement activé au formatage (-O encrypt), vérifié par fscrypt setup
+        feature = True                                  # f2fs: encryption enabled at format time (-O encrypt), checked by fscrypt setup
     pam = bool(glob.glob("/lib/*/security/pam_fscrypt.so") + glob.glob("/usr/lib/*/security/pam_fscrypt.so")
                + glob.glob("/usr/lib64/security/pam_fscrypt.so") + glob.glob("/lib/security/pam_fscrypt.so"))
     boot_same_fs = _findmnt("/boot")[0] == source
@@ -268,7 +269,7 @@ def home_encryption_check(users, sessions_uids=()):
                           "logged_in": pw.pw_uid in sessions_uids,
                           "size": size, "space_ok": free > size * 1.1})
     try:
-        ecryptfs = any(os.scandir("/home/.ecryptfs"))      # dossier vide laissé par un ancien paquet : ignoré
+        ecryptfs = any(os.scandir("/home/.ecryptfs"))      # empty folder left by an old package: ignored
     except OSError:
         ecryptfs = False
     return {"checked_at": time.strftime("%Y-%m-%dT%H:%M:%S"), "disk_encrypted": disk_encrypted(), "ecryptfs": ecryptfs,

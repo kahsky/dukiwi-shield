@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Dukiwi Shield — fonctions côté utilisateur (sans root) :
-- fuites de données : mots de passe (Have I Been Pwned, k-anonymity : seuls 5 caractères du SHA-1 sont envoyés)
-  et adresses e-mail (API HIBP avec clé, ou relais Dukiwi) ;
-- inventaire des applications hors dépôts : Flatpak (permissions larges), Snap (confinement classic, plugs
-  sensibles), AppImage (non mises à jour automatiquement) ;
-- coffre chiffré gocryptfs (~/.coffre chiffré, monté sur ~/Coffre) ;
-- bilan hebdomadaire.
+Dukiwi Shield — user-side functions (no root):
+- data breaches: passwords (Have I Been Pwned, k-anonymity: only 5 characters of the SHA-1 are sent)
+  and e-mail addresses (HIBP API with a key, or Dukiwi relay);
+- inventory of applications outside the repositories: Flatpak (broad permissions), Snap (classic confinement,
+  sensitive plugs), AppImage (not updated automatically);
+- gocryptfs encrypted vault (encrypted ~/.coffre, mounted on ~/Coffre);
+- weekly report.
 """
 
 import glob
@@ -26,7 +26,7 @@ USER_AGENT = "ClamAV-Antivirus-GUI (Dukiwi SA; +https://www.dukiwi.com)"
 HIBP_RANGE_URL = "https://api.pwnedpasswords.com/range/"
 HIBP_ACCOUNT_URL = "https://haveibeenpwned.com/api/v3/breachedaccount/"
 DUKIWI_HIBP_PROXY = "https://www.dukiwi.com/repo/api/hibp.php"
-XON_ANALYTICS_URL = "https://api.xposedornot.com/v1/breach-analytics?email="   # source gratuite, sans clé (repli)
+XON_ANALYTICS_URL = "https://api.xposedornot.com/v1/breach-analytics?email="   # free source, no key (fallback)
 VAULT_CIPHER = os.path.expanduser("~/.coffre")
 VAULT_MOUNT = os.path.expanduser("~/Coffre")
 APPIMAGE_DIRS = ["~", "~/Downloads", "~/Téléchargements", "~/Applications", "~/Apps", "~/.local/bin", "~/bin", "~/Desktop", "~/Bureau"]
@@ -42,10 +42,10 @@ def _http(url, headers=None, timeout=25):
         return resp.status, resp.read()
 
 
-# ─── Fuites de données (HIBP) ───────────────────────────────────────────────
+# ─── Data breaches (HIBP) ───────────────────────────────────────────────────
 def check_password(password):
-    """Nombre d'apparitions du mot de passe dans les fuites connues (k-anonymity : 5 caractères du SHA-1 envoyés).
-    Retourne (count, error). Le mot de passe ne quitte jamais l'ordinateur."""
+    """Number of times the password appears in known breaches (k-anonymity: 5 characters of the SHA-1 sent).
+    Returns (count, error). The password never leaves the computer."""
     if not password:
         return None, "empty"
     digest = hashlib.sha1(password.encode("utf-8")).hexdigest().upper()
@@ -65,7 +65,7 @@ def check_password(password):
 
 
 def check_email_xon(email):
-    """Repli gratuit sans clé : XposedOrNot (breach-analytics). Retourne (breaches, error)."""
+    """Free fallback without a key: XposedOrNot (breach-analytics). Returns (breaches, error)."""
     try:
         status, body = _http(XON_ANALYTICS_URL + urllib.parse.quote(email), timeout=30)
         data = json.loads(body.decode("utf-8", "replace") or "{}")
@@ -91,8 +91,8 @@ def check_email_xon(email):
 
 
 def check_email(email, api_key="", proxy_url=""):
-    """Fuites connues pour une adresse : API HIBP (clé personnelle), sinon relais Dukiwi, sinon XposedOrNot (gratuit).
-    Retourne (breaches, error)."""
+    """Known breaches for an address: HIBP API (personal key), otherwise Dukiwi relay, otherwise XposedOrNot (free).
+    Returns (breaches, error)."""
     email = (email or "").strip().lower()
     if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[a-z]{2,}", email):
         return [], "invalid_email"
@@ -111,7 +111,7 @@ def check_email(email, api_key="", proxy_url=""):
             return [], "bad_key"
         if e.code == 429:
             return [], "rate_limited"
-        if not api_key:                         # relais sans clé (503) ou indisponible : repli gratuit
+        if not api_key:                         # relay without a key (503) or unavailable: free fallback
             return check_email_xon(email)
         return [], f"http_{e.code}"
     except Exception as e:  # noqa: BLE001
@@ -134,7 +134,7 @@ def check_email(email, api_key="", proxy_url=""):
     return out, ""
 
 
-# ─── Applications hors dépôts ───────────────────────────────────────────────
+# ─── Applications outside the repositories ──────────────────────────────────
 def _run(cmd, timeout=60):
     try:
         return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
@@ -242,7 +242,7 @@ def inventory_apps():
                        "risky": sum(1 for a in fl + sn if a["risky"]) + len(ai)}}
 
 
-# ─── Coffre chiffré (gocryptfs) ─────────────────────────────────────────────
+# ─── Encrypted vault (gocryptfs) ────────────────────────────────────────────
 def vault_status():
     mounted = False
     try:
@@ -319,7 +319,7 @@ def vault_close():
 
 # ─── Bilan hebdomadaire ─────────────────────────────────────────────────────
 def weekly_report(history, alerts, checklist, backup, read_lessons, previous_score, days=7):
-    """Résumé des `days` derniers jours à partir des données déjà connues du GUI."""
+    """Summary of the last `days` days from the data already known to the GUI."""
     since = datetime.now() - timedelta(days=days)
 
     def recent(entries, key):

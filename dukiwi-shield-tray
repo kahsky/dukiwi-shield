@@ -1,11 +1,11 @@
 #!/bin/sh
-# Dukiwi Shield — lance le bouclier (tray) dans un service utilisateur transitoire relancé automatiquement
-# s'il est tué (Restart=always). « Quitter » (administrateur) arrête proprement ce service.
-# Une seule instance par session : si le service est déjà actif, on sort ; si le gestionnaire utilisateur (systemd --user)
-# n'est pas encore joignable juste après l'ouverture de session, on attend jusqu'à 20 s au lieu de lancer le programme
-# hors service (c'est ainsi que deux boucliers apparaissaient après un redémarrage : un lancé par le service système
-# avant que la session soit prête, un autre par le démarrage automatique du bureau).
-# Variables de test : DUKIWI_SHIELD_TRAY_UNIT (nom d'unité), DUKIWI_SHIELD_TRAY_CMD (commande).
+# Dukiwi Shield — starts the shield (tray) in a transient user service that is restarted automatically
+# if it is killed (Restart=always). "Quit" (administrator) stops this service cleanly.
+# Only one instance per session: if the service is already active, we exit; if the user manager (systemd --user)
+# is not reachable yet just after login, we wait up to 20 s instead of starting the program
+# outside the service (this is how two shields appeared after a reboot: one started by the system service
+# before the session was ready, another by the desktop autostart).
+# Test variables: DUKIWI_SHIELD_TRAY_UNIT (unit name), DUKIWI_SHIELD_TRAY_CMD (command).
 UNIT="${DUKIWI_SHIELD_TRAY_UNIT:-dukiwi-shield-tray}"
 CMD="${DUKIWI_SHIELD_TRAY_CMD:-/usr/bin/python3 /opt/dukiwi-shield/dukiwi-shield.py --tray}"
 LOCKDIR="${XDG_RUNTIME_DIR:-/tmp}"; [ -d "$LOCKDIR" ] && [ -w "$LOCKDIR" ] || LOCKDIR=/tmp
@@ -14,17 +14,17 @@ if command -v systemd-run >/dev/null 2>&1 && [ -n "$XDG_RUNTIME_DIR" ]; then
     i=0
     while ! systemctl --user show-environment >/dev/null 2>&1; do
         i=$((i + 1))
-        [ "$i" -ge 20 ] && exit 75      # gestionnaire utilisateur absent : on réessaiera (service système toutes les 20 s)
+        [ "$i" -ge 20 ] && exit 75      # user manager missing: we will retry (system service every 20 s)
         sleep 1
     done
     if systemctl --user is-active --quiet "$UNIT.service"; then
         exit 0
     fi
     systemctl --user reset-failed "$UNIT.service" >/dev/null 2>&1
-    # flock : deux lanceurs simultanés (bureau + service système) ne créent qu'une unité
+    # flock: two simultaneous launchers (desktop + system service) create only one unit
     exec flock -n "$LOCK" systemd-run --user --quiet --unit="$UNIT" --collect \
         -p Restart=always -p RestartSec=1 -p KillMode=process \
         --description="Dukiwi Shield (tray)" /bin/sh -c "exec $CMD"
 fi
-# Sans systemd --user : exécution directe, verrouillée (une seule instance)
+# Without systemd --user: direct execution, locked (single instance)
 exec flock -n "$LOCK" /bin/sh -c "exec $CMD"

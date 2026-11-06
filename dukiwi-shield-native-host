@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Dukiwi Shield — hôte de messagerie native (Thunderbird, Firefox, Chrome, Chromium, Edge, Brave).
+Dukiwi Shield — native messaging host (Thunderbird, Firefox, Chrome, Chromium, Edge, Brave).
 
-Lancé par le navigateur (sans droits particuliers, dans la session de l'utilisateur) pour l'extension « Contrôle des
-liens ». Protocole native messaging : messages JSON précédés de leur longueur (4 octets, boutisme natif) sur
-stdin/stdout. Chaque message porte un `id` renvoyé dans la réponse. L'hôte ne fait que relayer au service système
-(socket Unix) : il ne décide rien lui-même.
+Started by the browser (without special rights, in the user's session) for the "Link Guard" extension.
+Native messaging protocol: JSON messages preceded by their length (4 bytes, native byte order) on
+stdin/stdout. Each message carries an `id` returned in the response. The host only relays to the system service
+(Unix socket): it decides nothing itself.
 
-Commandes : hello {version} · check {urls:[url | {url,text,sender}], context} · report {url, verdict, action} ·
+Commands: hello {version} · check {urls:[url | {url,text,sender}], context} · report {url, verdict, action} ·
 allow {host, remove} · scan {name, data (base64), sender, subject} · status
 (c) 2026 Dukiwi SA - Estavayer-le-Lac
 """
@@ -29,7 +29,7 @@ MAX_ATTACHMENT = 200 * 1024 ** 2
 
 
 def detect_app():
-    """Navigateur appelant : nom du processus parent (fiable), sinon l'identité donnée par l'extension."""
+    """Calling browser: name of the parent process (reliable), otherwise the identity given by the extension."""
     try:
         with open(f"/proc/{os.getppid()}/comm", encoding="utf-8", errors="replace") as f:
             comm = f.read().strip()

@@ -1,9 +1,9 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════════════════════
-# Dukiwi Shield — ouvrir un fichier dans un bac à sable (firejail)
-# Le fichier est copié dans un dossier temporaire qui devient le dossier personnel du programme :
-# pas de réseau, pas d'accès à vos fichiers, ni au bus de session, ni aux autres programmes (/tmp privé).
-# Les modifications faites dans le bac à sable sont perdues à la fermeture.
+# Dukiwi Shield — open a file in a sandbox (firejail)
+# The file is copied into a temporary folder that becomes the program's home folder:
+# no network, no access to your files, nor to the session bus, nor to other programs (private /tmp).
+# Changes made in the sandbox are lost when it is closed.
 # ═══════════════════════════════════════════════════════════════════════════
 
 case "${LANGUAGE:-${LC_ALL:-${LC_MESSAGES:-$LANG}}}" in
@@ -20,7 +20,7 @@ FILE="$1"
 [ -d "$FILE" ] && { say error "$T_DIR"; exit 1; }
 command -v firejail >/dev/null 2>&1 || { say warning "$T_MISSING"; exit 2; }
 
-# Programme par défaut pour ce type de fichier (ligne Exec du fichier .desktop), sinon xdg-open
+# Default program for this file type (Exec line of the .desktop file), otherwise xdg-open
 MIME=$(xdg-mime query filetype "$FILE" 2>/dev/null)
 DESKTOP=$(xdg-mime query default "$MIME" 2>/dev/null)
 EXEC=""
@@ -32,7 +32,7 @@ if [ -n "$DESKTOP" ]; then
         fi
     done
 fi
-case "$EXEC" in flatpak*|*snap\ run*|/snap/*) EXEC="" ;; esac      # Flatpak et snap ont leur propre bac à sable
+case "$EXEC" in flatpak*|*snap\ run*|/snap/*) EXEC="" ;; esac      # Flatpak and snap have their own sandbox
 [ -n "$EXEC" ] || EXEC="xdg-open"
 
 BOX=$(mktemp -d /tmp/dukiwi-sandbox-XXXXXX) || exit 1
@@ -43,8 +43,8 @@ cp -- "$FILE" "$BOX/$NAME" || exit 1
 JAIL=(firejail --quiet --net=none --private="$BOX" --private-tmp --dbus-user=none --dbus-system=none --nogroups --noroot
       --caps.drop=all --seccomp --nonewprivs)
 
-# Vérification avant d'ouvrir : si firejail n'isole pas vraiment (il se contente d'un avertissement quand il détecte un
-# autre bac à sable), le vrai dossier personnel ou une interface réseau seraient visibles → on refuse d'ouvrir.
+# Check before opening: if firejail does not really isolate (it only prints a warning when it detects another
+# sandbox), the real home folder or a network interface would be visible → we refuse to open.
 PROBE=".dukiwi-sandbox-probe-$$"
 touch "$HOME/$PROBE"
 "${JAIL[@]}" -- sh -c '[ ! -e "$HOME/$1" ] && [ -z "$(ls /sys/class/net | grep -vx lo)" ]' _ "$PROBE" 2>/dev/null

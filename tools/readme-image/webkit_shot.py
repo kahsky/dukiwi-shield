@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rendu hors écran de l'interface : webkit_shot.py <url> <largeur> <hauteur> <sortie.png> [js] [délai s]"""
+"""Off-screen rendering of the interface: webkit_shot.py <url> <width> <height> <output.png> [js] [delay s]"""
 import sys, gi
 gi.require_version('Gtk', '3.0'); gi.require_version('WebKit2', '4.1')
 from gi.repository import Gtk, WebKit2, GLib
@@ -11,7 +11,7 @@ view = WebKit2.WebView()
 view.set_size_request(w, h)
 import os
 if os.environ.get('ZOOM'):
-    view.set_zoom_level(float(os.environ['ZOOM']))   # GDK_SCALE=1 + zoom 2 : mise en page à w/2 px CSS, rendu net à 2×
+    view.set_zoom_level(float(os.environ['ZOOM']))   # GDK_SCALE=1 + zoom 2: layout at w/2 CSS px, sharp rendering at 2×
 win.add(view); win.show_all()
 done_once = {"v": False}
 def snap():

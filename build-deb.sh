@@ -12,7 +12,7 @@ VERSION="2.7.11"
 ARCH="all"
 PKG_DIR="${APP_NAME}_${VERSION}_${ARCH}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# --stage-only <dir> : construit seulement l'arborescence (partagée avec build-rpm.sh), sans paquet Debian
+# --stage-only <dir>: builds only the tree (shared with build-rpm.sh), without a Debian package
 STAGE_ONLY=""
 if [ "${1:-}" = "--stage-only" ]; then STAGE_ONLY="$2"; PKG_DIR="$2"; fi
 
@@ -50,7 +50,7 @@ cp "${SCRIPT_DIR}/dukiwi_shield_urlguard.py"              "${PKG_DIR}/opt/${APP_
 cp "${SCRIPT_DIR}/dukiwi_shield_guard.py"                 "${PKG_DIR}/opt/${APP_NAME}/"
 cp "${SCRIPT_DIR}/dukiwi-shield-native-host"    "${PKG_DIR}/opt/${APP_NAME}/"
 cp "${SCRIPT_DIR}/dukiwi-shield-browser-setup"  "${PKG_DIR}/opt/${APP_NAME}/"
-# Extensions Thunderbird / navigateurs (XPI, CRX, dossiers décompressés, update.xml, identifiants)
+# Thunderbird / browser extensions (XPI, CRX, unpacked folders, update.xml, identifiers)
 "${SCRIPT_DIR}/build-extensions.sh" --quiet
 mkdir -p "${PKG_DIR}/opt/${APP_NAME}/extensions"
 cp -r "${SCRIPT_DIR}/dist/extensions/." "${PKG_DIR}/opt/${APP_NAME}/extensions/"
@@ -174,9 +174,9 @@ cat > "${PKG_DIR}/DEBIAN/postinst" << 'EOF'
 #!/bin/bash
 set -e
 
-# ── Reprise d'une installation des versions précédentes (paquet « OLD », ≤ 1.31.1) ─────────────────────────────
-# Le paquet précédent vient d'être retiré (Conflicts/Replaces) : état, quarantaine, cache, journaux, politique, fichiers
-# de durcissement et réglage de l'heure des mises à jour passent sous le nouveau nom ; liens systemd orphelins supprimés.
+# ── Takeover of an installation from previous versions (package "OLD", ≤ 1.31.1) ───────────────────────────────
+# The previous package has just been removed (Conflicts/Replaces): state, quarantine, cache, logs, policy, hardening
+# files and update time setting move to the new name; orphaned systemd links removed.
 OLD=clamav-antivirus
 migrate_dir() {
     if [ -d "$1" ] && [ ! -L "$1" ]; then
@@ -203,7 +203,7 @@ done
 for f in /etc/hosts /etc/login.defs /etc/sysctl.d/90-dukiwi-shield* /etc/security/limits.d/90-dukiwi-shield* \
          /etc/systemd/coredump.conf.d/90-dukiwi-shield* /etc/modprobe.d/90-dukiwi-shield* /etc/ssh/sshd_config.d/90-dukiwi-shield* \
          /etc/needrestart/conf.d/90-dukiwi-shield*; do
-    # réécrit sur place (même inode : /etc/hosts peut être un montage), jamais bloquant
+    # rewritten in place (same inode: /etc/hosts can be a mount), never blocking
     if [ -f "$f" ] && grep -q '# ClamAV Antivirus GUI' "$f" 2>/dev/null; then
         sed 's/# ClamAV Antivirus GUI/# Dukiwi Shield/' "$f" > "$f.dukiwi-tmp" && cat "$f.dukiwi-tmp" > "$f" || true
         rm -f "$f.dukiwi-tmp"
@@ -214,7 +214,7 @@ for l in /etc/systemd/system/multi-user.target.wants/$OLD-daemon.service /etc/sy
          /etc/systemd/system/$OLD-daemon.service /etc/systemd/system/timers.target.wants/$OLD-update.timer; do
     [ -L "$l" ] && rm -f "$l"
 done
-# Restes non suivis par l'ancien paquet (caches Python) une fois celui-ci retiré
+# Leftovers not tracked by the old package (Python caches) once it has been removed
 [ -d /opt/$OLD ] && [ ! -e /opt/$OLD/$OLD.py ] && rm -rf /opt/$OLD
 true
 
@@ -224,26 +224,26 @@ STATE_DIR=/var/lib/dukiwi-shield
 systemctl enable clamav-freshclam 2>/dev/null || true
 systemctl start clamav-freshclam 2>/dev/null || true
 
-# Service système + planification des mises à jour (07:00 et 5 min après le démarrage)
+# System service + update scheduling (07:00 and 5 min after boot)
 mkdir -p "$STATE_DIR"
 FIRST_INSTALL=0
 if [ "$1" = "configure" ] && [ ! -f "$STATE_DIR/state.json" ]; then
-    # Première installation du service : scan complet automatique au démarrage du daemon
+    # First installation of the service: automatic full scan when the daemon starts
     touch "$STATE_DIR/first-scan-pending"
     FIRST_INSTALL=1
 fi
 
 systemctl daemon-reload 2>/dev/null || true
 udevadm control --reload-rules 2>/dev/null || true
-# Extensions : hôte natif et politiques pour Thunderbird, Firefox, Chrome, Chromium, Edge, Brave
+# Extensions: native host and policies for Thunderbird, Firefox, Chrome, Chromium, Edge, Brave
 /opt/dukiwi-shield/dukiwi-shield-browser-setup install 2>/dev/null || true
 systemctl enable dukiwi-shield-daemon.service 2>/dev/null || true
 systemctl enable dukiwi-shield-update.timer 2>/dev/null || true
 systemctl restart dukiwi-shield-daemon.service 2>/dev/null || true
 systemctl start dukiwi-shield-update.timer 2>/dev/null || true
 
-# Relancer les GUI ouvertes pour charger la nouvelle version : le service utilisateur (Restart=always) ou la
-# surveillance du service root relancent le bouclier dans chaque session graphique active
+# Restart the open GUIs to load the new version: the user service (Restart=always) or the root service
+# watchdog restart the shield in each active graphical session
 pkill -f "/opt/dukiwi-shield/dukiwi-shield.py" 2>/dev/null || true
 
 # Update desktop database
@@ -287,7 +287,7 @@ if [ "$1" = "remove" ]; then
     systemctl disable dukiwi-shield-update.timer 2>/dev/null || true
     systemctl stop dukiwi-shield-daemon.service 2>/dev/null || true
     systemctl disable dukiwi-shield-daemon.service 2>/dev/null || true
-    # Leurres anti-rançongiciel (fichiers cachés .dukiwi-guard-*) retirés des dossiers personnels
+    # Anti-ransomware decoys (hidden files .dukiwi-guard-*) removed from home folders
     find /home -maxdepth 4 -xdev -type f -name '.dukiwi-guard-*' -delete 2>/dev/null || true
 fi
 exit 0

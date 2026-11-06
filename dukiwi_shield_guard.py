@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
 """
-Dukiwi Shield — détections du centre de sécurité (service système).
+Dukiwi Shield — security centre detections (system service).
 
-1. Leurres anti-rançongiciel : un fichier caché par dossier (Documents, Images, Bureau, dossier personnel). Personne n'a
-   de raison de l'écrire : un programme qui le modifie est suspendu (réponse automatique) et signalé ; un leurre
-   supprimé ou renommé est signalé, avec le programme qui écrivait dans ce dossier à ce moment-là s'il y en a un.
-2. Caméra et micro : programme qui ouvre /dev/video* (lecture de /proc/*/fd) ou qui enregistre le micro (pactl, par
-   session) → popup d'information, « Toujours autoriser » mémorisé.
-3. Mineurs de cryptomonnaie : nom connu, adresse de pool (stratum+tcp://…) ou options de mineur dans la ligne de
-   commande → danger (suspension) ; connexion vers un port de pool avec un processeur saturé, ou programme hors paquets
-   qui sature le processeur pendant 15 minutes → avertissement.
-4. Certificats racine ajoutés : magasin du système et bases NSS (Firefox, Chrome, Thunderbird). Un certificat racine
-   ajouté permet d'intercepter le HTTPS ; chaque nouveau est signalé, la checklist les liste (« Ignorer » par empreinte).
-5. Détournement réseau : /etc/hosts vers une adresse publique, proxy (bureau, Firefox, /etc/environment, apt, dnf),
-   nouveau serveur DNS public inconnu sur un réseau déjà connu.
+1. Anti-ransomware decoys: one hidden file per folder (Documents, Pictures, Desktop, home folder). Nobody has any
+   reason to write it: a program that modifies it is suspended (automatic response) and reported; a deleted or
+   renamed decoy is reported, with the program that was writing in that folder at that moment, if there is one.
+2. Camera and microphone: program that opens /dev/video* (reading /proc/*/fd) or records the microphone (pactl, per
+   session) → information popup, "Always allow" remembered.
+3. Cryptocurrency miners: known name, pool address (stratum+tcp://…) or miner options in the command line →
+   danger (suspension); connection to a pool port with a saturated CPU, or a program outside packages that
+   saturates the CPU for 15 minutes → warning.
+4. Added root certificates: system store and NSS databases (Firefox, Chrome, Thunderbird). An added root
+   certificate makes it possible to intercept HTTPS; each new one is reported, the checklist lists them ("Ignore"
+   by fingerprint).
+5. Network hijacking: /etc/hosts pointing to a public address, proxy (desktop, Firefox, /etc/environment, apt,
+   dnf), new unknown public DNS server on an already known network.
 (c) 2026 Dukiwi SA - Estavayer-le-Lac
 """
 
@@ -37,11 +38,11 @@ from datetime import datetime
 DECOY_PREFIX = ".dukiwi-guard-"
 DECOY_DIRS = (("DOCUMENTS", "Documents", "docx"), ("PICTURES", "Pictures", "jpg"), ("DESKTOP", "Desktop", "pdf"), ("", "", "xlsx"))
 DECOY_CHECK_SEC = 5
-DECOY_MISSING_COOLDOWN = 3600            # s entre deux alertes « leurre supprimé » sans programme identifié (même chemin)
-SUSPECT_WINDOW = 30                      # s : programme qui écrivait dans le dossier du leurre juste avant sa disparition
+DECOY_MISSING_COOLDOWN = 3600            # s between two "decoy deleted" alerts with no identified program (same path)
+SUSPECT_WINDOW = 30                      # s: program that was writing in the decoy's folder just before it disappeared
 
 PRIVACY_CHECK_SEC = 5
-PRIVACY_COOLDOWN = 900                   # s avant de signaler à nouveau le même programme sur le même appareil
+PRIVACY_COOLDOWN = 900                   # s before reporting the same program on the same device again
 PRIVACY_IGNORED = {"pipewire", "wireplumber", "pipewire-media-session", "pulseaudio", "pipewire-pulse", "v4l2-relayd",
                    "pavucontrol", "gnome-control-center", "cinnamon-settings", "plasmashell", "kmix", "xdg-desktop-portal"}
 
@@ -53,15 +54,15 @@ MINER_CMD_RE = re.compile(r"stratum\d?\+(tcp|ssl|tls)://|--donate-level|--coin[=
                           r"(minexmr|nanopool\.org|supportxmr|2miners\.com|f2pool|hashvault\.pro|moneroocean|c3pool|herominers|unmineable|"
                           r"nicehash\.com|xmrpool|minergate|ethermine|miningpoolhub)", re.I)
 MINER_PORTS = {3333, 4444, 5555, 7777, 14444, 14433, 45700}
-CPU_BUSY = 0.8                           # fraction d'un cœur
+CPU_BUSY = 0.8                           # fraction of one core
 CPU_SUSTAINED_SEC = 900
 CPU_IGNORE_PARTS = ("/steamapps/", "/Steam/", "/lutris/", "/Heroic/", "/.wine/", "/Games/")
 
-SLOW_CHECK_SEC = 600                     # certificats, détournement réseau
-WATCH_CHECK_SEC = 60                     # démarrage automatique, tâches planifiées, services, extensions
-SSH_CHECK_SEC = 30                       # clés SSH autorisées
-KEYLOGGER_CHECK_SEC = 15                 # programmes qui lisent le clavier
-LOGIN_CHECK_SEC = 60                     # connexions SSH et ouvertures de session
+SLOW_CHECK_SEC = 600                     # certificates, network hijacking
+WATCH_CHECK_SEC = 60                     # autostart, scheduled tasks, services, extensions
+SSH_CHECK_SEC = 30                       # authorized SSH keys
+KEYLOGGER_CHECK_SEC = 15                 # programs that read the keyboard
+LOGIN_CHECK_SEC = 60                     # SSH connections and session logins
 PERSISTENCE_DIRS = ("/etc/xdg/autostart", "/etc/cron.d", "/etc/cron.hourly", "/etc/cron.daily", "/etc/cron.weekly", "/etc/cron.monthly",
                     "/var/spool/cron/crontabs", "/var/spool/cron/atjobs", "/var/spool/at", "/etc/systemd/system", "/etc/profile.d",
                     "/etc/rc.local", "/etc/ld.so.preload")
@@ -69,7 +70,7 @@ SSH_KEY_TYPES = ("ssh-rsa", "ssh-dss", "ssh-ed25519", "ecdsa-sha2-nistp256", "ec
                  "sk-ssh-ed25519@openssh.com", "sk-ecdsa-sha2-nistp256@openssh.com")
 SUID_SKIP = ("/var/lib/docker/", "/var/lib/containers/", "/containers/storage/", "/var/lib/lxc/", "/var/lib/lxd/", "/var/lib/flatpak/",
              "/var/lib/snapd/", "/snap/", "/var/lib/waydroid/", "/var/lib/machines/", "/.local/share/flatpak/",
-             "/.ecryptfs/")                      # copie chiffrée d'eCryptfs : la vue déchiffrée (type ecryptfs) est analysée
+             "/.ecryptfs/")                      # eCryptfs encrypted copy: the decrypted view (type ecryptfs) is scanned
 CERT_ANCHOR_DIRS = ("/usr/local/share/ca-certificates", "/etc/pki/ca-trust/source/anchors", "/etc/ca-certificates/trust-source/anchors")
 TRUSTED_RESOLVERS = {"1.1.1.1", "1.0.0.1", "1.1.1.2", "1.0.0.2", "1.1.1.3", "1.0.0.3", "8.8.8.8", "8.8.4.4", "9.9.9.9", "149.112.112.112",
                      "9.9.9.10", "149.112.112.10", "9.9.9.11", "149.112.112.11", "208.67.222.222", "208.67.220.220", "208.67.222.123",
@@ -96,12 +97,13 @@ def is_public(ip):
     except ValueError:
         return False
     if a.version == 6 and a not in ipaddress.ip_network("2000::/3"):
-        return False                                     # fe00::, ff02::1… (fichier hosts par défaut)
+        return False                                     # fe00::, ff02::1… (default hosts file)
     return a.is_global and not a.is_multicast
 
 
 def local_v6_prefixes():
-    """Préfixes /64 globaux des interfaces : le routeur (serveur DNS) y a son adresse, qui change avec le préfixe du fournisseur."""
+    """Global /64 prefixes of the interfaces: the router (DNS server) has its address there, which changes with the
+provider's prefix."""
     out = set()
     try:
         with open("/proc/net/if_inet6") as f:
@@ -142,7 +144,7 @@ def proc_info(pid):
 
 
 def machine_tag():
-    """Suffixe propre à cette machine : deux ordinateurs qui synchronisent le même dossier n'écrivent pas le même leurre."""
+    """Suffix specific to this machine: two computers that synchronise the same folder do not write the same decoy."""
     try:
         with open("/etc/machine-id") as f:
             return hashlib.sha256(f.read().strip().encode()).hexdigest()[:6]
@@ -151,7 +153,7 @@ def machine_tag():
 
 
 def xdg_dir(pw, key, default):
-    """Dossier XDG localisé (Images, Bureau…) d'après ~/.config/user-dirs.dirs."""
+    """Localised XDG folder (Pictures, Desktop…) according to ~/.config/user-dirs.dirs."""
     if not key:
         return pw.pw_dir
     try:
@@ -167,16 +169,16 @@ def xdg_dir(pw, key, default):
 
 
 def system_instance():
-    """Vrai service système : root, sans socket ni dossier d'état redirigés. Un service lancé à côté pour un essai (mode
-    test, `unshare -r`) voit les mêmes dossiers personnels que le service installé : s'il y posait aussi ses leurres,
-    chacun trouverait ceux de l'autre « remplacés » et les réécrirait en boucle (fausses alertes rançongiciel)."""
+    """Real system service: root, with no redirected socket or state folder. A service started alongside for a trial
+    (test mode, `unshare -r`) sees the same home folders as the installed service: if it also placed its decoys
+    there, each would find the other's "replaced" and rewrite them in a loop (false ransomware alerts)."""
     return os.geteuid() == 0 and not any(os.environ.get(k) for k in ("DUKIWI_SHIELD_SOCKET", "DUKIWI_SHIELD_STATE_DIR"))
 
 
 def decoy_bytes(ext, seed):
-    """Contenu vraisemblable (vrai document zip pour docx/xlsx, en-têtes JPEG/PDF) : un rançongiciel qui trie par type le prend.
-    Les octets ne dépendent que de `seed`, jamais de l'heure d'écriture (date des entrées zip tirée de `seed`) : un leurre
-    réécrit à l'identique (synchronisation, sauvegarde restaurée) garde son empreinte et ne déclenche rien."""
+    """Plausible content (real zip document for docx/xlsx, JPEG/PDF headers): ransomware that sorts by type takes it.
+    The bytes depend only on `seed`, never on the write time (zip entry dates derived from `seed`): a decoy
+    rewritten identically (synchronisation, restored backup) keeps its fingerprint and triggers nothing."""
     digest = hashlib.sha256(seed.encode()).hexdigest()
     filler = digest * 64
     if ext in ("docx", "xlsx"):
@@ -203,21 +205,21 @@ class SecurityGuard(threading.Thread):
         self.d = daemon
         self.log = helpers["log"]
         self.write_log = helpers["write_log"]
-        self.exe_trusted = helpers["exe_trusted"]        # paquet du système, /opt, snap, flatpak, ou approuvé
+        self.exe_trusted = helpers["exe_trusted"]        # system package, /opt, snap, flatpak, or approved
         self.dconf_read = helpers["dconf_read"]
         self.human_users = helpers["human_users"]
         self.lock = threading.Lock()
         self.tag = machine_tag()
-        self.owns_decoys = system_instance()   # faux en mode test : aucun leurre posé, vérifié ni retiré (un essai le force à vrai sur un dossier factice)
+        self.owns_decoys = system_instance()   # false in test mode: no decoy placed, checked or removed (a trial forces it true on a dummy folder)
         self.decoys = {}                 # chemin → {sha, ino, size, mtime, uid}
-        self.decoys_pending = []         # comptes dont le dossier personnel n'est pas encore monté (eCryptfs)
+        self.decoys_pending = []         # accounts whose home folder is not mounted yet (eCryptfs)
         self.last_decoy_sync = 0.0
-        self.decoy_alerted = {}          # chemin → horodatage (alerte sans programme identifié)
+        self.decoy_alerted = {}          # path → timestamp (alert with no identified program)
         self.decoy_pid_alerted = {}      # pid → horodatage
         self.privacy_active = {}         # (exe, appareil) → {pid, comm, since}
         self.privacy_alerted = {}        # (exe, appareil) → horodatage
         self.cpu_prev = {}               # pid → (ticks, horodatage)
-        self.cpu_busy_since = {}         # pid → horodatage du début de la saturation
+        self.cpu_busy_since = {}         # pid → timestamp when the saturation started
         self.miner_alerted = {}          # exe → horodatage
         self.clk = os.sysconf("SC_CLK_TCK") if hasattr(os, "sysconf") else 100
         self._certs = (0.0, None)
@@ -261,7 +263,7 @@ class SecurityGuard(threading.Thread):
         base.update(fields)
         self.d.publish_alert(base)
 
-    # ═══ 1. Leurres anti-rançongiciel ═════════════════════════════════════
+    # ═══ 1. Anti-ransomware decoys ════════════════════════════════════════
     def decoy_paths(self):
         out = []
         pending = []
@@ -272,7 +274,7 @@ class SecurityGuard(threading.Thread):
                 pending.append(pw.pw_name)
                 for leftover in glob.glob(os.path.join(pw.pw_dir, DECOY_PREFIX + "*")):
                     try:
-                        os.unlink(leftover)              # leurre écrit sous le montage par une version précédente : inutile
+                        os.unlink(leftover)              # decoy written under the mount point by a previous version: useless
                     except OSError:
                         pass
                 continue
@@ -298,15 +300,15 @@ class SecurityGuard(threading.Thread):
         finally:
             os.close(fd)
         os.replace(tmp, path)
-        old = int(time.time()) - 86400 * 40          # date ancienne : ressemble à un document existant
+        old = int(time.time()) - 86400 * 40          # old date: looks like an existing document
         os.utime(path, (old, old), follow_symlinks=False)
         st = os.lstat(path)
         self.decoys[path] = {"sha": hashlib.sha256(data).hexdigest(), "ino": st.st_ino, "size": st.st_size,
                              "mtime": st.st_mtime, "uid": pw.pw_uid, "ext": ext, "user": pw.pw_name}
 
     def sync_decoys(self):
-        """Crée les leurres manquants (ou les retire si la protection est désactivée). Au démarrage, un leurre modifié
-        pendant l'arrêt du service est signalé puis réécrit."""
+        """Creates the missing decoys (or removes them if the protection is disabled). At startup, a decoy modified
+        while the service was stopped is reported, then rewritten."""
         if not self.owns_decoys:
             return
         stored = self.d.state.get("decoys") or {}
@@ -320,7 +322,7 @@ class SecurityGuard(threading.Thread):
                     st = os.lstat(path)
                 except FileNotFoundError:
                     st = None
-                prev = self.decoys.get(path) or stored.get(path)       # la mémoire du service d'abord (à jour), puis l'état sauvé
+                prev = self.decoys.get(path) or stored.get(path)       # the service's memory first (up to date), then the saved state
                 if st is not None and prev:
                     if self.file_sha(path) == prev.get("sha"):
                         self.decoys[path] = dict(prev, ino=st.st_ino, size=st.st_size, mtime=st.st_mtime)
@@ -347,16 +349,16 @@ class SecurityGuard(threading.Thread):
                     except OSError:
                         pass
             self.decoys = {}
-            # Dossier chiffré non monté : son leurre n'a pas pu être retiré, son empreinte reste pour le prochain passage
+            # Encrypted folder not mounted: its decoy could not be removed, its fingerprint stays for the next pass
             self.decoys_pending = [pw.pw_name for pw in self.human_users() if pw.pw_uid >= 1000 and not home_mounted(pw)]
             self.save_decoys()
 
     def save_decoys(self):
         data = {p: {k: v for k, v in i.items() if k in ("sha", "uid", "ext", "user")} for p, i in self.decoys.items()}
         stored = self.d.state.get("decoys") or {}
-        # Dossier personnel chiffré pas encore monté (démarrage, session fermée) : ses empreintes restent enregistrées.
-        # Sans elles, ses leurres seraient réécrits sans comparaison à l'ouverture de session et un leurre modifié
-        # pendant l'arrêt du service ne serait jamais signalé.
+        # Encrypted home folder not mounted yet (boot, session closed): its fingerprints stay recorded.
+        # Without them, its decoys would be rewritten without comparison at login, and a decoy modified
+        # while the service was stopped would never be reported.
         for path, info in stored.items():
             if path not in data and info.get("user") in self.decoys_pending:
                 data[path] = info
@@ -375,7 +377,7 @@ class SecurityGuard(threading.Thread):
         return h.hexdigest()
 
     def consider(self, pid, path):
-        """Appelé par le moniteur d'activité (fanotify) pour chaque fichier écrit puis fermé."""
+        """Called by the activity monitor (fanotify) for each file written then closed."""
         if self.owns_decoys and path in self.decoys and self.setting("ransomware_decoys"):
             threading.Thread(target=self.decoy_written, args=(pid, path), daemon=True).start()
 
@@ -385,7 +387,7 @@ class SecurityGuard(threading.Thread):
         with self.lock:
             meta = self.decoys.get(path) or {}
             if self.file_sha(path) == meta.get("sha"):
-                return                                   # réécrit à l'identique (synchronisation, sauvegarde restaurée)
+                return                                   # rewritten identically (synchronisation, restored backup)
             if now - self.decoy_pid_alerted.get(pid, 0) < 60:
                 self.recreate(path)
                 return
@@ -409,12 +411,12 @@ class SecurityGuard(threading.Thread):
         try:
             pw = pwd.getpwuid(meta.get("uid"))
             self.write_decoy(path, pw, meta.get("ext") or path.rsplit(".", 1)[-1])
-            self.save_decoys()                            # empreinte enregistrée (inchangée, sauf leurre écrit par une version précédente)
+            self.save_decoys()                            # fingerprint recorded (unchanged, unless the decoy was written by a previous version)
         except (KeyError, OSError, TypeError) as e:
             self.log(f"Leurre {path} : recréation impossible ({e})")
 
     def suspect_writer(self, folder):
-        """Programme qui écrivait dans `folder` dans les dernières secondes (suivi du moniteur d'activité)."""
+        """Program that was writing in `folder` in the last few seconds (tracked by the activity monitor)."""
         monitor = getattr(self.d, "monitor", None)
         best, best_n = None, 0
         cutoff = time.time() - SUSPECT_WINDOW
@@ -434,7 +436,7 @@ class SecurityGuard(threading.Thread):
                 self.remove_decoys()
             return
         if (not self.decoys or self.decoys_pending) and time.time() - self.last_decoy_sync > 30:
-            self.sync_decoys()                            # dossier personnel monté entre-temps (ouverture de session)
+            self.sync_decoys()                            # home folder mounted in the meantime (login)
             if not self.decoys:
                 return
         for path in list(self.decoys):
@@ -452,7 +454,7 @@ class SecurityGuard(threading.Thread):
                     pw = None
                 if pw is not None and not home_mounted(pw):
                     with self.lock:
-                        self.decoys.pop(path, None)       # session fermée : le dossier chiffré est démonté, rien à signaler
+                        self.decoys.pop(path, None)       # session closed: the encrypted folder is unmounted, nothing to report
                         if pw.pw_name not in self.decoys_pending:
                             self.decoys_pending.append(pw.pw_name)
                     continue
@@ -462,8 +464,8 @@ class SecurityGuard(threading.Thread):
                 meta.update(ino=st.st_ino, size=st.st_size, mtime=st.st_mtime)
                 continue
             if st is not None and time.time() - st.st_mtime < 10 and getattr(getattr(self.d, "monitor", None), "active", False):
-                continue                                  # écriture toute récente : le moniteur d'activité donne le programme
-            # Disparu, renommé ou remplacé sans fermeture d'écriture vue : programme qui écrivait là, sinon avertissement
+                continue                                  # very recent write: the activity monitor gives the program
+            # Gone, renamed or replaced with no write-close seen: program that was writing there, otherwise a warning
             pid = self.suspect_writer(os.path.dirname(path))
             reason = "decoy_removed" if st is None else "decoy_replaced"
             if pid:
@@ -479,9 +481,9 @@ class SecurityGuard(threading.Thread):
     def decoy_list(self):
         return sorted(self.decoys)
 
-    # ═══ 2. Caméra et micro ═══════════════════════════════════════════════
+    # ═══ 2. Camera and microphone ═════════════════════════════════════════
     def camera_users(self):
-        """{(exe, "camera"): {pid, comm, exe, user, device}} des programmes qui ont /dev/video* ouvert."""
+        """{(exe, "camera"): {pid, comm, exe, user, device}} of the programs that have /dev/video* open."""
         if not glob.glob("/dev/video*"):
             return {}
         out = {}
@@ -506,7 +508,7 @@ class SecurityGuard(threading.Thread):
         return out
 
     def mic_users(self):
-        """Enregistrements du micro en cours (pactl list source-outputs) pour chaque session qui a un serveur son."""
+        """Ongoing microphone recordings (pactl list source-outputs) for each session that has a sound server."""
         if not shutil.which("pactl"):
             return {}
         out = {}
@@ -526,7 +528,7 @@ class SecurityGuard(threading.Thread):
             for block in re.split(r"\n(?=Source Output #)", r.stdout or ""):
                 m_src = re.search(r"^\s*Source:\s*(\S+)", block, re.M)
                 if m_src and m_src.group(1) in monitors:
-                    continue                                 # capture du son des haut-parleurs (vumètre, partage d'écran)
+                    continue                                 # capture of the speakers' sound (level meter, screen sharing)
                 props = dict(re.findall(r'^\s*([\w.]+) = "(.*)"$', block, re.M))
                 pid = props.get("application.process.id")
                 if not pid or not pid.isdigit():
@@ -563,14 +565,14 @@ class SecurityGuard(threading.Thread):
         for key in list(self.privacy_active):
             if key not in current:
                 self.privacy_active.pop(key, None)
-                self.privacy_alerted[key] = now          # le délai court depuis la fin de l'utilisation
+                self.privacy_alerted[key] = now          # the delay runs from the end of the use
 
     def privacy_state(self):
         return [{"exe": k[0], "device": k[1], "comm": v["comm"], "pid": v["pid"]} for k, v in self.privacy_active.items()]
 
     # ═══ 3. Mineurs de cryptomonnaie ══════════════════════════════════════
     def pool_connections(self):
-        """{pid: port distant} des connexions établies vers un port de pool de minage."""
+        """{pid: remote port} of the established connections to a mining pool port."""
         out = {}
         r = run_quiet(["ss", "-Htnp", "state", "established"], timeout=10)
         for ln in (r.stdout or "").splitlines():
@@ -621,7 +623,7 @@ class SecurityGuard(threading.Thread):
             except OSError:
                 continue
             if not cmd:
-                continue                                  # fil du noyau
+                continue                                  # kernel thread
             base = os.path.basename(cmd.split(" ", 1)[0]).lower()
             named = comm.lower() in MINER_NAMES or base in MINER_NAMES
             cmd_hit = MINER_CMD_RE.search(cmd)
@@ -659,14 +661,14 @@ class SecurityGuard(threading.Thread):
                 self.cpu_prev.pop(pid, None)
                 self.cpu_busy_since.pop(pid, None)
 
-    # ═══ 4. Certificats racine ajoutés ════════════════════════════════════
+    # ═══ 4. Added root certificates ═══════════════════════════════════════
     @staticmethod
     def pem_blocks(text):
         return re.findall(r"-----BEGIN CERTIFICATE-----.+?-----END CERTIFICATE-----", text, re.S)
 
     @staticmethod
     def cert_details(pem):
-        """(empreinte SHA-256, sujet, fin de validité) d'un certificat PEM."""
+        """(SHA-256 fingerprint, subject, expiry date) of a PEM certificate."""
         import ssl
         try:
             der = ssl.PEM_cert_to_DER_cert(pem)
@@ -722,8 +724,8 @@ class SecurityGuard(threading.Thread):
         return dbs
 
     def nss_certs(self):
-        """Autorités ajoutées par l'utilisateur dans les bases NSS (les racines intégrées n'y figurent pas) : drapeau « C »
-        dans le premier champ de confiance (SSL). Lecture sur une copie : la base de l'utilisateur n'est jamais touchée."""
+        """Authorities added by the user in the NSS databases (the built-in roots are not there): "C" flag in the
+        first trust field (SSL). Read from a copy: the user's database is never touched."""
         if not shutil.which("certutil"):
             return []
         out = []
@@ -747,7 +749,7 @@ class SecurityGuard(threading.Thread):
         return out
 
     def root_cas(self, max_age=SLOW_CHECK_SEC):
-        """Certificats racine ajoutés (système + NSS), regroupés par empreinte, avec l'état « ignoré »."""
+        """Added root certificates (system + NSS), grouped by fingerprint, with the "ignored" state."""
         with self.lock:
             at, value = self._certs
         if value is not None and time.time() - at < max_age:
@@ -764,7 +766,7 @@ class SecurityGuard(threading.Thread):
             self._certs = (time.time(), value)
         return value
 
-    # ═══ 5. Détournement réseau ═══════════════════════════════════════════
+    # ═══ 5. Network hijacking ═════════════════════════════════════════════
     @staticmethod
     def hosts_findings(path="/etc/hosts"):
         out = []
@@ -850,7 +852,7 @@ class SecurityGuard(threading.Thread):
 
     @staticmethod
     def dns_servers():
-        """Serveurs DNS des interfaces physiques (resolvectl), sinon /etc/resolv.conf ; liens VPN exclus."""
+        """DNS servers of the physical interfaces (resolvectl), otherwise /etc/resolv.conf; VPN links excluded."""
         servers = []
         if shutil.which("resolvectl"):
             r = run_quiet(["resolvectl", "dns"], timeout=10)
@@ -867,7 +869,7 @@ class SecurityGuard(threading.Thread):
         return sorted({s for s in servers if s and not s.startswith("127.")})
 
     def dns_findings(self):
-        """Nouveau serveur DNS public inconnu sur un réseau déjà connu (premier passage = référence mémorisée)."""
+        """New unknown public DNS server on an already known network (first pass = baseline remembered)."""
         net = getattr(self.d, "current_network", None) or {}
         key = net.get("key")
         if not key:
@@ -900,12 +902,12 @@ class SecurityGuard(threading.Thread):
             self._redirects = (0.0, None)
 
     def check_slow(self):
-        """Toutes les 10 minutes : nouveau certificat racine ou nouveau détournement → alerte (premier relevé silencieux) ;
-        leurres posés dans les dossiers apparus depuis (nouvel utilisateur, dossier Documents créé)."""
+        """Every 10 minutes: new root certificate or new hijacking → alert (first survey silent);
+        decoys placed in the folders that appeared since (new user, Documents folder created)."""
         if self.setting("ransomware_decoys"):
             self.sync_decoys()
-        # Un dossier personnel chiffré non monté cache ses bases NSS, réglages de proxy… : les références ne rétrécissent
-        # jamais dans ce cas, sinon tout réapparaîtrait « nouveau » à l'ouverture de session.
+        # An unmounted encrypted home folder hides its NSS databases, proxy settings…: the baselines never shrink
+        # in that case, otherwise everything would reappear as "new" at login.
         pending = any(not home_mounted(pw) for pw in self.human_users() if pw.pw_uid >= 1000)
         certs = self.root_cas(max_age=0)
         known = self.d.state.get("known_certs")
@@ -928,10 +930,10 @@ class SecurityGuard(threading.Thread):
         if known_r is None or keys != sorted(known_r):
             self.d.state.update(known_redirects=keys)
 
-    # ═══ 6. Démarrage automatique, tâches planifiées, extensions (veille) ═════
+    # ═══ 6. Autostart, scheduled tasks, extensions (watch) ════════════════════
     def persistence_fingerprint(self):
-        """Empreinte bon marché des dossiers où s'installe un programme qui veut revenir à chaque démarrage, et des
-        extensions des navigateurs (identifiants et versions) : relevé complet seulement quand elle change."""
+        """Cheap fingerprint of the folders where a program that wants to come back at every boot installs itself, and of
+        the browser extensions (ids and versions): full survey only when it changes."""
         fp = []
         paths = list(PERSISTENCE_DIRS)
         for pw in self.human_users():
@@ -961,7 +963,7 @@ class SecurityGuard(threading.Thread):
     def check_persistence(self):
         fp = self.persistence_fingerprint()
         if self.persistence_fp is None:
-            self.persistence_fp = fp                       # référence au démarrage (le relevé quotidien fait le reste)
+            self.persistence_fp = fp                       # baseline at startup (the daily survey does the rest)
             return
         if fp == self.persistence_fp or self.persistence_running:
             return
@@ -973,7 +975,7 @@ class SecurityGuard(threading.Thread):
         def run_refresh():
             self.persistence_running = True
             try:
-                time.sleep(3)                              # laisser l'installation finir d'écrire (extension, paquet)
+                time.sleep(3)                              # let the installation finish writing (extension, package)
                 refresh(reason="watch")
                 self.persistence_fp = self.persistence_fingerprint()
             except Exception as e:  # noqa: BLE001
@@ -982,10 +984,10 @@ class SecurityGuard(threading.Thread):
                 self.persistence_running = False
         threading.Thread(target=run_refresh, daemon=True, name="persistence-watch").start()
 
-    # ═══ 7. Clés SSH autorisées ═══════════════════════════════════════════
+    # ═══ 7. Authorized SSH keys ═══════════════════════════════════════════
     @staticmethod
     def parse_authorized_keys(path):
-        """[{fp, type, comment, options, line}] d'un fichier authorized_keys (empreinte SHA256 comme ssh-keygen -l)."""
+        """[{fp, type, comment, options, line}] of an authorized_keys file (SHA256 fingerprint like ssh-keygen -l)."""
         import base64
         out = []
         try:
@@ -1017,7 +1019,7 @@ class SecurityGuard(threading.Thread):
         out = []
         for pw in users:
             if pw.pw_uid >= 1000 and not home_mounted(pw):
-                continue                                   # dossier chiffré non monté : ses clés ne sont pas visibles
+                continue                                   # encrypted folder not mounted: its keys are not visible
             for name in ("authorized_keys", "authorized_keys2"):
                 p = os.path.join(pw.pw_dir, ".ssh", name)
                 if os.path.isfile(p):
@@ -1033,7 +1035,7 @@ class SecurityGuard(threading.Thread):
         pending = tuple(pw.pw_dir.rstrip("/") + "/" for pw in self.human_users() if pw.pw_uid >= 1000 and not home_mounted(pw))
         current = sorted({f"{k['path']}|{k['fp']}" for k in keys} | {x for x in (known or []) if pending and x.startswith(pending)})
         if known is None:
-            self.d.state.update(ssh_keys_known=current)    # référence silencieuse au premier passage
+            self.d.state.update(ssh_keys_known=current)    # silent baseline on the first pass
             return
         new = [k for k in keys if f"{k['path']}|{k['fp']}" not in known]
         if not new and len(current) == len(known):
@@ -1046,7 +1048,7 @@ class SecurityGuard(threading.Thread):
         self.d.state.update(ssh_keys_known=current)
 
     def remove_ssh_key(self, path, fp):
-        """Retire la ou les lignes de cette empreinte (fichier réécrit en place : propriétaire et droits conservés)."""
+        """Removes the line(s) with this fingerprint (file rewritten in place: owner and permissions preserved)."""
         keys = [k for k in self.parse_authorized_keys(path) if k["fp"] == fp]
         if not keys:
             return False
@@ -1068,8 +1070,8 @@ class SecurityGuard(threading.Thread):
     # ═══ 8. Fichiers SUID / SGID hors paquets ═════════════════════════════
     @staticmethod
     def suid_scan(timeout=1800):
-        """Fichiers SUID ou SGID (exécutés avec les droits de leur propriétaire, souvent root) sur les systèmes de fichiers
-        locaux et les dossiers temporaires ; conteneurs, Flatpak et snap laissés de côté."""
+        """SUID or SGID files (run with their owner's rights, often root) on the local file systems and the
+        temporary folders; containers, Flatpak and snap left aside."""
         r = run_quiet(["findmnt", "-rno", "TARGET", "-t", "ext4,ext3,ext2,btrfs,xfs,f2fs,jfs,zfs,tmpfs,ecryptfs"], timeout=20)
         targets = []
         for t in (r.stdout or "").splitlines():
@@ -1088,7 +1090,7 @@ class SecurityGuard(threading.Thread):
         paths = [p.decode(errors="replace") for p in (r.stdout or b"").split(b"\0") if p]
         return sorted({p for p in paths if not any(x in p for x in SUID_SKIP)})
 
-    # ═══ 9. Espions du clavier ════════════════════════════════════════════
+    # ═══ 9. Keyboard spies ════════════════════════════════════════════════
     def check_keyloggers(self):
         if not self.setting("keylogger_watch"):
             return
@@ -1118,10 +1120,10 @@ class SecurityGuard(threading.Thread):
         known = self.d.state.get("login_known")
         humans = {pw.pw_name for pw in self.human_users() if pw.pw_uid >= 1000} | {"root"}
         if known is None or self.login_cursor is None:
-            # Référence : les 30 derniers jours (aucune alerte), puis lecture depuis le dernier curseur
+            # Baseline: the last 30 days (no alert), then read from the last cursor
             stored = self.d.state.get("login_cursor") if known is not None else None
             if known is not None and not stored:
-                stored = audit.journal_cursor()          # référence perdue : on repart de maintenant, sans relire 30 jours
+                stored = audit.journal_cursor()          # baseline lost: start again from now, without rereading 30 days
             events, cursor = audit.journal_logins(cursor=stored)
             if known is None:
                 known = {}

@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """
-Dukiwi Shield — contrôle des liens et des courriels (service système).
+Dukiwi Shield — link and email checking (system service).
 
-Les extensions (Thunderbird, Firefox, Chrome, Chromium, Edge, Brave) interrogent le service par l'hôte de messagerie
-native avant d'ouvrir un lien ou d'afficher un courriel. Le service répond avec un verdict (sûr, prudence, danger) et
-ses raisons :
-  - listes de sites malveillants, téléchargées depuis GitHub et abuse.ch et rangées dans des index compacts
-    (empreintes triées de 8 octets, ~4 Mo pour 500 000 domaines) : OpenPhish, URLhaus, Phishing.Database ;
-  - heuristiques sans liste : adresse IP brute, identifiant dans l'adresse (« paypal.com@evil.ru »), punycode,
-    marque connue imitée (sosie, caractères remplacés, faute de frappe, marque en sous-domaine d'un autre domaine),
-    raccourcisseur d'adresse (destination résolue puis contrôlée à son tour), page de connexion sans chiffrement,
-    téléchargement d'exécutable, lien dont le texte affiché est une autre adresse que la cible (courriels).
-Les sites autorisés par l'utilisateur (« Toujours autoriser ») ne sont plus signalés. Rien n'est envoyé ailleurs
-qu'aux serveurs des listes (téléchargement) et, pour un raccourcisseur, au raccourcisseur lui-même.
+The extensions (Thunderbird, Firefox, Chrome, Chromium, Edge, Brave) query the service through the native messaging
+host before opening a link or displaying an email. The service answers with a verdict (safe, caution, danger) and
+its reasons:
+  - lists of malicious sites, downloaded from GitHub and abuse.ch and stored in compact indexes
+    (sorted 8-byte hashes, ~4 MB for 500,000 domains): OpenPhish, URLhaus, Phishing.Database;
+  - list-free heuristics: raw IP address, credentials in the address ("paypal.com@evil.ru"), punycode,
+    imitated known brand (lookalike, replaced characters, typo, brand as a subdomain of another domain),
+    URL shortener (destination resolved then checked in turn), login page without encryption,
+    executable download, link whose displayed text is a different address from the target (emails).
+Sites allowed by the user ("Always allow") are no longer reported. Nothing is sent anywhere other
+than to the list servers (download) and, for a shortener, to the shortener itself.
 (c) 2026 Dukiwi SA - Estavayer-le-Lac
 """
 
@@ -40,8 +40,8 @@ FEEDS = [
     {"name": "openphish", "label": "OpenPhish", "kind": "urls", "interval": 6 * 3600,
      "url": "https://raw.githubusercontent.com/openphish/public_feed/main/feed.txt",
      "home": "https://github.com/openphish/public_feed"},
-    # abuse.ch a retiré ses exports publics (HTTP 410 depuis octobre 2026, API avec clé) : miroir libre urlhaus-filter,
-    # construit depuis l'API URLhaus toutes les 12 h, format adblock (« ||hôte/chemin^$all », hôtes ou IP seuls)
+    # abuse.ch withdrew its public exports (HTTP 410 since October 2026, API with key): free urlhaus-filter mirror,
+    # built from the URLhaus API every 12 h, adblock format ("||host/path^$all", hosts or IPs alone)
     {"name": "urlhaus", "label": "URLhaus (abuse.ch, via urlhaus-filter)", "kind": "abp", "interval": 6 * 3600,
      "url": "https://malware-filter.gitlab.io/malware-filter/urlhaus-filter-online.txt",
      "home": "https://gitlab.com/malware-filter/urlhaus-filter"},
@@ -53,7 +53,7 @@ FEEDS = [
      "home": "https://github.com/Phishing-Database/Phishing.Database"},
 ]
 
-# Plates-formes partagées : seule l'adresse exacte compte (un hôte entier n'est jamais « malveillant »)
+# Shared platforms: only the exact address counts (a whole host is never "malicious")
 SHARED_HOSTS = {
     "cdn.discordapp.com", "discord.com", "github.com", "raw.githubusercontent.com", "gist.github.com", "drive.google.com",
     "docs.google.com", "sites.google.com", "storage.googleapis.com", "dropbox.com", "www.dropbox.com", "dl.dropboxusercontent.com",
@@ -71,7 +71,7 @@ SHORTENERS = {
     "lc.cx", "frama.link", "tr.im", "x.co", "snip.ly", "soo.gd", "zpr.io", "shorte.st", "adf.ly", "ouo.io", "1url.cz", "urlr.me",
 }
 
-# Marques imitées par l'hameçonnage : nom → domaines légitimes (le vrai site n'est jamais signalé)
+# Brands imitated by phishing: name → legitimate domains (the real site is never reported)
 BRANDS = {
     "paypal": ["paypalobjects.com", "paypal-communication.com", "paypal-community.com", "paypal-prepaid.com", "paypal.com", "paypal.ch", "paypal.me"],
     "microsoft": ["msftconnecttest.com", "msauth.net", "msecnd.net", "microsoftstore.com", "windows.com", "windowsupdate.com", "skype.com", "visualstudio.com", "microsoft.design", "microsoft.dev", "msftauth.net", "microsoftpersonalcontent.com", "office.net", "onenote.com", "teams.microsoft.com", "microsoft.com", "microsoftonline.com", "live.com", "office.com", "office365.com", "outlook.com", "msn.com", "azure.com", "sharepoint.com", "onedrive.com", "bing.com", "xbox.com"],
@@ -141,7 +141,7 @@ BRANDS = {
     "ch-portal": ["ch.ch"],
 }
 BRAND_MIN_LEN = 4
-# Touches voisines (QWERTZ, QWERTY et AZERTY confondus) et lettres visuellement proches : « amazom », « paypai »
+# Neighbouring keys (QWERTZ, QWERTY and AZERTY combined) and visually similar letters: "amazom", "paypai"
 KEY_NEIGHBOURS = {"q": "wasz", "w": "qeasdzx", "e": "wrsdf", "r": "etdfg", "t": "ryfgh", "y": "tughj", "u": "yihjk", "i": "uojkl", "o": "ipkl",
                   "p": "ol", "a": "qwszx", "s": "awedzxc", "d": "serfxcv", "f": "drtgcvb", "g": "ftyhvbn", "h": "gyujbnm", "j": "huiknm",
                   "k": "jiolm", "l": "kopm", "z": "asxwy", "x": "zsdc", "c": "xdfv", "v": "cfgb", "b": "vghn", "n": "bhjm", "m": "njkl"}
@@ -174,7 +174,7 @@ def hash8(text):
 
 
 class HashIndex:
-    """Ensemble compact de chaînes : empreintes de 8 octets triées, recherche dichotomique (4 Mo pour 500 000 entrées)."""
+    """Compact set of strings: sorted 8-byte hashes, binary search (4 MB for 500,000 entries)."""
 
     def __init__(self, blob=b""):
         self.blob = blob
@@ -205,9 +205,9 @@ class HashIndex:
         return self.count
 
 
-# ── Analyse d'une adresse ─────────────────────────────────────────────────────
+# ── Analysis of an address ────────────────────────────────────────────────────
 def registered_domain(host):
-    """Domaine enregistré approché : deux étiquettes, trois si la deuxième est un second niveau (co.uk, com.au, gouv.fr)."""
+    """Approximate registered domain: two labels, three if the second is a second level (co.uk, com.au, gouv.fr)."""
     labels = host.split(".")
     if len(labels) <= 2:
         return host
@@ -217,8 +217,8 @@ def registered_domain(host):
 
 
 def _typo_of(candidate, brand):
-    """Faute de frappe typique d'un sosie : une lettre substituée (jamais la première : « finance » n'est pas
-    « binance »), ou une lettre doublée en plus ou en moins (« paypall », « gooogle », « goggle »)."""
+    """Typical lookalike typo: one substituted letter (never the first: "finance" is not
+    "binance"), or one doubled letter added or missing ("paypall", "gooogle", "goggle")."""
     if candidate == brand:
         return False
     la, lb = len(candidate), len(brand)
@@ -242,9 +242,9 @@ BRAND_KEYWORDS = ("login", "secure", "support", "verify", "account", "update", "
 
 
 def brand_check(host):
-    """Imitation d'une marque connue → (raison, marque) ou None. Le vrai domaine de la marque n'est jamais signalé.
-    Danger direct : domaine légitime placé en tête d'un autre hôte (« paypal.com.secure-login.ru ») et caractères
-    remplacés (« paypa1 », « rnicrosoft ») ; les autres imitations sont de la prudence, danger avec une page de connexion."""
+    """Imitation of a known brand → (reason, brand) or None. The brand's real domain is never reported.
+    Direct danger: legitimate domain placed at the start of another host ("paypal.com.secure-login.ru") and
+    replaced characters ("paypa1", "rnicrosoft"); the other imitations are caution, danger with a login page."""
     reg = registered_domain(host)
     labels = host.split(".")
     for brand, legit in BRANDS.items():
@@ -285,7 +285,7 @@ def _host_of(url):
 
 
 def norm_url_variants(url):
-    """Formes comparées aux listes : sans schéma, avec/sans www., avec/sans barre finale, sans fragment."""
+    """Forms compared with the lists: without scheme, with/without www., with/without trailing slash, without fragment."""
     try:
         p = urllib.parse.urlsplit(url.strip())
     except ValueError:
@@ -307,7 +307,7 @@ def norm_url_variants(url):
 
 
 def analyze(url, context=None):
-    """Heuristiques sans liste → (reasons, meta). context : {text, sender} (courriels)."""
+    """List-free heuristics → (reasons, meta). context: {text, sender} (emails)."""
     reasons = []
     meta = {}
     host, p = _host_of(url)
@@ -353,7 +353,7 @@ def analyze(url, context=None):
     if login and (meta.get("suspicious_tld") or is_ip):
         reasons.append("phishing_pattern")
     if login and not is_ip and not meta.get("brand"):
-        # marque citée dans le chemin ou les paramètres d'un domaine qui n'est pas le sien : « /paypal/login »
+        # brand quoted in the path or parameters of a domain that is not its own: "/paypal/login"
         low = path_q.lower()
         for brand, legit in BRANDS.items():
             if len(brand) >= 5 and brand in low and not any(host == d or host.endswith("." + d) for d in legit):
@@ -379,7 +379,7 @@ WARN_REASONS = {"ip_host", "punycode", "many_subdomains", "shortener", "insecure
 
 
 class UrlGuard:
-    """Index des listes + heuristiques + journal. `daemon` fournit state, settings, write_log, publish_alert, broadcast."""
+    """List indexes + heuristics + log. `daemon` provides state, settings, write_log, publish_alert, broadcast."""
 
     def __init__(self, daemon, data_dir, log=print):
         self.daemon = daemon
@@ -387,7 +387,7 @@ class UrlGuard:
         self.log = log
         self.lock = threading.Lock()
         self.indexes = {}            # name → HashIndex
-        self.hosts = {}              # name → HashIndex des hôtes (listes d'adresses)
+        self.hosts = {}              # name → HashIndex of the hosts (address lists)
         self.meta = {}               # name → {count, fetched_at, error, etag, last_modified, hosts}
         self.refreshing = False
         self.last_attempt = {}
@@ -399,7 +399,7 @@ class UrlGuard:
         os.makedirs(self.dir, exist_ok=True)
         self._load_indexes()
 
-    # ── Index sur disque ─────────────────────────────────────────────────
+    # ── On-disk index ────────────────────────────────────────────────────
     def _paths(self, name):
         return os.path.join(self.dir, f"{name}.idx"), os.path.join(self.dir, f"{name}.hosts.idx"), os.path.join(self.dir, f"{name}.json")
 
@@ -426,7 +426,7 @@ class UrlGuard:
         return False
 
     def refresh(self, force=False):
-        """Télécharge les listes dont l'intervalle est écoulé (requêtes conditionnelles ETag / Last-Modified)."""
+        """Downloads the lists whose interval has elapsed (conditional ETag / Last-Modified requests)."""
         if self.refreshing:
             return self.feed_status()
         self.refreshing = True
@@ -436,7 +436,7 @@ class UrlGuard:
                 name = feed["name"]
                 m = dict(self.meta.get(name) or {})
                 if m.get("source") != feed["url"]:
-                    # Source changée (URLhaus → urlhaus-filter) : ni ETag ni date de l'ancienne, téléchargement immédiat
+                    # Source changed (URLhaus → urlhaus-filter): neither the old ETag nor date, immediate download
                     m = {k: v for k, v in m.items() if k not in ("etag", "last_modified", "fetched_at")}
                     m["source"] = feed["url"]
                     self.last_attempt.pop(name, None)
@@ -517,7 +517,7 @@ class UrlGuard:
             if not line or line.startswith(("#", "!", "[")):
                 continue
             if feed["kind"] == "abp":
-                # « ||hôte/chemin^$all » : adresse exacte ; « ||hôte^ », hôte ou IP seul : hôte entier malveillant
+                # "||host/path^$all": exact address; "||host^", host or IP alone: whole host malicious
                 line = line[2:] if line.startswith("||") else line
                 line = line.split("^", 1)[0].split("$", 1)[0].strip()
                 if not line:
@@ -539,9 +539,9 @@ class UrlGuard:
                     hosts.add(host)
         return entries, hosts
 
-    # ── Vérification ─────────────────────────────────────────────────────
+    # ── Check ────────────────────────────────────────────────────────────
     def _list_match(self, url, host):
-        """Correspondance dans les listes → (raison, nom de liste) ou None."""
+        """Match in the lists → (reason, list name) or None."""
         variants = norm_url_variants(url)
         with self.lock:
             idx = dict(self.indexes)
@@ -568,7 +568,7 @@ class UrlGuard:
         return None
 
     def expand(self, url, hops=3):
-        """Destination finale d'un raccourcisseur (HEAD sans suivre, puis GET léger), sans télécharger la page."""
+        """Final destination of a shortener (HEAD without following, then light GET), without downloading the page."""
         cur = url
         chain = []
         for _ in range(hops):
@@ -612,8 +612,8 @@ class UrlGuard:
                     meta.update({k: v for k, v in sub.get("meta", {}).items() if k in ("brand", "list")})
                 elif sub["verdict"] == "warn":
                     reasons.extend(r for r in sub["reasons"] if r not in reasons)
-        # Une imitation de marque (faute de frappe, sous-domaine, combinaison…) avec une page de connexion, un domaine
-        # douteux ou du punycode : danger ; seule, c'est de la prudence (« stream » n'est pas « steam »)
+        # A brand imitation (typo, subdomain, combination…) with a login page, a dubious domain or punycode:
+        # danger; on its own, it is caution ("stream" is not "steam")
         _, parsed = _host_of(url)
         path_q = f"{parsed.path}?{parsed.query}" if parsed is not None else ""
         if any(r in BRAND_WARN for r in reasons) and (LOGIN_RE.search(path_q) or meta.get("suspicious_tld") or "punycode" in reasons):
@@ -664,7 +664,7 @@ class UrlGuard:
 
     def record(self, event):
         with self.lock:
-            # une même adresse « checked » puis « blocked » / « opened » : on garde la dernière action
+            # the same address "checked" then "blocked" / "opened": keep the last action
             self.events = [e for e in self.events if not (e.get("url") == event.get("url") and e.get("action") == "checked")]
             self.events.insert(0, event)
             del self.events[EVENTS_MAX:]
@@ -672,7 +672,7 @@ class UrlGuard:
 
     def report(self, url, verdict, action, source=""):
         host, _ = _host_of(url)
-        if not host and str(url).lower().startswith("mailto:"):      # expéditeur non authentifié (Thunderbird) : domaine de l'adresse
+        if not host and str(url).lower().startswith("mailto:"):      # unauthenticated sender (Thunderbird): domain of the address
             host = str(url).rsplit("@", 1)[-1].strip().lower()[:120]
         self.record({"t": _iso(), "source": source, "url": str(url)[:300], "host": host, "verdict": verdict, "action": action})
         with self.lock:
@@ -698,7 +698,7 @@ class UrlGuard:
         except Exception as e:  # noqa: BLE001
             self.log(f"Contrôle des liens : enregistrement : {e}")
 
-    # ── État ─────────────────────────────────────────────────────────────
+    # ── State ────────────────────────────────────────────────────────────
     def feed_status(self):
         out = []
         for feed in FEEDS:
@@ -732,7 +732,7 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-if __name__ == "__main__":      # test en ligne de commande : python3 dukiwi_shield_urlguard.py <url> [texte affiché]
+if __name__ == "__main__":      # command-line test: python3 dukiwi_shield_urlguard.py <url> [displayed text]
     import sys
 
     class _S:

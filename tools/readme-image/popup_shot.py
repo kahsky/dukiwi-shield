@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rend une popup GTK de Dukiwi Shield hors écran (sans l'afficher) : popup_shot.py <sortie.png>"""
+"""Renders a Dukiwi Shield GTK popup off-screen (without showing it): popup_shot.py <output.png>"""
 import importlib.util, os, sys, gi
 gi.require_version('Gtk', '3.0'); gi.require_version('Gdk', '3.0')
 from gi.repository import Gtk, Gdk, GLib
