@@ -48,15 +48,15 @@ versions itself (popup or Security tab) and can install them on its own when the
 
 ### Direct download
 
-- Mint / Ubuntu: [dukiwi-shield_2.7.3_all.deb](https://www.dukiwi.com/repo/dukiwi-shield/dukiwi-shield_2.7.3_all.deb)
-- Fedora: [dukiwi-shield-2.7.3-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/dukiwi-shield-2.7.3-1.noarch.rpm)
+- Mint / Ubuntu: [dukiwi-shield_2.7.4_all.deb](https://www.dukiwi.com/repo/dukiwi-shield/dukiwi-shield_2.7.4_all.deb)
+- Fedora: [dukiwi-shield-2.7.4-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/dukiwi-shield-2.7.4-1.noarch.rpm)
 - All versions: [www.dukiwi.com/repo](https://www.dukiwi.com/repo)
 
 ### Installing a downloaded package by hand
 
 ```bash
-sudo apt install ./dukiwi-shield_2.7.3_all.deb          # Mint / Ubuntu
-sudo dnf install ./dukiwi-shield-2.7.3-1.noarch.rpm      # Fedora
+sudo apt install ./dukiwi-shield_2.7.4_all.deb          # Mint / Ubuntu
+sudo dnf install ./dukiwi-shield-2.7.4-1.noarch.rpm      # Fedora
 ```
 
 The installation enables the system service and the scheduler, then starts the initial scan:
@@ -78,6 +78,13 @@ sudo dnf remove dukiwi-shield   # Fedora
 
 ## Features
 
+- **2.7.4: a full scan can no longer hang in the integrity check** — Lynis, unhide, chkrootkit and debsums ran
+  without any time limit: a tool that stopped answering kept the full scan in "Integrity check in progress" for
+  hours, and "Stop" was ignored until the tool printed something. Each tool now has a silence limit (15 minutes
+  without output) and an overall limit; a tool that no longer answers is stopped with its child processes, shown as
+  "stopped, no response" (incomplete result), and the scan carries on with the next tool and the antivirus pass. The
+  log records how long each tool took and the last line it printed. Cancelling takes effect within a second. The
+  per-tool progress no longer falls back to "waiting" on every line when the Security tab is opened during the scan.
 - **2.7.3: no more alert storms after login on an encrypted home** — the daily inventory of autostart entries,
   scheduled tasks and browser/editor extensions ran at boot, before the session opened, on an unmounted eCryptfs
   home: it saw nothing for that user and dropped their entries from the baseline, so every entry came back as "new"
@@ -750,8 +757,8 @@ python3 dukiwi-shield.py
 ## Building the packages
 
 ```bash
-./build-deb.sh        # dukiwi-shield_2.7.3_all.deb   (Mint / Ubuntu)
-./build-rpm.sh        # dukiwi-shield-2.7.3-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
+./build-deb.sh        # dukiwi-shield_2.7.4_all.deb   (Mint / Ubuntu)
+./build-rpm.sh        # dukiwi-shield-2.7.4-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
 ```
 
 Both packages share the same file tree (`build-deb.sh --stage-only`) and the same signed integrity manifest.

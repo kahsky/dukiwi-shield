@@ -413,7 +413,7 @@ function loadSecurityData(type, refresh = false, run = false) {
 function onSecurityData(data) {
     const type = data.type;
     if (type === 'integrity_running') { integrityRunning = true; syncScanButtons(); $('btnIntegrityRun').disabled = true; $('integrityList').innerHTML = `<p class="text-muted">${t('security.integrity.running')}</p>`; renderIntegrityProgress(); return; }
-    if (type === 'integrity') { integrityRunning = !!data.refreshing; if (!integrityRunning) integrityProg = null; syncScanButtons(); renderIntegrityProgress(); }
+    if (type === 'integrity') { integrityRunning = !!data.refreshing; if (!integrityRunning && !(scan.running && scan.phase === 'integrity')) integrityProg = null; syncScanButtons(); renderIntegrityProgress(); }
     if (type === 'suspended') { if (lastStatus) { lastStatus.suspended = data.data; renderSimpleView(); } return; }
     if (data.available === false) { renderSecurityUnavailable(type); return; }
     if (type === 'integrity' && data.after_scan && data.data && scan.running) setHeroNote((data.data.warnings || 0) ? t('scan.note.integrity_warn', { n: data.data.warnings }) : t('scan.note.integrity_ok'));
@@ -628,9 +628,10 @@ function renderIntegrity(running = false) {
         const tl = tools[name] || {};
         const installedNow = now ? !!now[name] : !!tl.installed;
         const pending = installedNow && !tl.ran;              // installé depuis le dernier relevé, pas encore vérifié
-        const st = !installedNow ? 'unknown' : pending ? 'neutral' : (tl.warnings || []).length ? 'warn' : 'ok';
+        const timedOut = !!tl.timed_out;                      // arrêté faute de réponse : résultat incomplet
+        const st = !installedNow ? 'unknown' : pending ? 'neutral' : (tl.warnings || []).length ? 'warn' : timedOut ? 'unknown' : 'ok';
         const toolTitle = t(`security.integrity.tool.${name}`) !== `security.integrity.tool.${name}` ? t(`security.integrity.tool.${name}`) : name;
-        html += `<div class="check-item check-${st}"><span class="check-icon">${st === 'ok' ? '✓' : st === 'warn' ? '!' : st === 'neutral' ? '…' : '?'}</span><div class="check-text"><span class="check-title">${escapeHtml(toolTitle)}</span><span class="check-detail">${!installedNow ? t('security.integrity.not_installed') : pending ? t('security.integrity.pending') : (tl.warnings || []).length ? t('security.integrity.warnings', { n: tl.warnings.length }) : t('security.integrity.clean')}${(tl.ignored || []).length ? ` · ${t('security.integrity.ignored', { n: tl.ignored.length })}` : ''}${(tl.benign || []).length ? ` · ${t('security.integrity.benign', { n: tl.benign.length })}` : ''}</span>${integrityWarningsHtml(name, tl)}</div></div>`;
+        html += `<div class="check-item check-${st}"><span class="check-icon">${st === 'ok' ? '✓' : st === 'warn' ? '!' : st === 'neutral' ? '…' : '?'}</span><div class="check-text"><span class="check-title">${escapeHtml(toolTitle)}</span><span class="check-detail">${!installedNow ? t('security.integrity.not_installed') : pending ? t('security.integrity.pending') : (tl.warnings || []).length ? t('security.integrity.warnings', { n: tl.warnings.length }) + (timedOut ? ` · ${t('security.integrity.timed_out')}` : '') : timedOut ? t('security.integrity.timed_out') : t('security.integrity.clean')}${(tl.ignored || []).length ? ` · ${t('security.integrity.ignored', { n: tl.ignored.length })}` : ''}${(tl.benign || []).length ? ` · ${t('security.integrity.benign', { n: tl.benign.length })}` : ''}</span>${integrityWarningsHtml(name, tl)}</div></div>`;
     }
     const app = it.app || {};
     const appSt = !app.available ? 'unknown' : (app.modified || []).length || (app.missing || []).length ? 'fail' : 'ok';
@@ -2064,6 +2065,7 @@ function prepareScanUI(path) {
         startedAt: Date.now() / 1000, file: '', threats: [], lines: [], samples: [],
         result: null, auto: false, usb: null, needsPassword: false,
     });
+    integrityProg = null;
     $('scanResults').hidden = true;
     $('scanOutput').innerHTML = '';
     $('btnCancelScan').disabled = false;
@@ -3759,11 +3761,11 @@ function integrityProgressHtml() {
     const tools = (integrityProg && integrityProg.tools) || {};
     return `<div class="integrity-progress-title">${t('scan.integrity.title')}</div>` + INTEGRITY_TOOLS.map(name => {
         const s = tools[name] || { state: 'pending', percent: 0, detail: '' };
-        const pct = s.state === 'done' || s.state === 'skipped' ? 100 : (s.percent || 0);
+        const pct = s.state === 'done' || s.state === 'skipped' || s.state === 'timeout' ? 100 : (s.percent || 0);
         const label = s.state === 'running' ? (s.detail ? escapeHtml(s.detail) : t('scan.integrity.running'))
             : s.state === 'done' ? (s.warnings ? t('scan.integrity.done', { n: s.warnings }) : t('scan.integrity.done_clean'))
-            : s.state === 'skipped' ? t('scan.integrity.skipped') : t('scan.integrity.pending');
-        return `<div class="tool-row tool-${s.state}"><span class="tool-name">${escapeHtml(name)}</span><span class="tool-bar"><span style="width:${pct}%"></span></span><span class="tool-pct">${s.state === 'running' ? `${pct} %` : s.state === 'done' ? '✓' : s.state === 'skipped' ? '–' : '…'}</span><span class="tool-detail">${label}</span></div>`;
+            : s.state === 'skipped' ? t('scan.integrity.skipped') : s.state === 'timeout' ? t('scan.integrity.timeout') : t('scan.integrity.pending');
+        return `<div class="tool-row tool-${s.state}"><span class="tool-name">${escapeHtml(name)}</span><span class="tool-bar"><span style="width:${pct}%"></span></span><span class="tool-pct">${s.state === 'running' ? `${pct} %` : s.state === 'done' ? '✓' : s.state === 'skipped' ? '–' : s.state === 'timeout' ? '!' : '…'}</span><span class="tool-detail">${label}</span></div>`;
     }).join('');
 }
 

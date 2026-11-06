@@ -4147,21 +4147,117 @@ def _md5sums_entries():
     return total or 500000
 
 
+# Délais des outils d'intégrité, en secondes : (silence maximal, durée totale maximale). Un outil qui ne répond plus
+# est arrêté et l'analyse continue avec le suivant — sans cela une analyse complète restait bloquée indéfiniment.
+# Pas de délai de silence pour unhide (sortie mise en tampon, écrite à la fin) ni rpm -Va (n'écrit que les anomalies).
+TOOL_LIMITS = {"lynis": (900, 2700), "unhide": (None, 1800), "unhide-tcp": (None, 1800), "chkrootkit": (900, 2700),
+               "debsums": (900, 5400), "rpmverify": (None, 5400)}
+BUILTIN_TIMEOUT = 120              # contrôles intégrés (noyau, processus) : quelques secondes en temps normal
+TOOL_HEARTBEAT = 5                 # progression rediffusée même sans nouvelle sortie (l'interface se resynchronise)
+
+
+def tool_limits(name):
+    """(silence maximal, durée maximale) de l'outil ; DUKIWI_SHIELD_TOOL_STALL / _LIMIT les remplacent (tests)."""
+    stall, limit = TOOL_LIMITS.get(name, (900, 2700))
+    try:
+        stall = int(os.environ["DUKIWI_SHIELD_TOOL_STALL"]) if "DUKIWI_SHIELD_TOOL_STALL" in os.environ else stall
+        limit = int(os.environ.get("DUKIWI_SHIELD_TOOL_LIMIT") or limit)
+    except ValueError:
+        pass
+    return stall, limit
+
+
+def _stop_tool(proc):
+    """Arrête l'outil et tous ses processus enfants (il est chef de sa session) : TERM, puis KILL 5 s plus tard."""
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(proc.pid, sig)
+        except OSError:
+            pass
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            continue
+        if sig == signal.SIGTERM:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)   # enfants qui auraient survécu au script (ils tiennent la sortie)
+            except OSError:
+                pass
+        return
+
+
+def run_bounded(fn, timeout):
+    """fn() dans un fil auxiliaire ; TimeoutError s'il ne rend pas la main (lecture de /proc ou de sysfs bloquée)."""
+    box = {}
+
+    def target():
+        try:
+            box["value"] = fn()
+        except Exception as e:  # noqa: BLE001
+            box["error"] = e
+    th = threading.Thread(target=target, daemon=True, name="bounded-check")
+    th.start()
+    th.join(timeout)
+    if th.is_alive():
+        raise TimeoutError(f"no answer after {timeout} s")
+    if "error" in box:
+        raise box["error"]
+    return box["value"]
+
+
 def _stream_tool(name, cmd, cancel_event, tick):
     """Lance un outil d'intégrité en lisant sa sortie au fil de l'eau ; tick(pourcentage, étape) selon ses repères.
-    Retourne (lignes utiles, code retour). Pour debsums, seules les anomalies sont gardées (une ligne par fichier sinon)."""
+    Retourne (lignes utiles, code retour, arrêt). Pour debsums, seules les anomalies sont gardées (une ligne par
+    fichier sinon). `arrêt` vaut None, ou {"reason": "stalled" | "limit", "after": secondes, "last": dernière ligne}
+    quand l'outil a été arrêté faute de réponse (tool_limits). L'annulation est prise en compte dans la seconde,
+    même si l'outil n'écrit rien."""
     try:
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, errors="replace")
+        proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                                bufsize=1, errors="replace", start_new_session=True)
     except OSError as e:
-        return [f"{name}: {e}"], 1
+        return [f"{name}: {e}"], 1, None
+    lines = _queue.Queue()
+
+    def pump():                                         # lecture bloquante hors du fil d'analyse
+        try:
+            for raw in proc.stdout:
+                lines.put(raw)
+        except (OSError, ValueError):
+            pass
+        lines.put(None)
+    threading.Thread(target=pump, daemon=True, name=f"integrity-{name}").start()
     totals = {"lynis": LYNIS_SECTIONS, "chkrootkit": CHK_TESTS, "unhide": 3, "unhide-tcp": 2}
     total = _md5sums_entries() if name == "debsums" else totals.get(name, 1)
-    out, done, detail, last_tick = [], 0, "", 0.0
-    for raw in proc.stdout:
-        if cancel_event is not None and cancel_event.is_set():
-            proc.terminate()
+    stall, limit = tool_limits(name)
+    out, done, detail, last_tick, last_line, stopped = [], 0, "", 0.0, "", None
+    started = last_out = time.time()
+    while True:
+        try:
+            raw = lines.get(timeout=1)
+        except _queue.Empty:
+            raw = ""
+        if raw is None:                                 # fin de la sortie : l'outil a terminé
             break
+        now = time.time()
+        if cancel_event is not None and cancel_event.is_set():
+            _stop_tool(proc)
+            break
+        if not raw and stall and now - last_out >= stall:
+            stopped = {"reason": "stalled", "after": int(now - last_out), "last": last_line[:200]}
+        elif limit and now - started >= limit:
+            stopped = {"reason": "limit", "after": int(now - started), "last": last_line[:200]}
+        if stopped:
+            _stop_tool(proc)
+            break
+        if not raw:                                     # rien de nouveau : battement, l'outil travaille en silence
+            if now - last_tick >= TOOL_HEARTBEAT:
+                last_tick = now
+                tick(min(97, int(done * 100 / max(1, total))), detail)
+            continue
+        last_out = now
         line = raw.rstrip("\n")
+        if line.strip():
+            last_line = line.strip()
         if name == "debsums":
             done += 1
             if line and not line.endswith(" OK"):
@@ -4180,12 +4276,14 @@ def _stream_tool(name, cmd, cancel_event, tick):
                 detail = s[3:].strip()[:60]
             else:
                 continue
-        now = time.time()
         if now - last_tick >= 0.4:
             last_tick = now
             tick(min(97, int(done * 100 / max(1, total))), detail)
-    proc.wait()
-    return out, proc.returncode
+    try:
+        proc.wait(timeout=30)
+    except subprocess.TimeoutExpired:
+        _stop_tool(proc)
+    return out, proc.returncode, stopped
 NETMGR_NAMES = {"NetworkManager", "wpa_supplicant", "iwd", "dhclient", "dhcpcd", "avahi-daemon", "systemd-networkd",
                 "dnsmasq", "libvirtd", "dockerd", "tcpdump", "dumpcap", "wireshark", "nmap", "arp-scan", "lldpd",
                 "connmand", "hostapd", "NetworkManager-dispatcher"}
@@ -4681,7 +4779,7 @@ def run_integrity_checks(collect_verified=False, cancel_event=None, progress=Non
         if name in BUILTIN_CHECKS:
             report(name, 0, "", "running")
             try:
-                entry = builtin_check(name, trusted)
+                entry = run_bounded(lambda _n=name: builtin_check(_n, trusted), BUILTIN_TIMEOUT)
             except Exception as e:  # noqa: BLE001
                 log(f"Contrôle intégré {name} : {e}")
                 entry = {"installed": True, "ran": False, "warnings": [], "rc": 1}
@@ -4697,11 +4795,19 @@ def run_integrity_checks(collect_verified=False, cancel_event=None, progress=Non
             report(name, 100, "", "skipped")
         if entry["installed"] and os.geteuid() == 0:
             report(name, 0, "", "running")
-            out, rc = _stream_tool(name, cmd, cancel_event, lambda pct, det, _n=name: report(_n, pct, det))
+            t0 = time.time()
+            out, rc, stopped = _stream_tool(name, cmd, cancel_event, lambda pct, det, _n=name: report(_n, pct, det))
             entry["ran"] = True
             entry["rc"] = rc
+            entry["seconds"] = int(time.time() - t0)
+            partial = bool(stopped) or (cancel_event is not None and cancel_event.is_set())
+            if stopped:                                 # outil arrêté faute de réponse : résultat partiel, on continue
+                entry["timed_out"] = stopped
+                log(f"Intégrité : {name} arrêté ({stopped['reason']}, {stopped['after']} s) — dernière ligne : {stopped['last']!r}")
             lines = [ln.strip() for ln in out if ln.strip()]
-            if name == "lynis":
+            if name == "lynis" and partial:
+                lines = []                              # rapport inachevé (indice absent) : pas de relevé Lynis cette fois
+            elif name == "lynis":
                 rep = parse_lynis_report()
                 result["lynis"] = rep
                 la = lynis_analysis(rep.get("warnings") or [])
@@ -4719,14 +4825,17 @@ def run_integrity_checks(collect_verified=False, cancel_event=None, progress=Non
                 entry["benign"], entry["notes"], entry["rules"] = ra["benign"], ra["notes"], RPM_VERIFY_RULES_VERSION
             elif name == "debsums":
                 lines = [ln for ln in lines if "FAILED" in ln or "REPLACED" in ln or "missing file" in ln][:160]
-                if collect_verified:
+                if collect_verified and not partial:              # passage interrompu : rien n'est tenu pour vérifié
                     verified = debsums_verified_paths(lines)      # tout fichier signalé reste à analyser, bénin ou non
                     result["verified_files"] = len(verified)
                 da = debsums_analysis(lines)
                 lines = da["warnings"]
                 entry["benign"], entry["notes"], entry["rules"] = da["benign"], da["notes"], DEBSUMS_RULES_VERSION
             entry["warnings"] = lines[:80]
-            report(name, 100, "", "done", len(entry["warnings"]))
+            if stopped:
+                report(name, 100, f"{stopped['reason']} {stopped['after']} s: {stopped['last']}"[:160], "timeout", len(entry["warnings"]))
+            else:
+                report(name, 100, "", "done", len(entry["warnings"]))
         result["tools"][name] = entry
         result["warnings"] += len(entry["warnings"])
     result["warnings"] += len(result["app"]["modified"]) + len(result["app"]["missing"])
@@ -4985,9 +5094,18 @@ class Daemon:
         if self.integrity_progress is None:
             self.integrity_progress = {"tools": {}, "current": None, "started_at": now_iso()}
         prev = self.integrity_progress["tools"].get(name) or {}
-        self.integrity_progress["tools"][name] = {"percent": percent, "detail": detail, "state": state, "warnings": warnings}
-        self.integrity_progress["current"] = name if state == "running" else self.integrity_progress.get("current")
         now = time.time()
+        since = (prev.get("since") if prev.get("state") == "running" else None) or now
+        self.integrity_progress["tools"][name] = {"percent": percent, "detail": detail, "state": state, "warnings": warnings, "since": since}
+        self.integrity_progress["current"] = name if state == "running" else self.integrity_progress.get("current")
+        if state != prev.get("state") and state in ("done", "timeout"):
+            # Une ligne par outil dans le journal : en cas de lenteur ou de blocage, on voit lequel et combien de temps
+            took = int(now - since)
+            if state == "timeout":
+                self.write_log(f"⚠ integrity: {name} stopped after {took} s, no answer ({detail})")
+                self.emit_line("info", f"⚠ integrity: {name} stopped after {took} s (no answer), continuing")
+            elif name not in BUILTIN_CHECKS:
+                self.write_log(f"integrity: {name} done in {took} s, {warnings or 0} warning(s)")
         if state != prev.get("state") or now - self.last_integrity_emit >= 0.4:
             self.last_integrity_emit = now
             self.broadcast({"event": "integrity_progress", **self.integrity_progress})
@@ -7166,6 +7284,10 @@ class Daemon:
         self.refresh_overall()
 
     def _store_integrity(self, result, after_scan=False):
+        if "lynis" not in result and ((result.get("tools") or {}).get("lynis") or {}).get("timed_out"):
+            prev = (self.state.get("integrity") or {}).get("lynis")
+            if prev:
+                result["lynis"] = prev                   # audit interrompu : le dernier relevé complet reste affiché
         self.apply_integrity_acks(result)
         self.last_integrity = time.time()
         self.state.update(integrity=result, last_integrity=now_iso())

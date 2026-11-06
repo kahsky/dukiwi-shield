@@ -2917,6 +2917,8 @@ input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-o
 .tool-bar > span { display: block; height: 100%; background: var(--accent-blue); border-radius: 3px; transition: width 0.3s; }
 .tool-done .tool-bar > span { background: var(--accent); }
 .tool-skipped .tool-bar > span { background: rgba(255,255,255,0.12); }
+.tool-timeout .tool-bar > span { background: var(--accent-amber); }
+.tool-timeout .tool-pct, .tool-timeout .tool-detail { color: var(--accent-amber); }
 .tool-pct { font-family: var(--font-mono); color: var(--text-secondary); text-align: right; }
 .tool-detail { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tool-pending { opacity: 0.6; }
