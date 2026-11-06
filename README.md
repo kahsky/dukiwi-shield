@@ -48,15 +48,15 @@ versions itself (popup or Security tab) and can install them on its own when the
 
 ### Direct download
 
-- Mint / Ubuntu: [dukiwi-shield_2.7.9_all.deb](https://www.dukiwi.com/repo/dukiwi-shield/dukiwi-shield_2.7.9_all.deb)
-- Fedora: [dukiwi-shield-2.7.9-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/dukiwi-shield-2.7.9-1.noarch.rpm)
+- Mint / Ubuntu: [dukiwi-shield_2.7.11_all.deb](https://www.dukiwi.com/repo/dukiwi-shield/dukiwi-shield_2.7.11_all.deb)
+- Fedora: [dukiwi-shield-2.7.11-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/dukiwi-shield-2.7.11-1.noarch.rpm)
 - All versions: [www.dukiwi.com/repo](https://www.dukiwi.com/repo)
 
 ### Installing a downloaded package by hand
 
 ```bash
-sudo apt install ./dukiwi-shield_2.7.9_all.deb          # Mint / Ubuntu
-sudo dnf install ./dukiwi-shield-2.7.9-1.noarch.rpm      # Fedora
+sudo apt install ./dukiwi-shield_2.7.11_all.deb          # Mint / Ubuntu
+sudo dnf install ./dukiwi-shield-2.7.11-1.noarch.rpm      # Fedora
 ```
 
 The installation enables the system service and the scheduler, then starts the initial scan:
@@ -78,6 +78,15 @@ sudo dnf remove dukiwi-shield   # Fedora
 
 ## Features
 
+- **2.7.11: the built-in update works on Fedora** — versions were compared with dpkg, which Fedora does not have: the
+  built-in update never saw a newer version there (installs through the dnf repository were not affected). Versions
+  are now compared in Python with the same rules as dpkg, which also makes the vulnerability report faster (no program
+  started for each of its thousands of comparisons).
+- **2.7.10: a telemetry report right after each update, and an automated test suite** — with the optional telemetry
+  accepted, the service now sends its report a minute and a half after an update of the application (with the version
+  it came from) instead of waiting for the weekly report, so a version that goes wrong or a computer that stops updating
+  shows up within hours. For developers: `tests/run_all.py` checks the decoys, USB keys, alerts, honeypot, trust,
+  file-write bursts, score, telemetry and notifications without root and without touching the installed service.
 - **2.7.9: anonymous telemetry really anonymous, trusted AppImages stay trusted** — the approved start-up entries
   sent with the optional telemetry still contained the account name ("autostart:/home/<name>/…", user crontab):
   every personal path (home folder, crontab, removable media, session, AppImage mount) is now anonymised wherever it
@@ -801,11 +810,25 @@ python3 dukiwi-shield.py
 ## Building the packages
 
 ```bash
-./build-deb.sh        # dukiwi-shield_2.7.9_all.deb   (Mint / Ubuntu)
-./build-rpm.sh        # dukiwi-shield-2.7.9-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
+./build-deb.sh        # dukiwi-shield_2.7.11_all.deb   (Mint / Ubuntu)
+./build-rpm.sh        # dukiwi-shield-2.7.11-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
 ```
 
 Both packages share the same file tree (`build-deb.sh --stage-only`) and the same signed integrity manifest.
+
+### Tests
+
+```bash
+tests/run_all.py                       # the code of this folder
+tests/run_all.py /opt/dukiwi-shield    # the installed version
+tests/run_all.py --gui                 # also the tests that open windows (notifications)
+tests/run_all.py test_bursts           # one file
+```
+
+No root needed, and nothing touches the installed service: each test file runs the service in test mode with its own
+state, log and socket in temporary folders. Some tests are skipped when their tool is missing (clamd for the scan of
+non-UTF-8 file names, rpm for the package-manager parent, php and `../repo/api` for the telemetry endpoint). Run them
+before every build; `tests/README.md` lists what each file covers.
 
 ---
 

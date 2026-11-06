@@ -182,9 +182,70 @@ def gpg_verify(sig_path, data_path):
     return r.returncode == 0, ((r.stderr or "") + (r.stdout or "")).strip()[-300:]
 
 
+def _ver_order(c):
+    """Rank of a non-digit character in dpkg order: "~" before anything (even the end of the string), then the end,
+    letters, then every other sign."""
+    if c == "~":
+        return -1
+    if c.isascii() and c.isalpha():
+        return ord(c)
+    return ord(c) + 256
+
+
+def _verrevcmp(a, b):
+    """Compare one part of a version (upstream or revision) with dpkg's verrevcmp algorithm: alternating non-digit
+    segments (ordered by _ver_order) and digit segments (compared as integers)."""
+    i = j = 0
+    digit = "0123456789"
+    while i < len(a) or j < len(b):
+        while (i < len(a) and a[i] not in digit) or (j < len(b) and b[j] not in digit):
+            ac = _ver_order(a[i]) if i < len(a) and a[i] not in digit else 0
+            bc = _ver_order(b[j]) if j < len(b) and b[j] not in digit else 0
+            if ac != bc:
+                return ac - bc
+            i += 1
+            j += 1
+        while i < len(a) and a[i] == "0":
+            i += 1
+        while j < len(b) and b[j] == "0":
+            j += 1
+        first_diff = 0
+        while i < len(a) and a[i] in digit and j < len(b) and b[j] in digit:
+            if not first_diff:
+                first_diff = ord(a[i]) - ord(b[j])
+            i += 1
+            j += 1
+        if i < len(a) and a[i] in digit:
+            return 1
+        if j < len(b) and b[j] in digit:
+            return -1
+        if first_diff:
+            return first_diff
+    return 0
+
+
+def _split_version(v):
+    v = str(v or "").strip()
+    epoch, sep, rest = v.partition(":")
+    if not sep or not epoch.isdigit():
+        epoch, rest = "0", v
+    upstream, _sep, revision = rest.rpartition("-") if "-" in rest else (rest, "", "")
+    return int(epoch), upstream, revision
+
+
+def version_compare(a, b):
+    """< 0, 0 or > 0, like "dpkg --compare-versions" (epoch, upstream version, revision). Pure Python: also works on
+    Fedora, which has no dpkg (the built-in update never saw a newer version there), and starts no process per
+    comparison (thousands of them for the vulnerability report)."""
+    ea, ua, ra = _split_version(a)
+    eb, ub, rb = _split_version(b)
+    if ea != eb:
+        return ea - eb
+    return _verrevcmp(ua, ub) or _verrevcmp(ra, rb)
+
+
 def version_gt(a, b):
-    r = run_quiet(["dpkg", "--compare-versions", str(a), "gt", str(b)], timeout=10)
-    return r.returncode == 0
+    return version_compare(a, b) > 0
 
 
 def uid_groups(uid):
@@ -7820,20 +7881,27 @@ class Daemon:
 
     def send_telemetry(self, force=False):
         """Télémétrie anonyme, opt-in, une fois par semaine (force : à la demande, ou après le premier scan complet) :
-        version, système, score, faux positifs approuvés (chemins anonymisés)."""
+        version, système, score, faux positifs approuvés (chemins anonymisés). Also right after an update of the
+        application (first daily tasks, 90 s after the service starts), so a version that goes wrong shows up within
+        hours instead of waiting for the weekly report."""
         if not self.settings.get("telemetry"):
             return False
         last = self.state.get("telemetry_sent") or ""
+        # Version of the last report; missing: the last report was sent by a version older than 2.7.10
+        sent_version = self.state.get("telemetry_version") or ("before-2.7.10" if last else "")
+        updated = bool(sent_version) and sent_version != VERSION
         try:
-            if last and not force and (time.time() - datetime.fromisoformat(last).timestamp()) < 7 * 86400:
+            if last and not force and not updated and (time.time() - datetime.fromisoformat(last).timestamp()) < 7 * 86400:
                 return False
         except ValueError:
             pass
         payload = self.build_telemetry_payload()
+        if updated:
+            payload["updated_from"] = sent_version
         try:
             http_get(TELEMETRY_URL, timeout=30, data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"})
-            self.state.update(telemetry_sent=now_iso())
-            self.write_log("telemetry sent (opt-in)")
+            self.state.update(telemetry_sent=now_iso(), telemetry_version=VERSION)
+            self.write_log("telemetry sent (opt-in)" + (f" after update from {sent_version}" if updated else ""))
             return True
         except Exception as e:  # noqa: BLE001
             log(f"Télémétrie : {e}")
