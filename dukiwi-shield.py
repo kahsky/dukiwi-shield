@@ -1571,8 +1571,9 @@ class ClamAVAntivirusApp:
                        buttons=[(T("popup.btn.details"), "primary", lambda: self.show_tab("security"))], on_activate=lambda: self.show_tab("security"))
             return
         if kind == "suid":
-            self.popup("danger" if sev == "danger" else "warning", T("popup.suid.title"),
-                       T("popup.suid.body", path=alert.get("path") or "?", owner=alert.get("owner") or "?"), timeout=None,
+            body = T("popup.suid.many", n=alert.get("title") or "?", folder=alert.get("top_dir") or "/", list=alert.get("detail") or "") \
+                if alert.get("subtype") == "many" else T("popup.suid.body", path=alert.get("path") or "?", owner=alert.get("owner") or "?")
+            self.popup("danger" if sev == "danger" else "warning", T("popup.suid.title"), body, timeout=None,
                        buttons=[(T("popup.btn.details"), "primary", lambda: self.show_tab("security"))], on_activate=lambda: self.show_tab("security"))
             return
         group, key = ("certs", alert.get("fp")) if kind == "certificate" else ("redirects", alert.get("key"))

@@ -163,4 +163,50 @@ else:
     control = open(os.path.join(h.ROOT, "build-deb.sh"), encoding="utf-8").read()
     R.check("dukiwi-shield only conflicts with the old package before 2.0, so the transitional one can be installed",
             "Conflicts: clamav-antivirus (<< 2.0~)" in control and "Breaks: clamav-antivirus (<< 2.0~)" in control)
+# ── 2.8.1: customised icons ──
+notes = d.classify_debsums(["/usr/share/icons/gnome/16x16/places/debian-swirl.png        FAILED",
+                            "/usr/share/icons/hicolor/index.theme FAILED", "/usr/bin/ls FAILED"])
+R.check("2.8.1: a replaced icon image is normal; an icon theme index or a program stays to check",
+        [(n["verdict"], n["reason"]) for n in notes] == [("benign", "cosmetic"), ("unknown", "modified"), ("unknown", "modified")], notes)
+# ── 2.8.2: Timeshift snapshots in the SUID scan ──
+gd = h.load("dukiwi_shield_guard.py", "dukiwi_shield_guard_under_test")
+found = ["/usr/bin/passwd", "/timeshift/snapshots/2026-11-06_15-00-01/localhost/usr/bin/passwd",
+         "/media/k/Backup/timeshift/snapshots/2026-11-03_09-07-36/localhost/opt/google/chrome/chrome-sandbox",
+         "/run/timeshift/12345/backup/timeshift-btrfs/snapshots/2026-11-06/@/usr/bin/su", "/tmp/evil"]
+
+
+class Proc:
+    stdout = "\0".join(found).encode()
+
+
+saved_run, saved_quiet = gd.subprocess.run, gd.run_quiet
+gd.subprocess.run = lambda *a, **k: Proc()
+gd.run_quiet = lambda *a, **k: Out("/\n")
+scanned = gd.SecurityGuard.suid_scan()
+gd.subprocess.run, gd.run_quiet = saved_run, saved_quiet
+R.check("2.8.2: SUID scan leaves Timeshift snapshots aside (main disk, backup drive, btrfs)",
+        scanned == ["/tmp/evil", "/usr/bin/passwd"], scanned)
+alerts = []
+dm2 = object.__new__(d.Daemon)
+dm2.state = h.St(suid={"checked_at": "x", "total": 0, "unowned": []})
+dm2.write_log = lambda *a: None
+dm2.publish_alert = alerts.append
+work2 = h.home_tmpdir("suid")
+files = []
+for i in range(12):
+    f = os.path.join(work2, f"copy{i}")
+    open(f, "w").write(str(i))
+    files.append(f)
+dm2.guard = type("G", (), {"suid_scan": staticmethod(lambda: files)})()
+saved_owners = d.dpkg_owners
+d.dpkg_owners = lambda paths: {}
+dm2.refresh_suid()
+n_many = len(alerts)
+open(os.path.join(work2, "planted"), "w").write("x")
+dm2.guard = type("G", (), {"suid_scan": staticmethod(lambda: files + [os.path.join(work2, "planted")])})()
+dm2.refresh_suid()
+d.dpkg_owners = saved_owners
+R.check("2.8.2: twelve new SUID files at once give one summary alert; a single new one still gets its own alert",
+        n_many == 1 and alerts[0].get("subtype") == "many" and alerts[0]["count"] == 12
+        and len(alerts) == 2 and alerts[1].get("path", "").endswith("/planted"), [(a.get("subtype"), a.get("count"), a.get("path")) for a in alerts])
 R.done()

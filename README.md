@@ -48,15 +48,15 @@ versions itself (popup or Security tab) and can install them on its own when the
 
 ### Direct download
 
-- Mint / Ubuntu: [dukiwi-shield_2.8.0_all.deb](https://www.dukiwi.com/repo/dukiwi-shield/dukiwi-shield_2.8.0_all.deb)
-- Fedora: [dukiwi-shield-2.8.0-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/dukiwi-shield-2.8.0-1.noarch.rpm)
+- Mint / Ubuntu: [dukiwi-shield_2.8.2_all.deb](https://www.dukiwi.com/repo/dukiwi-shield/dukiwi-shield_2.8.2_all.deb)
+- Fedora: [dukiwi-shield-2.8.2-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/dukiwi-shield-2.8.2-1.noarch.rpm)
 - All versions: [www.dukiwi.com/repo](https://www.dukiwi.com/repo)
 
 ### Installing a downloaded package by hand
 
 ```bash
-sudo apt install ./dukiwi-shield_2.8.0_all.deb          # Mint / Ubuntu
-sudo dnf install ./dukiwi-shield-2.8.0-1.noarch.rpm      # Fedora
+sudo apt install ./dukiwi-shield_2.8.2_all.deb          # Mint / Ubuntu
+sudo dnf install ./dukiwi-shield-2.8.2-1.noarch.rpm      # Fedora
 ```
 
 The installation enables the system service and the scheduler, then starts the initial scan:
@@ -78,6 +78,15 @@ sudo dnf remove dukiwi-shield   # Fedora
 
 ## Features
 
+- **2.8.2: Timeshift snapshots no longer flood the screen with SUID alerts** — the daily search for SUID/SGID files
+  outside packages also went through the Timeshift snapshots, which copy the system's own SUID programs (`passwd`,
+  `chfn`, `chrome-sandbox`…): every new snapshot raised one popup per file. Snapshot folders (`/timeshift/snapshots`,
+  on the main disk or a backup drive, and btrfs snapshots) are now left aside, and more than four new SUID files found
+  in one pass raise a single summary alert instead of one popup each.
+- **2.8.1: customised icons are no longer an integrity warning** — debsums reported icon theme, logo and wallpaper
+  images replaced on purpose (for example the Debian logo of an icon theme) as modified system files. An image under
+  `/usr/share/icons`, `/usr/share/pixmaps`, `/usr/share/backgrounds` or `/usr/share/wallpapers` never runs: such a
+  change is now classified as normal (customisation) instead of waiting for an approval.
 - **2.8.0: what's new in the update offer, snapshots on another drive, password and encryption follow-up, monthly
   e-mail report, migration from the old package** — the update offer (popup and Security › Application update) lists
   what changed since the installed version, read from the signed update manifest. When the main disk has no room for
@@ -825,8 +834,8 @@ python3 dukiwi-shield.py
 ## Building the packages
 
 ```bash
-./build-deb.sh        # dukiwi-shield_2.8.0_all.deb   (Mint / Ubuntu)
-./build-rpm.sh        # dukiwi-shield-2.8.0-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
+./build-deb.sh        # dukiwi-shield_2.8.2_all.deb   (Mint / Ubuntu)
+./build-rpm.sh        # dukiwi-shield-2.8.2-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
 ```
 
 Both packages share the same file tree (`build-deb.sh --stage-only`) and the same signed integrity manifest.

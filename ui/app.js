@@ -1840,7 +1840,8 @@ function guardAlertText(a) {
     if (a.kind === 'certificate') return t('popup.certificate.body', { name: a.title || '?', stores: a.detail || '' });
     if (a.kind === 'extension') return t(`popup.extension.${a.subtype || 'new'}`, { name: a.title || '?', where: a.detail || '', perms: (a.perms || []).map(p => t('ext.perm.' + p) !== 'ext.perm.' + p ? t('ext.perm.' + p) : p).join(', ') || t('ext.perm.none'), list: (a.names || []).join(', ') });
     if (a.kind === 'ssh_key') return t('popup.ssh_key.body', { user: a.user || a.title || '?', comment: a.detail || '?', fp: a.fp || '' });
-    if (a.kind === 'suid') return t('popup.suid.body', { path: a.path || a.detail || '?', owner: a.owner || '?' });
+    if (a.kind === 'suid') return a.subtype === 'many' ? t('popup.suid.many', { n: a.title || '?', folder: a.top_dir || '/', list: a.detail || '' })
+        : t('popup.suid.body', { path: a.path || a.detail || '?', owner: a.owner || '?' });
     if (a.kind === 'keylogger') return `${t('popup.keylogger.body', { program: prog, device: a.detail || '' })} ${t('alert.reason.' + reason)}`;
     if (a.kind === 'login') return a.subtype === 'night_local' ? t('popup.login.night_local', { user: a.title || '?', hour: a.hour || '' })
         : `${t('popup.login.ssh', { user: a.title || '?', ip: a.ip || '?', country: a.country || '?', hour: a.hour || '', method: a.method || '' })} ${(a.reasons || []).map(r => t('alert.reason.' + r)).join(', ')}`;

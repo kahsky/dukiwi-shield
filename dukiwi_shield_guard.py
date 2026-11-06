@@ -70,7 +70,10 @@ SSH_KEY_TYPES = ("ssh-rsa", "ssh-dss", "ssh-ed25519", "ecdsa-sha2-nistp256", "ec
                  "sk-ssh-ed25519@openssh.com", "sk-ecdsa-sha2-nistp256@openssh.com")
 SUID_SKIP = ("/var/lib/docker/", "/var/lib/containers/", "/containers/storage/", "/var/lib/lxc/", "/var/lib/lxd/", "/var/lib/flatpak/",
              "/var/lib/snapd/", "/snap/", "/var/lib/waydroid/", "/var/lib/machines/", "/.local/share/flatpak/",
-             "/.ecryptfs/")                      # eCryptfs encrypted copy: the decrypted view (type ecryptfs) is scanned
+             "/.ecryptfs/",                      # eCryptfs encrypted copy: the decrypted view (type ecryptfs) is scanned
+             # Timeshift snapshots (rsync copies of the system, on the main disk or a backup drive): copies of the system's
+             # own SUID programs, a new set at every snapshot — never something that runs from there
+             "/timeshift/snapshots/", "/timeshift/snapshots-", "/timeshift-btrfs/snapshots/")
 CERT_ANCHOR_DIRS = ("/usr/local/share/ca-certificates", "/etc/pki/ca-trust/source/anchors", "/etc/ca-certificates/trust-source/anchors")
 TRUSTED_RESOLVERS = {"1.1.1.1", "1.0.0.1", "1.1.1.2", "1.0.0.2", "1.1.1.3", "1.0.0.3", "8.8.8.8", "8.8.4.4", "9.9.9.9", "149.112.112.112",
                      "9.9.9.10", "149.112.112.10", "9.9.9.11", "149.112.112.11", "208.67.222.222", "208.67.220.220", "208.67.222.123",

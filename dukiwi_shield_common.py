@@ -13,7 +13,7 @@ import struct
 import subprocess
 from datetime import datetime
 
-VERSION = "2.8.0"
+VERSION = "2.8.2"
 
 # ─── System paths (root daemon) ─────────────────────────────────────────────
 # Can be overridden by environment variables for tests without root.

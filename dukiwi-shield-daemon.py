@@ -5052,6 +5052,12 @@ def dpkg_diversions():
     return set(re.findall(r"^diversion of (\S+) to ", r.stdout or "", flags=re.M))
 
 
+# Images of icon themes, logos and wallpapers: often replaced on purpose (branding, a customised theme); they never run,
+# so a change is reported as normal rather than as a modified system file
+COSMETIC_DIRS = ("/usr/share/icons/", "/usr/share/pixmaps/", "/usr/share/backgrounds/", "/usr/share/wallpapers/")
+COSMETIC_EXT = (".png", ".svg", ".svgz", ".xpm", ".jpg", ".jpeg", ".ico", ".gif", ".webp")
+
+
 def classify_debsums(lines):
     """Built-in verdict for each file reported by debsums: replaced by the Mint adjustments, diverted by
     dpkg-divert (benign), otherwise modified since installation (to check)."""
@@ -5067,6 +5073,8 @@ def classify_debsums(lines):
             notes.append({"path": path, "verdict": "benign", "reason": "mint_adjustment"})
         elif path in diverted:
             notes.append({"path": path, "verdict": "benign", "reason": "diverted"})
+        elif path.startswith(COSMETIC_DIRS) and path.lower().endswith(COSMETIC_EXT):
+            notes.append({"path": path, "verdict": "benign", "reason": "cosmetic"})
         else:
             notes.append({"path": path, "verdict": "unknown", "reason": "modified"})
     return notes
@@ -6992,9 +7000,17 @@ class Daemon:
         if prev is not None:
             known = {u["path"]: u.get("sha256") for u in prev.get("unowned") or []}
             acks = self.state.get("acknowledged_suid") or {}
-            for u in unowned:
-                if known.get(u["path"]) == u["sha256"] or acks.get(u["path"], {}).get("sha256") == u["sha256"]:
-                    continue
+            new = [u for u in unowned if known.get(u["path"]) != u["sha256"] and acks.get(u["path"], {}).get("sha256") != u["sha256"]]
+            if len(new) > 4:
+                # Many at once is a copy of the system (backup, image, restored folder), not a planted backdoor: one summary
+                # alert listing a few paths instead of one popup each; the checklist keeps the full list
+                self.write_log(f"⚠ suid: {len(new)} new files outside packages at once: " + ", ".join(u["path"] for u in new[:6]))
+                self.publish_alert({"kind": "suid", "subtype": "many", "severity": "warn", "time": now_iso(), "title": str(len(new)),
+                                    "detail": ", ".join(u["path"] for u in new[:6]), "path": "", "owner": "", "pid": 0, "comm": "",
+                                    "exe": "", "count": len(new), "top_dir": os.path.commonpath([u["path"] for u in new]) if new else "",
+                                    "reasons": ["suid_unowned", "many_at_once"], "sample": [u["path"] for u in new[:20]]})
+                new = []
+            for u in new:
                 bad_place = u["path"].startswith(("/tmp/", "/var/tmp/", "/dev/shm/", "/home/", "/run/"))
                 self.write_log(f"⚠ suid file outside packages: {u['path']} ({'suid' if u['suid'] else 'sgid'} {u['owner']})")
                 self.publish_alert({"kind": "suid", "severity": "danger" if bad_place else "warn", "time": now_iso(), "title": os.path.basename(u["path"]),
