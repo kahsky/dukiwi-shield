@@ -763,8 +763,80 @@ def load_policy():
     return policy
 
 
+# Ce qui désigne une personne ou une session dans un chemin, où qu'il soit dans le texte (une clé comme
+# « autostart:/home/<nom>/… » ne commence pas par /home) : dossier personnel, crontab, supports montés, montage AppImage.
+_ANON_RES = (
+    (re.compile(r"(/home/)[^/\s:\"']+"), r"\1~"),
+    (re.compile(r"(/var/spool/cron/crontabs/)[^/\s:\"']+"), r"\1~"),
+    (re.compile(r"(/var/spool/cron/)(?!crontabs\b|atjobs\b|atspool\b)[^/\s:\"']+"), r"\1~"),
+    (re.compile(r"(/run/media/|/media/)[^/\s:\"']+"), r"\1~"),
+    (re.compile(r"(/run/user/)\d+"), r"\1~"),
+    (re.compile(r"(/tmp/\.mount_)[^/\s:\"']+"), r"\1~"),
+)
+
+
 def anonymize_path(path):
-    return re.sub(r"^/home/[^/]+", "/home/~", str(path or ""))
+    """Chemin (ou texte) sans nom de compte ni identifiant de session, pour la télémétrie."""
+    text = str(path or "")
+    for rx, repl in _ANON_RES:
+        text = rx.sub(repl, text)
+    return text
+
+
+def anonymize_list(values, limit=50):
+    """Liste anonymisée sans doublons (dix montages d'une même AppImage deviennent une seule ligne)."""
+    return list(dict.fromkeys(anonymize_path(v) for v in values if v))[:limit]
+
+
+# Programme lancé depuis une AppImage : le dossier de montage change à chaque lancement (/tmp/.mount_<nom><6 car.>),
+# la confiance porte donc sur le contenu du fichier, pas sur son chemin.
+APPIMAGE_MOUNT_RE = re.compile(r"^/tmp/\.mount_[^/]+/")
+APPIMAGE_HASH_MAX = 512 << 20
+
+
+class TrustedPrograms:
+    """Programmes approuvés (« C'est moi ») : par chemin, et par empreinte pour ceux d'une AppImage. S'utilise comme
+    un ensemble de chemins (`exe in trusted`)."""
+
+    _digests = {}                        # (chemin, inode, taille, mtime) → sha256, partagé entre reconstructions
+
+    def __init__(self, programs):
+        programs = [p for p in programs or [] if p.get("exe")]
+        self.paths = {p["exe"] for p in programs}
+        self.hashes = {p["sha256"] for p in programs if p.get("sha256")}
+
+    @classmethod
+    def digest(cls, exe):
+        try:
+            st = os.stat(exe)
+            if st.st_size > APPIMAGE_HASH_MAX:
+                return ""
+            key = (exe, st.st_ino, st.st_size, st.st_mtime_ns)
+            if key not in cls._digests:
+                if len(cls._digests) > 500:
+                    cls._digests.clear()
+                h = hashlib.sha256()
+                with open(exe, "rb") as f:
+                    for chunk in iter(lambda: f.read(1 << 20), b""):
+                        h.update(chunk)
+                cls._digests[key] = h.hexdigest()
+            return cls._digests[key]
+        except OSError:
+            return ""
+
+    def __contains__(self, exe):
+        exe = normalize_exe(exe)
+        if not exe:
+            return False
+        if exe in self.paths:
+            return True
+        return bool(self.hashes) and bool(APPIMAGE_MOUNT_RE.match(exe)) and self.digest(exe) in self.hashes
+
+    def __iter__(self):
+        return iter(self.paths)
+
+    def __len__(self):
+        return len(self.paths)
 
 
 def normalize_exe(exe):
@@ -5234,7 +5306,15 @@ class Daemon:
         self.suspended = {}         # pid -> info (processus suspendus par la réponse automatique)
         self._dns_lock = threading.Lock()
         self._persistence_lock = threading.Lock()
-        self._trusted_set = {t.get("exe") for t in (self.state.get("trusted_programs") or []) if t.get("exe")}
+        programs = self.state.get("trusted_programs") or []
+        # Anciennes approbations d'une AppImage enregistrées par chemin de montage : ce chemin ne reviendra jamais
+        stale = [p for p in programs if APPIMAGE_MOUNT_RE.match(p.get("exe") or "") and not p.get("sha256")
+                 and not os.path.exists(p.get("exe") or "")]
+        if stale:
+            programs = [p for p in programs if p not in stale]
+            self.state.update(trusted_programs=programs)
+            log(f"Programmes de confiance : {len(stale)} ancienne(s) approbation(s) d'AppImage retirée(s) (montage disparu)")
+        self._trusted_set = TrustedPrograms(programs)
         self.policy = {}
         self.locked_settings = set()
         self.central_patterns = []
@@ -7791,8 +7871,8 @@ class Daemon:
                           "fail": [i["key"] for i in checklist.get("items", []) if i.get("status") == "fail"],
                           "warn": [i["key"] for i in checklist.get("items", []) if i.get("status") == "warn"]},
             "alerts_7d": {k: alerts.count(k) for k in set(alerts)},
-            "trusted_programs": [anonymize_path(t.get("exe")) for t in (self.state.get("trusted_programs") or [])][:50],
-            "acknowledged_persistence": [anonymize_path(k) for k in (self.state.get("acknowledged_persistence") or [])][:50],
+            "trusted_programs": anonymize_list(t.get("exe") for t in (self.state.get("trusted_programs") or [])),
+            "acknowledged_persistence": anonymize_list(self.state.get("acknowledged_persistence") or []),
             "vulns": {k: vulns.get(k) for k in ("unfixed", "fix_available", "pro_only", "kernel_pending", "not_applicable", "na_embedded", "na_vendor", "na_headers", "kernel_hwe_fixed")},
             "integrity_warnings": (self.state.get("integrity") or {}).get("warnings"),
             "timeshift": bool((self.state.get("timeshift") or {}).get("schedule")),
@@ -9038,12 +9118,19 @@ class Daemon:
                 who = pwd.getpwuid(uid).pw_name
             except KeyError:
                 who = str(uid)
-            programs = [p for p in (self.state.get("trusted_programs") or []) if p.get("exe") != exe]
-            programs.insert(0, {"exe": exe, "comm": str(req.get("comm") or os.path.basename(exe))[:64],
-                                "added": now_iso(), "by": who})
+            entry = {"exe": exe, "comm": str(req.get("comm") or os.path.basename(exe))[:64], "added": now_iso(), "by": who}
+            if APPIMAGE_MOUNT_RE.match(exe):
+                # AppImage : approuvée par son contenu, valable aux prochains lancements (autre dossier de montage)
+                entry["sha256"] = TrustedPrograms.digest(exe)
+                if not entry["sha256"]:
+                    return {"ok": False, "error": "not_found"}
+                entry["kind"] = "appimage"
+            programs = [p for p in (self.state.get("trusted_programs") or [])
+                        if p.get("exe") != exe and not (entry.get("sha256") and p.get("sha256") == entry["sha256"])]
+            programs.insert(0, entry)
             programs = programs[:200]
             self.state.update(trusted_programs=programs)
-            self._trusted_set = {p["exe"] for p in programs}
+            self._trusted_set = TrustedPrograms(programs)
             alerts = [a for a in (self.state.get("alerts") or [])
                       if not (a.get("kind") in ("burst", "connection") and normalize_exe(a.get("exe")) == exe)]
             for a in alerts:                                   # veille des processus : alerte « approuvée »
@@ -9069,7 +9156,7 @@ class Daemon:
             exe = normalize_exe(req.get("exe"))
             programs = [p for p in (self.state.get("trusted_programs") or []) if p.get("exe") != exe]
             self.state.update(trusted_programs=programs)
-            self._trusted_set = {p["exe"] for p in programs}
+            self._trusted_set = TrustedPrograms(programs)
             self.monitor.dpkg_cache.pop(exe, None)
             self.write_log(f"✘ untrusted program: {exe}")
             self.broadcast({"event": "trusted", "programs": programs, "acknowledged": self.state.get("acknowledged_persistence") or []})

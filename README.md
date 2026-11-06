@@ -48,15 +48,15 @@ versions itself (popup or Security tab) and can install them on its own when the
 
 ### Direct download
 
-- Mint / Ubuntu: [dukiwi-shield_2.7.8_all.deb](https://www.dukiwi.com/repo/dukiwi-shield/dukiwi-shield_2.7.8_all.deb)
-- Fedora: [dukiwi-shield-2.7.8-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/dukiwi-shield-2.7.8-1.noarch.rpm)
+- Mint / Ubuntu: [dukiwi-shield_2.7.9_all.deb](https://www.dukiwi.com/repo/dukiwi-shield/dukiwi-shield_2.7.9_all.deb)
+- Fedora: [dukiwi-shield-2.7.9-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/dukiwi-shield-2.7.9-1.noarch.rpm)
 - All versions: [www.dukiwi.com/repo](https://www.dukiwi.com/repo)
 
 ### Installing a downloaded package by hand
 
 ```bash
-sudo apt install ./dukiwi-shield_2.7.8_all.deb          # Mint / Ubuntu
-sudo dnf install ./dukiwi-shield-2.7.8-1.noarch.rpm      # Fedora
+sudo apt install ./dukiwi-shield_2.7.9_all.deb          # Mint / Ubuntu
+sudo dnf install ./dukiwi-shield-2.7.9-1.noarch.rpm      # Fedora
 ```
 
 The installation enables the system service and the scheduler, then starts the initial scan:
@@ -78,6 +78,13 @@ sudo dnf remove dukiwi-shield   # Fedora
 
 ## Features
 
+- **2.7.9: anonymous telemetry really anonymous, trusted AppImages stay trusted** — the approved start-up entries
+  sent with the optional telemetry still contained the account name ("autostart:/home/<name>/…", user crontab):
+  every personal path (home folder, crontab, removable media, session, AppImage mount) is now anonymised wherever it
+  appears, and the server applies the same rules to incoming reports and, once, to the reports already received.
+  "It's me" on a program run from an AppImage only covered that launch, because the AppImage is mounted in a new
+  folder each time: the approval now follows the content of the program (SHA-256), so it holds for the next launches
+  and drops if the AppImage changes; approvals tied to a mount folder that no longer exists are removed.
 - **2.7.8: the antivirus learns what is normal, backups weigh on the score, notifications in any corner, counters
   in the Security menu** — file-write bursts: the program is now identified at its first writes (an installer that had
   already exited was shown as "?" and treated as unknown). What is known is ignored automatically, with one line in
@@ -794,8 +801,8 @@ python3 dukiwi-shield.py
 ## Building the packages
 
 ```bash
-./build-deb.sh        # dukiwi-shield_2.7.8_all.deb   (Mint / Ubuntu)
-./build-rpm.sh        # dukiwi-shield-2.7.8-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
+./build-deb.sh        # dukiwi-shield_2.7.9_all.deb   (Mint / Ubuntu)
+./build-rpm.sh        # dukiwi-shield-2.7.9-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
 ```
 
 Both packages share the same file tree (`build-deb.sh --stage-only`) and the same signed integrity manifest.
