@@ -4,4 +4,6 @@ baseurl=https://www.dukiwi.com/repo/rpm/fedora/
 enabled=1
 gpgcheck=1
 repo_gpgcheck=1
-gpgkey=https://www.dukiwi.com/repo/rpm/dukiwi.asc
+# Key shipped in the package (fingerprint C9EC B8C7 A3BA 05AA 9446 D33D 4301 B5B9 784F 6C1F): a key served by the
+# same host as the packages could be swapped along with them
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-dukiwi

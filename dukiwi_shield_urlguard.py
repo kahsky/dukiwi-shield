@@ -591,7 +591,7 @@ class UrlGuard:
                 break
         return cur, chain
 
-    def check(self, url, context=None, source="", resolve=True):
+    def check(self, url, context=None, source="", resolve=True, uid=None):
         url = str(url or "").strip()
         reasons, meta = analyze(url, context)
         host = meta.get("host", "")
@@ -599,13 +599,13 @@ class UrlGuard:
         if listed:
             reasons.append(listed[0])
             meta["list"] = listed[1]
-        if host and self._allowed(host):
+        if host and self._allowed(host, uid):
             return {"url": url, "host": host, "verdict": "safe", "reasons": ["user_allowed"], "meta": meta}
         if "shortener" in reasons and resolve and self.daemon.settings.get("url_guard_resolve") is not False:
             final, chain = self.expand(url)
             if chain:
                 meta["final_url"] = final
-                sub = self.check(final, None, source, resolve=False)
+                sub = self.check(final, None, source, resolve=False, uid=uid)
                 if sub["verdict"] == "danger":
                     reasons.append("shortener_danger")
                     meta["final_reasons"] = sub["reasons"]
@@ -625,14 +625,14 @@ class UrlGuard:
             verdict = "warn"
         return {"url": url, "host": host, "verdict": verdict, "reasons": reasons, "meta": meta}
 
-    def check_many(self, urls, context=None, source=""):
+    def check_many(self, urls, context=None, source="", uid=None):
         results = []
         for item in urls[:200]:
             if isinstance(item, dict):
                 u, ctx = item.get("url") or item.get("href") or "", dict(context or {}, **{k: v for k, v in item.items() if k in ("text", "sender")})
             else:
                 u, ctx = item, context
-            results.append(self.check(u, ctx, source))
+            results.append(self.check(u, ctx, source, uid=uid))
         n = len(results)
         with self.lock:
             self.counters["checked"] = self.counters.get("checked", 0) + n
@@ -645,20 +645,31 @@ class UrlGuard:
         return results
 
     # ── Autorisations, journal, clients ───────────────────────────────────
-    def _allowed(self, host):
+    def _allowed(self, host, uid=None):
+        """An address allowed by this user (entries carry the uid of whoever allowed them: one account cannot open
+        a phishing site to the others). Entries without uid date from before 2.9.0 and apply to everybody."""
         with self.lock:
             allowed = dict(self.allowed)
-        return host in allowed or registered_domain(host) in allowed
+        for key in (host, registered_domain(host)):
+            e = allowed.get(key)
+            if isinstance(e, dict) and (e.get("uid") is None or uid is None or e.get("uid") == uid):
+                return True
+        return False
 
-    def allow(self, host, remove=False, by=""):
+    def allow(self, host, remove=False, by="", uid=None):
         host = str(host or "").strip().lower()
-        if not host or " " in host:
+        # A host name only (letters, digits, dots, dashes; IDN in punycode): nothing a page could misuse
+        labels = host.rstrip(".").split(".")
+        if not host or len(host) > 253 or not all(re.fullmatch(r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?", x) for x in labels):
             return False
         with self.lock:
             if remove:
+                e = self.allowed.get(host)
+                if isinstance(e, dict) and e.get("uid") not in (None, uid) and uid not in (None, 0):
+                    return False
                 self.allowed.pop(host, None)
             else:
-                self.allowed[host] = {"t": _iso(), "by": by}
+                self.allowed[host] = {"t": _iso(), "by": by, "uid": uid}
         self._persist()
         return True
 

@@ -25,6 +25,7 @@ import os
 import pwd
 import re
 import shutil
+import stat
 import subprocess
 import tempfile
 import threading
@@ -32,10 +33,14 @@ import time
 import zipfile
 
 import dukiwi_shield_audit as audit
-from dukiwi_shield_common import home_mounted
+from dukiwi_shield_common import home_mounted, open_user_file, run_as_user
 from datetime import datetime
 
-DECOY_PREFIX = ".dukiwi-guard-"
+DECOY_PREFIX = ".dukiwi-guard-"          # names used up to 2.8: still recognised to clean them up
+# Since 2.9.0 a decoy is named from a random secret of the installation (".budget-3fa2.docx"…): no common prefix a
+# ransomware could learn to skip
+DECOY_WORDS = ("budget", "contrat", "factures", "scan", "notes", "sauvegarde", "photos", "releve", "archive", "rapport",
+               "devis", "impots", "comptes", "projet", "planning", "export")
 DECOY_DIRS = (("DOCUMENTS", "Documents", "docx"), ("PICTURES", "Pictures", "jpg"), ("DESKTOP", "Desktop", "pdf"), ("", "", "xlsx"))
 DECOY_CHECK_SEC = 5
 DECOY_MISSING_COOLDOWN = 3600            # s between two "decoy deleted" alerts with no identified program (same path)
@@ -160,7 +165,7 @@ def xdg_dir(pw, key, default):
     if not key:
         return pw.pw_dir
     try:
-        with open(os.path.join(pw.pw_dir, ".config", "user-dirs.dirs")) as f:
+        with open_user_file(os.path.join(pw.pw_dir, ".config", "user-dirs.dirs")) as f:
             for ln in f:
                 m = re.match(rf'^\s*XDG_{key}_DIR="(.*)"', ln)
                 if m:
@@ -281,10 +286,21 @@ class SecurityGuard(threading.Thread):
                     except OSError:
                         pass
                 continue
+            home = os.path.realpath(pw.pw_dir)
             for key, default, ext in DECOY_DIRS:
                 folder = xdg_dir(pw, key, default)
-                if folder and os.path.isdir(folder):
-                    out.append((os.path.join(folder, f"{DECOY_PREFIX}{self.tag}.{ext}"), pw, ext))
+                if not folder or not os.path.isdir(folder):
+                    continue
+                # Only a folder of the user's own home, owned by them (user-dirs.dirs can name any folder:
+                # /var/spool/cups, /etc/…)
+                real = os.path.realpath(folder)
+                try:
+                    owned = os.stat(real).st_uid == pw.pw_uid
+                except OSError:
+                    owned = False
+                if not owned or not (real == home or real.startswith(home + "/")):
+                    continue
+                out.append((os.path.join(folder, self.decoy_name(folder, ext)), pw, ext))
         seen, uniq = set(), []
         for item in out:
             if item[0] not in seen:
@@ -293,21 +309,26 @@ class SecurityGuard(threading.Thread):
         self.decoys_pending = pending
         return uniq
 
+    def decoy_seed(self):
+        """Random secret of this installation, kept in the service state (readable by root only)."""
+        seed = self.d.state.get("decoy_seed")
+        if not seed:
+            import secrets
+            seed = secrets.token_hex(16)
+            self.d.state.update(decoy_seed=seed)
+        return seed
+
+    def decoy_name(self, folder, ext):
+        h = hashlib.sha256(f"{self.decoy_seed()}|{self.tag}|{folder}".encode()).hexdigest()
+        return f".{DECOY_WORDS[int(h[:4], 16) % len(DECOY_WORDS)]}-{h[4:8]}.{ext}"
+
     def write_decoy(self, path, pw, ext):
         data = decoy_bytes(ext, path + self.tag)
-        tmp = path + ".tmp"
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o644)
-        try:
-            os.write(fd, data)
-            os.fchown(fd, pw.pw_uid, pw.pw_gid)
-        finally:
-            os.close(fd)
-        os.replace(tmp, path)
         old = int(time.time()) - 86400 * 40          # old date: looks like an existing document
-        os.utime(path, (old, old), follow_symlinks=False)
-        st = os.lstat(path)
-        self.decoys[path] = {"sha": hashlib.sha256(data).hexdigest(), "ino": st.st_ino, "size": st.st_size,
-                             "mtime": st.st_mtime, "uid": pw.pw_uid, "ext": ext, "user": pw.pw_name}
+        # Written by a process with the user's rights: a link or a swapped folder cannot redirect root's write
+        ino, size, mtime = run_as_user(pw.pw_uid, pw.pw_gid, "dukiwi_shield_common", "write_decoy_file", path, data.hex(), old)
+        self.decoys[path] = {"sha": hashlib.sha256(data).hexdigest(), "ino": ino, "size": size,
+                             "mtime": mtime, "uid": pw.pw_uid, "ext": ext, "user": pw.pw_name}
 
     def sync_decoys(self):
         """Creates the missing decoys (or removes them if the protection is disabled). At startup, a decoy modified
@@ -320,7 +341,17 @@ class SecurityGuard(threading.Thread):
             self.remove_decoys()
             return
         with self.lock:
-            for path, pw, ext in self.decoy_paths():
+            wanted = self.decoy_paths()
+            # Decoys of an earlier naming (2.8: common prefix) or of a folder no longer used: removed if untouched
+            names = {p for p, _pw, _e in wanted}
+            for path, info in list(stored.items()) + list(self.decoys.items()):
+                if path not in names and self.file_sha(path) == (info or {}).get("sha"):
+                    try:
+                        os.unlink(path)
+                    except OSError:
+                        pass
+                    self.decoys.pop(path, None)
+            for path, pw, ext in wanted:
                 try:
                     st = os.lstat(path)
                 except FileNotFoundError:
@@ -345,8 +376,9 @@ class SecurityGuard(threading.Thread):
         with self.lock:
             stored = dict(self.d.state.get("decoys") or {})
             stored.update(self.decoys)
-            for path in stored:
-                if os.path.basename(path).startswith(DECOY_PREFIX):
+            for path, info in stored.items():
+                # Ours: old prefix, or still exactly the content we wrote (never a file of the user)
+                if os.path.basename(path).startswith(DECOY_PREFIX) or self.file_sha(path) == (info or {}).get("sha"):
                     try:
                         os.unlink(path)
                     except OSError:
@@ -372,9 +404,16 @@ class SecurityGuard(threading.Thread):
     def file_sha(path):
         h = hashlib.sha256()
         try:
-            with open(path, "rb", opener=lambda p, fl: os.open(p, fl | os.O_NOFOLLOW)) as f:
+            # O_NONBLOCK and regular file only: a FIFO put in place of a decoy froze the security thread
+            with open(path, "rb", opener=lambda p, fl: os.open(p, fl | os.O_NOFOLLOW | os.O_NONBLOCK)) as f:
+                if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):
+                    return ""
+                n = 0
                 for chunk in iter(lambda: f.read(65536), b""):
                     h.update(chunk)
+                    n += len(chunk)
+                    if n > 64 << 20:
+                        return ""
         except OSError:
             return ""
         return h.hexdigest()
@@ -801,7 +840,7 @@ class SecurityGuard(threading.Thread):
                 out.append({"key": f"proxy:desktop:{pw.pw_name}:{value}", "type": "proxy_desktop", "value": value, "where": pw.pw_name})
             kde = os.path.join(pw.pw_dir, ".config", "kioslaverc")
             try:
-                with open(kde) as f:
+                with open_user_file(kde) as f:
                     txt = f.read()
                 m = re.search(r"^\s*ProxyType\s*=\s*([1-4])", txt, re.M)
                 if m:
@@ -813,7 +852,7 @@ class SecurityGuard(threading.Thread):
             for prefs in glob.glob(os.path.join(pw.pw_dir, ".mozilla/firefox/*/prefs.js")) + \
                     glob.glob(os.path.join(pw.pw_dir, "snap/firefox/common/.mozilla/firefox/*/prefs.js")):
                 try:
-                    with open(prefs, errors="replace") as f:
+                    with open_user_file(prefs) as f:
                         txt = f.read()
                 except OSError:
                     continue
@@ -994,7 +1033,7 @@ class SecurityGuard(threading.Thread):
         import base64
         out = []
         try:
-            with open(path, errors="replace") as f:
+            with open_user_file(path) as f:
                 lines = f.read().splitlines()
         except OSError:
             return out
@@ -1056,16 +1095,14 @@ class SecurityGuard(threading.Thread):
         if not keys:
             return False
         drop = {k["line"] for k in keys}
-        with open(path, errors="replace") as f:
-            lines = f.read().splitlines()
-        kept = [ln for i, ln in enumerate(lines) if i not in drop]
-        st = os.stat(path)
-        tmp = path + ".dukiwi-tmp"
-        with open(tmp, "w") as f:
-            f.write("\n".join(kept) + ("\n" if kept else ""))
-        os.chown(tmp, st.st_uid, st.st_gid)
-        os.chmod(tmp, st.st_mode & 0o777)
-        os.replace(tmp, path)
+        with open_user_file(path) as f:
+            lines = [ln for i, ln in enumerate(f.read().splitlines()) if i in drop]
+        # The file lives in the owner's folder: rewritten with the owner's rights, so a symbolic link left next to
+        # it cannot redirect root's write
+        st = os.lstat(path)
+        if not stat.S_ISREG(st.st_mode):
+            return False
+        run_as_user(st.st_uid, st.st_gid, "dukiwi_shield_common", "drop_lines", path, lines, st.st_mode & 0o777)
         known = [x for x in (self.d.state.get("ssh_keys_known") or []) if x != f"{path}|{fp}"]
         self.d.state.update(ssh_keys_known=known)
         return True

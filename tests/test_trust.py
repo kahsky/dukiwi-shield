@@ -1,5 +1,6 @@
 """Trust: Dukiwi applications recognised out of the box (2.7.7), AppImages approved by content (2.7.9)."""
 import os
+import time
 import re
 
 import _harness as h
@@ -22,8 +23,12 @@ installed = [p for p in ("/usr/bin/dukiwi-shield", "/opt/dukiwi-shield/dukiwi-sh
 if installed:
     dm = object.__new__(d.Daemon)
     dm.central_patterns = []
-    R.check("installed Dukiwi programs are trusted by the service without the central allowlist",
-            all(dm.central_trusted(p) for p in installed) and not dm.central_trusted("/usr/bin/evil-xyz"), installed)
+    # Trusted only where nobody but root can have put them: on a machine where /opt belongs to a user, the
+    # programs under /opt are (rightly) not trusted
+    safe = [p for p in installed if d.root_owned_chain(p)]
+    R.check("installed Dukiwi programs are trusted by the service without the central allowlist (root's folders only)",
+            all(dm.central_trusted(p) for p in safe) and not any(dm.central_trusted(p) for p in installed if p not in safe)
+            and not dm.central_trusted("/usr/bin/evil-xyz"), (safe, installed))
 else:
     R.skip("installed Dukiwi programs are trusted", "no Dukiwi program installed here")
 cases = {'"/usr/bin/dukiwilink-agent"': "/usr/bin/dukiwilink-agent", "/usr/bin/dukiwilink-agent --tray %U": "/usr/bin/dukiwilink-agent",
@@ -50,7 +55,11 @@ dm.refresh_overall = dm._builtin_refresh = lambda: None
 dm.connections = type("C", (), {"mark_trusted": lambda self, e: None})()
 dm.settings = type("S", (), {"get": lambda self, k: None})()
 dm.monitor = type("M", (), {"dpkg_cache": {}})()
-r = dm.handle({"cmd": "trust_program", "exe": first, "comm": "kDrive"}, os.getuid())
+R.check("trusting a program needs the administrator (any program of the account could otherwise trust itself)",
+        dm.handle({"cmd": "trust_program", "exe": first, "comm": "kDrive"}, os.getuid()).get("error") == "admin_required")
+dm.unlocked = {os.getuid(): (time.time() + 60, "tok")}
+R.check("an unlock is only valid with its token", not dm.is_unlocked(os.getuid(), {}) and not dm.is_unlocked(os.getuid(), {"admin_token": "bad"}))
+r = dm.handle({"cmd": "trust_program", "exe": first, "comm": "kDrive", "admin_token": "tok"}, os.getuid())
 entry = (dm.state.get("trusted_programs") or [{}])[0]
 R.check("trusting a program of an AppImage stores its content hash", r.get("ok") and entry.get("kind") == "appimage" and len(entry.get("sha256", "")) == 64, (r, entry))
 t = dm.user_trusted()

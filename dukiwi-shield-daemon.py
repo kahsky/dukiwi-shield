@@ -35,6 +35,7 @@ import ctypes
 import grp
 import hashlib
 import hmac
+import secrets
 import ipaddress
 import fnmatch
 import shlex
@@ -78,7 +79,7 @@ import dukiwi_shield_folders  # noqa: E402
 from dukiwi_shield_common import (  # noqa: E402
     VERSION, SYSTEM_STATE_DIR, SYSTEM_LOG_DIR, DAEMON_SOCKET,
     SYSTEM_STATE_FILE, SYSTEM_QUARANTINE_DIR, SYSTEM_PROGRESS_FILE, SYSTEM_SCAN_CACHE_DB, SYSTEM_SECRET_FILE,
-    quarantine_index_add, quarantine_enrich, parse_moved_line,
+    quarantine_index_add, quarantine_index_load, quarantine_enrich, parse_moved_line, run_as_user, open_user_file,
     SYSTEM_FILELIST_CACHE, FIRST_SCAN_FLAG, SYSTEM_LOG_FILE, USB_MOUNT_ROOT,
     SYSTEM_SETTINGS_FILE, DEFAULT_SETTINGS, DAEMON_ALLOWED_ROOTS, LANGUAGES,
     BURST_PID_COOLDOWN_SEC, BURST_GLOBAL_COOLDOWN, BURST_IGNORE_PREFIXES, BURST_IGNORE_PARTS,
@@ -90,13 +91,16 @@ from dukiwi_shield_common import (  # noqa: E402
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 KEYRING = os.path.join(APP_DIR, "keys", "dukiwi.gpg")
 INTEGRITY_FILE = os.path.join(APP_DIR, "integrity.json")
-MANIFEST_URL = os.environ.get("DUKIWI_SHIELD_MANIFEST_URL",
-                              "https://www.dukiwi.com/repo/dukiwi-shield/manifest.json")
+# Test overrides of the server addresses: honoured only by a service not running as root (test mode). A root
+# service started with a polluted environment (sudo -E) must not fetch its updates or allowlist elsewhere.
+_TEST_ENV = os.environ if os.geteuid() != 0 else {}
+MANIFEST_URL = _TEST_ENV.get("DUKIWI_SHIELD_MANIFEST_URL",
+                             "https://www.dukiwi.com/repo/dukiwi-shield/manifest.json")
 UPDATES_DIR = os.path.join(SYSTEM_STATE_DIR, "updates")
 POLICY_DIR = "/etc/dukiwi-shield"
 POLICY_FILE = os.path.join(POLICY_DIR, "policy.json")          # deployed by dukiwi-kit (root)
-ALLOWLIST_URL = os.environ.get("DUKIWI_SHIELD_ALLOWLIST_URL", "https://www.dukiwi.com/repo/api/allowlist.json")
-TELEMETRY_URL = os.environ.get("DUKIWI_SHIELD_TELEMETRY_URL", "https://www.dukiwi.com/repo/api/telemetry.php")
+ALLOWLIST_URL = _TEST_ENV.get("DUKIWI_SHIELD_ALLOWLIST_URL", "https://www.dukiwi.com/repo/api/allowlist.json")
+TELEMETRY_URL = _TEST_ENV.get("DUKIWI_SHIELD_TELEMETRY_URL", "https://www.dukiwi.com/repo/api/telemetry.php")
 ALLOWLIST_FILE = os.path.join(SYSTEM_STATE_DIR, "allowlist.json")
 BLOCKLIST_FILE = os.path.join(SYSTEM_STATE_DIR, "ip-blocklist.txt")
 BLOCKLIST_URLS = {
@@ -117,6 +121,9 @@ def geoip_url(key):
     return GEOIP_PRO_URL.format(key=urllib.parse.quote(key, safe="")) if key else GEOIP_FREE_URL
 UNLOCK_TTL = 900
 ADMIN_GROUPS = ("sudo", "admin", "wheel")
+# Service state never sent to the GUIs: decoy locations and secret, honeypot ports, login cursors, cache, known keys
+STATE_SECRET_KEYS = ("decoys", "decoy_seed", "honeypot_random_ports", "login_cursor", "geo_cache", "ssh_keys_known",
+                     "known_users", "login_known")
 USER_AGENT = f"dukiwi-shield/{VERSION}"
 LOG_MAX_BYTES = 5 * 1024 * 1024
 PROGRESS_INTERVAL = 0.25      # seconds between two progress events
@@ -570,10 +577,13 @@ def usb_manifest_read(mountpoint):
     if not os.path.exists(path) and os.path.exists(os.path.join(mountpoint, USB_MANIFEST_LEGACY)):
         path = os.path.join(mountpoint, USB_MANIFEST_LEGACY)
     try:
-        if os.path.getsize(path) > 64 * 2 ** 20:
-            return None
-        with open(path, encoding="utf-8") as f:
-            data = json.load(f)
+        # The drive is attacker-made: no symbolic link (to /dev/zero…), no FIFO, bounded size
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, "rb") as f:
+            st = os.fstat(f.fileno())
+            if not _stat.S_ISREG(st.st_mode) or st.st_size > 64 * 2 ** 20:
+                return None
+            data = json.loads(f.read(64 * 2 ** 20 + 1).decode("utf-8"))
     except (OSError, ValueError):
         return None
     if not isinstance(data, dict) or data.get("format") != 1 or not isinstance(data.get("files"), dict):
@@ -599,7 +609,14 @@ def usb_manifest_write(mountpoint, files, db_version, infected):
     path = os.path.join(mountpoint, USB_MANIFEST)
     tmp = path + ".tmp"
     try:
-        with open(tmp, "w", encoding="utf-8") as f:
+        # Never through a symbolic link left on the drive: the temporary file is created new, and the target is
+        # replaced by rename (which replaces a link instead of following it)
+        try:
+            os.unlink(tmp)
+        except FileNotFoundError:
+            pass
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(data, f, separators=(",", ":"))
         os.replace(tmp, path)
         return True
@@ -787,6 +804,89 @@ PACKAGE_TOOLS = frozenset({
     "rpm", "dnf", "dnf5", "yum", "flatpak-system-helper", "snapd", "dkms", "update-initramfs", "mkinitramfs", "dracut",
 })
 SCRIPT_INTERPRETERS = ("python", "perl", "bash", "dash", "sh")
+# Programs that run code they are given (a script, -c, -e): judging them by their own binary says nothing
+INTERPRETER_NAMES = ("python", "perl", "bash", "dash", "sh", "zsh", "fish", "ksh", "node", "nodejs", "ruby", "php",
+                     "lua", "java", "pwsh", "Rscript", "tclsh", "wish", "gjs", "osascript", "busybox")
+
+
+def is_interpreter(exe):
+    base = os.path.basename(str(exe or "")).replace(" (deleted)", "")
+    stem = re.sub(r"[\d.]+$", "", base)          # python3.12 → python, perl5.38 → perl
+    return stem in INTERPRETER_NAMES or base in INTERPRETER_NAMES
+
+
+# Interpreter options: code given inline / module run (no script file to judge), options followed by a value
+INLINE_CODE_OPTS = {"-c", "-e", "-E", "-p", "-m", "--eval", "--print", "--command", "-r", "--require"}
+VALUE_OPTS = {"-W", "-X", "-o", "-O", "-I", "--import", "--loader", "--input-type"}
+
+
+def script_of(argv, cwd="/"):
+    """Script file an interpreter runs, from its arguments; "" for code given inline, read from stdin or a module
+    (nothing on disk to judge, so never trusted by the interpreter's own package)."""
+    args, i = list(argv[1:]), 0
+    shell = re.sub(r"[\d.]+$", "", os.path.basename(argv[0] if argv else "")) in ("sh", "bash", "dash", "zsh", "ksh", "fish")
+    # Shells: only -c gives inline code (-e means "stop on error"); others: -c, -e, -m… (python, perl, node, ruby)
+    inline = {"-c", "--command"} if shell else INLINE_CODE_OPTS
+    ends = "c" if shell else "cem"
+    while i < len(args):
+        a = args[i]
+        if a == "--":
+            i += 1
+            break
+        if a in inline or (a.startswith("-") and not a.startswith("--") and 2 < len(a) <= 4 and a[-1] in ends
+                           and a[1:].isalpha()):
+            return ""
+        if a in VALUE_OPTS:
+            i += 2
+            continue
+        if a.startswith("-") and a != "-":
+            i += 1
+            continue
+        break
+    if i >= len(args) or args[i] in ("-", ""):
+        return ""
+    return os.path.normpath(os.path.join(cwd, args[i]))
+
+
+# LD_PRELOAD is not listed: legitimate tools set it for a whole session (Plank's libplanksep) and the process watch
+# already reports unknown preloaded libraries
+CODE_INJECTION_ENV = (b"ELECTRON_RUN_AS_NODE=",)
+
+
+def code_injected(pid, argv):
+    """True if a (trusted) program was started so that it runs code it was handed: Electron applications in Node
+    mode, a debugger port, NODE_OPTIONS loading a module."""
+    if any(a.startswith(("--inspect", "--remote-debugging", "--js-flags", "--require")) for a in argv[1:]):
+        return True
+    try:
+        with open(f"/proc/{pid}/environ", "rb") as f:
+            env = f.read(1 << 20).split(b"\0")
+    except OSError:
+        return False
+    for e in env:
+        if e.startswith(CODE_INJECTION_ENV) and e.split(b"=", 1)[1].strip() not in (b"", b"0"):
+            return True
+        if e.startswith(b"NODE_OPTIONS=") and re.search(rb"(^|\s)(-r|--require|--import|--loader|--inspect)", e[13:]):
+            return True
+    return False
+
+
+def root_owned_chain(path):
+    """The file and every folder above it belong to root and are not writable by group or others: nobody but root
+    can have put or replaced it there."""
+    p = os.path.normpath(path or "")
+    if not p.startswith("/"):
+        return False
+    try:
+        while True:
+            st = os.stat(p)
+            if st.st_uid != 0 or (st.st_mode & 0o022 and not (os.path.isdir(p) and st.st_mode & 0o1000 and p != path)):
+                return False
+            if p == "/":
+                return True
+            p = os.path.dirname(p)
+    except OSError:
+        return False
 BURST_IDENTIFY_AT = 3                    # writes by a program before recording who it is (it may finish before the evaluation)
 HABIT_LEARNED_AT = 2                     # "It's OK" on the same burst before it is ignored automatically
 # Folders that belong to an application (in addition to the ~/ patterns of the central whitelist): a burst that
@@ -1041,7 +1141,7 @@ class ActivityMonitor(threading.Thread):
 
     # ── Evaluation ───────────────────────────────────────────────────────
     def process_info(self, pid):
-        info = {"pid": pid, "comm": "?", "exe": "", "cmdline": "", "uid": None, "user": "", "ppid": 0}
+        info = {"pid": pid, "comm": "?", "exe": "", "cmdline": "", "uid": None, "user": "", "ppid": 0, "argv": [], "script": ""}
         try:
             with open(f"/proc/{pid}/comm") as f:
                 info["comm"] = f.read().strip()
@@ -1053,9 +1153,18 @@ class ActivityMonitor(threading.Thread):
             pass
         try:
             with open(f"/proc/{pid}/cmdline", "rb") as f:
-                info["cmdline"] = f.read().replace(b"\0", b" ").decode(errors="replace").strip()[:300]
+                raw = f.read()
+            info["cmdline"] = raw.replace(b"\0", b" ").decode(errors="replace").strip()[:300]
+            info["argv"] = [a.decode(errors="replace")[:512] for a in raw.split(b"\0")[:16] if a]
         except OSError:
             pass
+        if is_interpreter(info["exe"]) and info["argv"]:
+            # A script is judged by its own file, never by the interpreter (python3 belongs to a package)
+            try:
+                cwd = os.readlink(f"/proc/{pid}/cwd")
+            except OSError:
+                cwd = "/"
+            info["script"] = script_of(info["argv"], cwd)
         try:
             with open(f"/proc/{pid}/status") as f:
                 for line in f:
@@ -1081,8 +1190,11 @@ class ActivityMonitor(threading.Thread):
             return False
         if not exe.startswith(TRUSTED_EXE_PREFIXES):
             return False
-        if exe.startswith(("/snap/", "/var/lib/flatpak/", "/app/", "/opt/")):
-            return True
+        if exe.startswith("/app/"):
+            return True                       # inside a Flatpak sandbox (path seen from its own mount namespace)
+        if exe.startswith(("/snap/", "/var/lib/flatpak/", "/opt/")):
+            # Only if nobody but root can have put it there (/opt/<app> is sometimes left to the user)
+            return root_owned_chain(exe)
         if exe in self.dpkg_cache:
             return self.dpkg_cache[exe]
         r = run_quiet(["dpkg", "-S", exe], timeout=15)
@@ -1113,11 +1225,14 @@ class ActivityMonitor(threading.Thread):
         if info["comm"] in ("clamscan", "clamd", "clamdscan", "freshclam", "find") and \
                 info["exe"].startswith("/usr/"):
             return
-        exe_path = normalize_exe(info["exe"])
+        # The program that decides: the script for an interpreter ("" for inline code: nothing to trust)
+        exe_path = info.get("script", "") if is_interpreter(info["exe"]) else normalize_exe(info["exe"])
         if exe_path and exe_path in self.daemon_ref.user_trusted():
             self.reported[pid] = now          # approved program: no more alerts
             return
-        trusted = self.exe_trusted(info["exe"])
+        trusted = self.exe_trusted(exe_path) if exe_path else False
+        if trusted and code_injected(pid, info.get("argv") or []):
+            trusted = False               # a trusted binary made to run foreign code (Electron as Node, inspector…)
         if trusted and os.path.basename(exe_path) in QUIET_BURST_BASENAMES:
             self.reported[pid] = now          # gestionnaire de paquets, cache, sauvegarde : rafale attendue, silence
             return
@@ -1148,7 +1263,7 @@ class ActivityMonitor(threading.Thread):
                 why = f"launched by {why}"
             elif track["paths"] and all(self.app_data_path(p) for p in track["paths"]):
                 why = "application folder"
-            elif self.daemon_ref.habit_learned(self.daemon_ref.habit_key(info["exe"], top_dir)):
+            elif self.daemon_ref.habit_learned(self.daemon_ref.habit_key(exe_path or info["exe"], top_dir)):
                 why = "learned"
             if why:
                 self.reported[pid] = now
@@ -1169,7 +1284,8 @@ class ActivityMonitor(threading.Thread):
         alert = {
             "kind": "burst",
             "time": now_iso(), "severity": severity, "reasons": reasons,
-            "pid": pid, "comm": info["comm"], "exe": info["exe"], "cmdline": info["cmdline"],
+            "pid": pid, "comm": info["comm"], "exe": exe_path or info["exe"], "cmdline": info["cmdline"],
+            "interpreter": info["exe"] if is_interpreter(info["exe"]) else "",
             "user": info["user"], "trusted": trusted, "exe_replaced": info["exe"].endswith(" (deleted)"),
             "count": track["count"], "home_count": track["home"],
             "window": self.daemon_ref.settings.get("burst_window_sec"),
@@ -1185,29 +1301,15 @@ class ActivityMonitor(threading.Thread):
         for _ in range(8):
             if ppid <= 1:
                 return ""
-            try:
-                exe = os.readlink(f"/proc/{ppid}/exe")
-                with open(f"/proc/{ppid}/comm") as f:
-                    comm = f.read().strip()
-                with open(f"/proc/{ppid}/cmdline", "rb") as f:
-                    argv = [a.decode(errors="replace") for a in f.read().split(b"\0") if a]
-                parent = 0
-                with open(f"/proc/{ppid}/status") as f:
-                    for line in f:
-                        if line.startswith("PPid:"):
-                            parent = int(line.split()[1])
-                            break
-            except (OSError, ValueError):
-                return ""
-            base = os.path.basename(normalize_exe(exe))
-            names = {base.lower(), comm.lower()}
-            if base.startswith(SCRIPT_INTERPRETERS):
-                # /usr/bin/python3 /usr/bin/unattended-upgrade, …/mintUpdate/mintUpdate.py:
-                # the script, not the interpreter
-                names |= {os.path.splitext(os.path.basename(a))[0].lower() for a in argv[1:3] if a.startswith(("/usr/", "/opt/"))}
-            tool = package_tool(names)
-            if tool and self.exe_trusted(exe):
-                return tool
+            p = self.process_info(ppid)
+            parent = int(p.get("ppid") or 0)
+            # The name comes from the real program file (the process name and its arguments can be set by anyone),
+            # the tool must run as root, and its file must be root's (package or root-only folder)
+            prog = p.get("script", "") if is_interpreter(p["exe"]) else normalize_exe(p["exe"])
+            if prog and p.get("uid") == 0:
+                tool = package_tool({os.path.splitext(os.path.basename(prog))[0].lower()})
+                if tool and root_owned_chain(prog) and self.exe_trusted(prog):
+                    return tool
             ppid = parent
         return ""
 
@@ -1304,7 +1406,8 @@ class OnAccessScanner(threading.Thread):
             home = pw.pw_dir.rstrip("/")
             names = []
             try:
-                with open(os.path.join(home, ".config", "user-dirs.dirs"), encoding="utf-8", errors="replace") as f:
+                # Read without blocking or following into a device: a FIFO here froze the whole activity monitor
+                with open_user_file(os.path.join(home, ".config", "user-dirs.dirs"), limit=1 << 16) as f:
                     for ln in f:
                         m = re.match(r'^XDG_(DOWNLOAD|DESKTOP)_DIR="?\$HOME/([^"\n]+?)/?"?$', ln.strip())
                         if m:
@@ -1359,14 +1462,14 @@ class OnAccessScanner(threading.Thread):
                 sig = line.rsplit(": ", 1)[1][:-len(" FOUND")].strip()
         if not sig:
             return
-        dest = self.quarantine(path)
+        dest = self.quarantine(path, st)
         self.stats["infected"] += 1
         try:
             owner = pwd.getpwuid(st.st_uid).pw_name
         except KeyError:
             owner = str(st.st_uid)
         if dest:
-            quarantine_index_add(SYSTEM_QUARANTINE_DIR, dest, path, sig)
+            quarantine_index_add(SYSTEM_QUARANTINE_DIR, dest, path, sig, owner=st.st_uid)
         self.daemon_ref.write_log(f"⚠ on-access: {path} → {sig} ({'quarantined' if dest else 'NOT quarantined'})")
         log(f"Analyse à l'arrivée : {path} infecté ({sig}), {'mis en quarantaine' if dest else 'quarantaine impossible'}")
         self.daemon_ref.publish_alert({"kind": "download", "severity": "danger", "time": now_iso(), "title": os.path.basename(path), "detail": sig,
@@ -1374,19 +1477,47 @@ class OnAccessScanner(threading.Thread):
                                        "top_dir": os.path.dirname(path), "reasons": ["infected_download"], "sample": [path]})
 
     @staticmethod
-    def quarantine(path):
+    def quarantine_copy(src, path):
+        """Copies the open file src into the quarantine folder under the name of path; returns the new path."""
         try:
             os.makedirs(SYSTEM_QUARANTINE_DIR, mode=0o700, exist_ok=True)
-            base = os.path.basename(path)
+            base = os.path.basename(path) or "file"
             dest, n = os.path.join(SYSTEM_QUARANTINE_DIR, base), 1
-            while os.path.exists(dest):
-                dest, n = os.path.join(SYSTEM_QUARANTINE_DIR, f"{base}.{n:03d}"), n + 1
-            shutil.move(path, dest)
-            os.chmod(dest, 0o600)
+            while True:
+                try:
+                    out = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+                    break
+                except FileExistsError:
+                    dest, n = os.path.join(SYSTEM_QUARANTINE_DIR, f"{base}.{n:03d}"), n + 1
+            os.lseek(src, 0, os.SEEK_SET)
+            with os.fdopen(out, "wb") as f:
+                while True:
+                    chunk = os.read(src, 1 << 20)
+                    if not chunk:
+                        break
+                    f.write(chunk)
             return dest
         except OSError as e:
             log(f"Quarantaine impossible pour {path} : {e}")
             return ""
+
+    def quarantine(self, path, st):
+        """Isolates path if it is still the file that was scanned (st): opened without following a symbolic link,
+        copied through that descriptor, removed only if the folder entry still is that inode. A user who swaps the
+        folder for a link to /etc between the scan and now gets nothing moved."""
+        try:
+            src = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        except OSError as e:
+            log(f"Quarantaine impossible pour {path} : {e}")
+            return ""
+        try:
+            cur = os.fstat(src)
+            if not _stat.S_ISREG(cur.st_mode) or (cur.st_dev, cur.st_ino) != (st.st_dev, st.st_ino):
+                log(f"Quarantaine refusée pour {path} : fichier remplacé après l'analyse")
+                return ""
+            return self.daemon_ref._quarantine_fd(src, path, cur)
+        finally:
+            os.close(src)
 
 
 class NetworkMonitor(threading.Thread):
@@ -2333,7 +2464,8 @@ class UsbWatcher(threading.Thread):
         devnode = info["devnode"]
         mountpoint = os.path.join(USB_MOUNT_ROOT, os.path.basename(devnode))
         os.makedirs(mountpoint, exist_ok=True)
-        opts = "nosuid,nodev,noexec"
+        # nosymfollow: a symbolic link stored on the drive is never followed (root writes the manifest there)
+        opts = "nosuid,nodev,noexec,nosymfollow"
         if info["fstype"] in ("vfat", "exfat", "ntfs"):
             opts += ",umask=077"
         if info["fstype"] in ("vfat", "iso9660"):
@@ -2342,8 +2474,12 @@ class UsbWatcher(threading.Thread):
             # 'utf-8' codec can't decode byte 0xe9"), which left the key inaccessible.
             opts += ",utf8"
         r = run_quiet(["mount", "-o", opts, devnode, mountpoint], timeout=60)
-        if r.returncode != 0:
-            r = run_quiet(["mount", "-o", "nosuid,nodev,noexec", devnode, mountpoint], timeout=60)
+        # Fallbacks: without the file system options, then without nosymfollow (kernels before 5.10); the manifest
+        # writer does not follow links anyway
+        for fallback in ("nosuid,nodev,noexec,nosymfollow", "nosuid,nodev,noexec"):
+            if r.returncode == 0:
+                break
+            r = run_quiet(["mount", "-o", fallback, devnode, mountpoint], timeout=60)
         if r.returncode != 0:
             try:
                 os.rmdir(mountpoint)
@@ -2588,6 +2724,16 @@ class UpdateChecker:
             if manifest.get("package") != "dukiwi-shield" or not info["version"]:
                 info["error"] = "manifest:invalid"
                 return info
+            # Replay protection: never a manifest older than the newest one already seen (an old signed manifest
+            # served again would hide a security update)
+            seen = str(self.daemon_ref.state.get("manifest_seen_date") or "")
+            date = str(manifest.get("date") or "")
+            if seen and date < seen:
+                info["error"] = "manifest:older"
+                self.daemon_ref.write_log(f"⚠ update manifest older than the last one seen ({date} < {seen}): refused")
+                return info
+            if date > seen:
+                self.daemon_ref.state.update(manifest_seen_date=date)
             if not version_gt(info["version"], VERSION):
                 return info
             info["available"] = True
@@ -2618,13 +2764,18 @@ class UpdateChecker:
             return False, "not_ready"
         if sha256_file(path) != info.get("sha256"):
             return False, "sha256_mismatch"
+        # The stored offer may be older than a version installed since through apt: never go back
+        if not version_gt(str(info.get("version") or ""), VERSION):
+            return False, "not_newer"
+        if not re.fullmatch(r"/[0-9A-Za-z._+~/-]+\.(deb|rpm)", path):
+            return False, "bad_path"
         if TEST_MODE:
             return True, "test_mode"
         unit = f"dukiwi-shield-upgrade-{int(time.time())}"
-        shell = f"dnf -y install '{path}'" if distro.is_rpm() else f"apt-get install -y --allow-downgrades '{path}'"
+        # Argument list, no shell: the file name never reaches a command line parser
+        cmd = ["dnf", "-y", "install", path] if distro.is_rpm() else ["apt-get", "install", "-y", path]
         r = run_quiet(["systemd-run", "--unit", unit, "--collect", "--quiet",
-                       "-p", "Environment=DEBIAN_FRONTEND=noninteractive",
-                       "/bin/sh", "-c", shell], timeout=30)
+                       "-p", "Environment=DEBIAN_FRONTEND=noninteractive"] + cmd, timeout=30)
         return r.returncode == 0, ((r.stderr or "") + (r.stdout or "")).strip()[-200:]
 
 
@@ -3961,14 +4112,7 @@ def dukiwi_program(path):
     path = os.path.normpath(path or "")
     if not path.startswith("/") or not any(fnmatch.fnmatch(path, pat) for pat in DUKIWI_PROGRAMS):
         return False
-    try:
-        for p in (path, os.path.dirname(path)):
-            st = os.stat(p)
-            if st.st_uid != 0 or st.st_mode & 0o022:
-                return False
-    except OSError:
-        return False
-    return True
+    return root_owned_chain(path)
 
 
 def startup_program(kind, path, exec_line=""):
@@ -5428,7 +5572,7 @@ class Daemon:
                                                          "parse_ufw_numbered": parse_ufw_numbered})
         self.urlguard = dukiwi_shield_urlguard.UrlGuard(self, URLGUARD_DIR, log=log)
         self.last_urlguard_check = 0.0
-        self.unlocked = {}          # uid -> expiry (session administrateur)
+        self.unlocked = {}          # uid -> (expiry, token): administrator session, valid only with its token
         self.suspended = {}         # pid -> info (processes suspended by the automatic response)
         self._dns_lock = threading.Lock()
         self._persistence_lock = threading.Lock()
@@ -5492,26 +5636,43 @@ class Daemon:
             return self.current
 
     # ── Broadcast to subscribers ─────────────────────────────────────────
-    def broadcast(self, event):
+    def broadcast(self, event, private=None, may_see=None):
+        """Sends event to every GUI. With may_see(uid): subscribers for whom it is False get `private` instead
+        (None: nothing) — file names of a scan only reach the account that started it and the administrators."""
         with self.sub_lock:
             dead = []
             for sub in self.subscribers:
                 try:
-                    sub.send(event)
+                    if may_see is None or may_see(getattr(sub, "uid", -1)):
+                        sub.send(event)
+                    elif private is not None:
+                        sub.send(private)
                 except (OSError, socket.timeout):
                     dead.append(sub)
             for sub in dead:
                 self.subscribers.remove(sub)
                 sub.close()
 
+    def job_viewer(self, job):
+        """Who may see the file names of a job: the account that started it, root and administrators (system jobs:
+        administrators only)."""
+        owner = getattr(job, "requested_by", None) if job else None
+
+        def may_see(uid):
+            if uid == 0 or (isinstance(owner, int) and uid == owner):
+                return True
+            return uid > 0 and any(g in ADMIN_GROUPS for g in uid_groups(uid))
+        return may_see
+
     def emit_line(self, kind, text):
-        self.broadcast({"event": "line", "kind": kind, "text": text})
+        self.broadcast({"event": "line", "kind": kind, "text": text}, may_see=self.job_viewer(self.current))
 
     def emit_progress(self, job):
         payload = job.public()
         if job.phase == "integrity" and self.integrity_progress:
             payload["integrity_progress"] = self.integrity_progress
-        self.broadcast({"event": "progress", **payload})
+        public = dict(payload, file="", threats=[], path=payload.get("path") if job.kind != "scan" else "")
+        self.broadcast({"event": "progress", **payload}, private={"event": "progress", **public}, may_see=self.job_viewer(job))
 
     def integrity_progress_cb(self, name, percent, detail, state, warnings):
         """Callback of the integrity tools: per-tool state broadcast (at most every 0.4 s, unless the state changes)."""
@@ -7848,6 +8009,9 @@ class Daemon:
         (never wider: automatically ignoring a whole documents folder would open the door to ransomware)."""
         exe = normalize_exe(exe)
         if exe:
+            # Never an interpreter: "python3 is OK" would cover every Python script, malware included
+            if is_interpreter(exe):
+                return ""
             return "" if exe.startswith(("/tmp/", "/var/tmp/", "/dev/shm/")) else exe
         top_dir = os.path.normpath(top_dir or "/")
         return "dir:" + top_dir if top_dir.count("/") >= 3 else ""
@@ -7879,7 +8043,11 @@ class Daemon:
         if dukiwi_program(exe):
             return True
         for pat in self.central_patterns:
-            if fnmatch.fnmatch(exe, pat):
+            # Folder patterns of home directories (~/.steam/*…) describe where applications write, never which
+            # program to trust: any program of the account can copy itself there
+            if pat.startswith("/home/"):
+                continue
+            if fnmatch.fnmatch(exe, pat) and root_owned_chain(exe):
                 return True
         return False
 
@@ -7913,7 +8081,20 @@ class Daemon:
             if not ok:
                 log(f"Liste blanche : signature refusée ({detail})")
                 return False
-            json.loads(data.decode("utf-8"))
+            doc = json.loads(data.decode("utf-8"))
+            # Any document signed with the Dukiwi key verifies: only an allowlist (programs list, numbered) is
+            # taken, and never an older one than the list already in use (a replayed old list would bring back
+            # entries removed since)
+            if not isinstance(doc, dict) or not isinstance(doc.get("programs"), list) or doc.get("type", "allowlist") != "allowlist":
+                log("Liste blanche : document signé qui n'est pas une liste blanche, ignoré")
+                return False
+            try:
+                newer = int(doc.get("version") or 0) >= int(self.state.get("allowlist_version") or 0)
+            except (TypeError, ValueError):
+                newer = False
+            if not newer:
+                self.write_log(f"⚠ central allowlist: version {doc.get('version')} older than {self.state.get('allowlist_version')}, refused")
+                return False
             os.replace(tmp, ALLOWLIST_FILE)
             os.replace(tmp + ".sig", ALLOWLIST_FILE + ".sig")
             self.load_central_allowlist()
@@ -8191,14 +8372,18 @@ class Daemon:
         return new
 
     # ── Sessions administrateur ──────────────────────────────────────────
-    def is_unlocked(self, uid):
+    def is_unlocked(self, uid, req=None):
+        """True for root, or for a request carrying the token handed out by the last unlock of this uid. The token
+        only reaches the program that ran pkexec (the GUI): other programs of the same account get nothing from the
+        unlock."""
         if uid == 0:
             return True
-        exp = self.unlocked.get(uid, 0)
-        if exp and exp > time.time():
-            return True
-        self.unlocked.pop(uid, None)
-        return False
+        exp, token = self.unlocked.get(uid) or (0, "")
+        if not exp or exp <= time.time():
+            self.unlocked.pop(uid, None)
+            return False
+        given = str((req or {}).get("admin_token") or "")
+        return bool(given) and hmac.compare_digest(given, token)
 
     def admin_required(self, cmd, req, uid):
         """Actions reserved for an authenticated administrator (pkexec → unlock)."""
@@ -8215,6 +8400,12 @@ class Daemon:
             # family mode and for an account without administrator rights (decision 2026-09-29).
             return False
         if cmd in ("timeshift_disable", "harden_revert", "mail_configure", "mail_test", "mail_flush"):
+            return True
+        # Wiping the evidence (service log, alerts of every user) or removing system-wide browser policies
+        if cmd in ("clear_log", "clear_alerts") or (cmd == "browser_harden" and req.get("remove")):
+            return True
+        # Snapshots of the whole system (/etc/shadow included) on a drive the caller brings: administrator
+        if cmd == "timeshift_enable" and req.get("device_uuid"):
             return True
         if cmd == "ssh_set":
             return bool(req.get("enabled"))
@@ -8237,9 +8428,48 @@ class Daemon:
                 return os.stat(str(req.get("path") or "")).st_uid != uid
             except OSError:
                 return True
-        if cmd in ("set_settings", "trust_program", "untrust_program", "acknowledge_persistence", "acknowledge_integrity", "acknowledge_alert", "acknowledge_sudoers", "hid_allow", "hid_forget", "network_gateway_accept",
+        # Any program of any account can talk to the service: trusting a program (it would no longer be stopped) or
+        # weakening a protection must come from someone who knows the administrator password (2.9.0)
+        if cmd == "trust_program":
+            return True
+        if cmd == "set_settings" and self.settings_lowering(req.get("settings") or {}):
+            return True
+        if cmd in ("set_settings", "untrust_program", "acknowledge_persistence", "acknowledge_integrity", "acknowledge_alert", "acknowledge_sudoers", "hid_allow", "hid_forget", "network_gateway_accept",
                    "system_upgrade", "harden_apply", "forget_network"):
             return bool(self.settings.get("family_mode"))
+        return False
+
+    # Settings whose False means less protection, numbers where a larger (or smaller) value means fewer alerts
+    PROTECTIVE_SWITCHES = ("upload_monitor", "burst_monitor", "usb_auto_scan", "auto_response", "connection_monitor",
+                           "on_access_scan", "usb_keyboard_guard", "ransomware_decoys", "privacy_watch", "miner_watch",
+                           "keylogger_watch", "login_watch", "protected_folders", "integrity_weekly", "honeypot",
+                           "url_guard", "mail_scan_attachments", "app_update_check")
+    LOOSER_IF_HIGHER = ("burst_info_threshold", "burst_danger_threshold", "upload_alert_gb")
+    LOOSER_IF_LOWER = ("burst_window_sec", "usb_auto_scan_max_gib")
+
+    def settings_lowering(self, incoming):
+        """True if these settings would weaken the protection compared with the current ones."""
+        if not isinstance(incoming, dict):
+            return False
+        cur = self.settings.snapshot() if hasattr(self.settings, "snapshot") else dict(self.settings)
+        for k in self.PROTECTIVE_SWITCHES:
+            if k in incoming and incoming[k] is False and cur.get(k) is not False:
+                return True
+        if incoming.get("auto_ignore_known") is True and cur.get("auto_ignore_known") is False:
+            return True
+        if "filtered_dns" in incoming and not incoming["filtered_dns"] and cur.get("filtered_dns"):
+            return True
+        if incoming.get("family_mode") is False and cur.get("family_mode"):
+            return True
+        try:
+            for k in self.LOOSER_IF_HIGHER:
+                if k in incoming and float(incoming[k]) > float(cur.get(k) or 0):
+                    return True
+            for k in self.LOOSER_IF_LOWER:
+                if k in incoming and float(incoming[k]) < float(cur.get(k) or 0):
+                    return True
+        except (TypeError, ValueError):
+            return True
         return False
 
     # ── First installation / automatic resume ────────────────────────────
@@ -8290,7 +8520,7 @@ class Daemon:
                         and self.urlguard.feeds_stale() and not self.urlguard.refreshing:
                     self.last_urlguard_check = time.time()
                     threading.Thread(target=self.urlguard.refresh, daemon=True, name="urlguard-refresh").start()
-                for uid, exp in list(self.unlocked.items()):
+                for uid, (exp, _token) in list(self.unlocked.items()):
                     if exp < time.time():
                         self.unlocked.pop(uid, None)
             except Exception as e:  # noqa: BLE001
@@ -8298,7 +8528,7 @@ class Daemon:
             self.shutdown.wait(60)
 
     # ── Statut ───────────────────────────────────────────────────────────
-    def status(self, uid=-1):
+    def status(self, uid=-1, req=None):
         with self.queue_lock:
             job = self.current.public() if self.current else None
             queue = [j.public() for j in self.queue]
@@ -8318,7 +8548,8 @@ class Daemon:
             "hostname": socket.gethostname(), "kernel": os.uname().release,
             "onaccess": dict(self.onaccess.stats, enabled=self.settings.get("on_access_scan") is not False),
             "isolated": self.state.get("isolated"),
-            "state": {k: v for k, v in state.items() if k not in ("system_status", "alerts", "vulns", "checklist", "integrity", "persistence", "app_update", "trusted_programs", "acknowledged_persistence")},
+            "state": {k: v for k, v in state.items() if k not in ("system_status", "alerts", "vulns", "checklist", "integrity", "persistence", "app_update", "trusted_programs", "acknowledged_persistence")
+                      and k not in STATE_SECRET_KEYS},
             "resumable": resumable,
             "first_scan_pending": os.path.exists(FIRST_SCAN_FLAG),
             "db_last_update": db.isoformat(timespec="seconds") if db else None,
@@ -8332,7 +8563,7 @@ class Daemon:
             "security": self.security or self.refresh_security(broadcast=False),
             "timeshift": self.state.get("timeshift"),
             "overall": self.overall,
-            "unlocked": self.is_unlocked(uid) if uid >= 0 else False,
+            "unlocked": self.is_unlocked(uid, req) if uid >= 0 else False,
             "family_mode": bool(self.settings.get("family_mode")),
             "admin_groups": [g for g in uid_groups(uid) if g in ADMIN_GROUPS] if uid > 0 else [],
             "suspended": list(self.suspended.values()),
@@ -8370,6 +8601,58 @@ class Daemon:
         except OSError:
             pass
         return quarantine_enrich(files, SYSTEM_QUARANTINE_DIR)
+
+    @staticmethod
+    def admin_member(uid):
+        """Root or a member of an administrator group (sees every account's alerts, logs and quarantine)."""
+        return uid == 0 or (uid > 0 and any(g in ADMIN_GROUPS for g in uid_groups(uid)))
+
+    @staticmethod
+    def _user_name(uid):
+        try:
+            return pwd.getpwuid(uid).pw_name
+        except (KeyError, TypeError):
+            return ""
+
+    def visible_alerts(self, uid):
+        alerts = self.state.get("alerts", []) or []
+        if self.admin_member(uid):
+            return alerts
+        me = self._user_name(uid)
+        return [a for a in alerts if str(a.get("user") or "") in ("", me)]
+
+    @staticmethod
+    def _quarantine_owner(path):
+        """uid of the user a quarantined file was taken from (index, else the file owner); 0 when unknown."""
+        owner = (quarantine_index_load(SYSTEM_QUARANTINE_DIR).get(os.path.basename(path)) or {}).get("owner")
+        if owner is None:
+            try:
+                owner = os.lstat(path).st_uid
+            except OSError:
+                owner = 0
+        try:
+            return int(owner)
+        except (TypeError, ValueError):
+            return 0
+
+    def _quarantine_fd(self, src, path, st):
+        """Copies the open file src into quarantine, then removes path only if it is still that very file (same
+        device and inode, looked up without following a symbolic link)."""
+        dest = OnAccessScanner.quarantine_copy(src, path)
+        if not dest:
+            return ""
+        try:
+            pfd = os.open(os.path.dirname(path) or "/", os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                cur = os.stat(os.path.basename(path), dir_fd=pfd, follow_symlinks=False)
+                if (cur.st_dev, cur.st_ino) == (st.st_dev, st.st_ino):
+                    os.unlink(os.path.basename(path), dir_fd=pfd)
+            finally:
+                os.close(pfd)
+        except OSError as e:
+            self.write_log(f"quarantine: {path} copied but not removed: {e}")
+        quarantine_index_add(SYSTEM_QUARANTINE_DIR, dest, path, "", owner=st.st_uid)
+        return dest
 
     @staticmethod
     def _in_quarantine(path):
@@ -8415,7 +8698,7 @@ class Daemon:
             return {"ok": True, "version": VERSION}
 
         if cmd == "status":
-            return self.status(uid)
+            return self.status(uid, req)
 
         if cmd == "unlock":
             target = int(req.get("uid", -1))
@@ -8423,10 +8706,12 @@ class Daemon:
                 return {"ok": False, "error": "forbidden"}
             if target < 0:
                 return {"ok": False, "error": "invalid_uid"}
-            self.unlocked[target] = time.time() + UNLOCK_TTL
+            token = secrets.token_hex(24)
+            self.unlocked[target] = (time.time() + UNLOCK_TTL, token)
             self.write_log(f"admin unlock uid {target}")
+            # The token goes back to the unlock helper only (printed for the GUI that ran pkexec), never broadcast
             self.broadcast({"event": "unlocked", "uid": target, "ttl": UNLOCK_TTL})
-            return {"ok": True, "ttl": UNLOCK_TTL}
+            return {"ok": True, "ttl": UNLOCK_TTL, "token": token}
 
         if cmd == "lock":
             self.unlocked.pop(uid, None)
@@ -8434,10 +8719,10 @@ class Daemon:
             return {"ok": True}
 
         if cmd == "auth_status":
-            return {"ok": True, "unlocked": self.is_unlocked(uid), "family_mode": bool(self.settings.get("family_mode")),
+            return {"ok": True, "unlocked": self.is_unlocked(uid, req), "family_mode": bool(self.settings.get("family_mode")),
                     "admin_groups": [g for g in uid_groups(uid) if g in ADMIN_GROUPS] if uid > 0 else []}
 
-        if self.admin_required(cmd, req, uid) and not self.is_unlocked(uid):
+        if self.admin_required(cmd, req, uid) and not self.is_unlocked(uid, req):
             return {"ok": False, "error": "admin_required"}
 
         if cmd == "overall":
@@ -8479,7 +8764,7 @@ class Daemon:
             if self.settings.get("url_guard") is False:
                 return {"ok": True, "enabled": False, "results": []}
             urls = req.get("urls") if isinstance(req.get("urls"), list) else [req.get("url")]
-            results = self.urlguard.check_many([u for u in urls if u][:200], req.get("context") or {}, str(req.get("source") or "")[:20])
+            results = self.urlguard.check_many([u for u in urls if u][:200], req.get("context") or {}, str(req.get("source") or "")[:20], uid=uid)
             return {"ok": True, "enabled": True, "results": results}
 
         if cmd == "url_report":
@@ -8491,7 +8776,7 @@ class Daemon:
             return {"ok": True}
 
         if cmd == "url_allow":
-            ok = self.urlguard.allow(req.get("host") or "", remove=bool(req.get("remove")), by=str(req.get("source") or "")[:20])
+            ok = self.urlguard.allow(req.get("host") or "", remove=bool(req.get("remove")), by=str(req.get("source") or "")[:20], uid=uid)
             self.write_log(f"url {'unallow' if req.get('remove') else 'allow'} {req.get('host')} (uid {uid})")
             return {"ok": ok, "error": "" if ok else "invalid_host"}
 
@@ -8517,7 +8802,8 @@ class Daemon:
                 return {"ok": True, "enabled": False, "infected": False}
             path = os.path.realpath(str(req.get("path") or ""))
             name = str(req.get("name") or os.path.basename(path))[:200]
-            if not path.startswith(f"{MAIL_TMP_PREFIX}{uid}/") or not os.path.isfile(path):
+            if not (path.startswith(f"{MAIL_TMP_PREFIX}{uid}/") or re.match(rf"{re.escape(MAIL_TMP_PREFIX)}{uid}-[^/]+/[^/]+$", path)) \
+                    or not os.path.isfile(path) or os.stat(os.path.dirname(path)).st_uid != uid:
                 return {"ok": False, "error": "forbidden"}
             try:
                 st = os.stat(path)
@@ -8761,16 +9047,33 @@ class Daemon:
                 return {"ok": False, "error": "not_suspended"}
             action = req.get("action")
             try:
+                owner = os.stat(f"/proc/{pid}").st_uid
+            except OSError:
+                owner = -1
+            # Resuming a process the shield stopped, or acting on someone else's, needs the administrator
+            if uid != 0 and (action == "continue" or owner != uid) and not self.is_unlocked(uid, req):
+                return {"ok": False, "error": "admin_required"}
+            try:
                 if action == "continue":
                     os.kill(pid, signal.SIGCONT)
                 elif action in ("kill", "quarantine"):
-                    os.kill(pid, signal.SIGKILL)
+                    src = -1
                     if action == "quarantine":
-                        exe = (info.get("exe") or "").replace(" (deleted)", "")
-                        if exe and os.path.isfile(exe) and not exe.startswith(("/usr/", "/bin/", "/sbin/", "/lib")):
-                            target = os.path.join(SYSTEM_QUARANTINE_DIR, os.path.basename(exe))
-                            shutil.move(exe, target)
-                            os.chmod(target, 0o600)
+                        # Evidence taken from the running image (/proc/<pid>/exe), opened before the kill: a path
+                        # string could have been pointed at /etc in the meantime
+                        try:
+                            src = os.open(f"/proc/{pid}/exe", os.O_RDONLY)
+                        except OSError:
+                            src = -1
+                    os.kill(pid, signal.SIGKILL)
+                    if src >= 0:
+                        try:
+                            exe = (info.get("exe") or "").replace(" (deleted)", "")
+                            st = os.fstat(src)
+                            if _stat.S_ISREG(st.st_mode) and not exe.startswith(("/usr/", "/bin/", "/sbin/", "/lib")):
+                                self._quarantine_fd(src, exe, st)
+                        finally:
+                            os.close(src)
                 else:
                     return {"ok": False, "error": "invalid_action"}
             except OSError as e:
@@ -8802,8 +9105,11 @@ class Daemon:
                     return {"ok": False, "error": "busy", "busy": busy}
             usb = None
             if req.get("usb_devnode"):
-                usb = self.usb.take_pending(req["usb_devnode"]) or {"devnode": req["usb_devnode"]}
-                usb = dict(usb, private_mount=False, mountpoint=os.path.normpath(path))
+                # Only a drive the daemon itself announced: a made-up devnode would have made root write the drive
+                # manifest into any folder the caller chose
+                usb = self.usb.take_pending(req["usb_devnode"])
+                if usb:
+                    usb = dict(usb, private_mount=False, mountpoint=os.path.normpath(path))
             job = self.enqueue(Job("scan", path=os.path.normpath(path),
                                    resume=bool(req.get("resume")), requested_by=uid, usb=usb,
                                    integrity=bool(req.get("integrity")), use_cache=not bool(req.get("nocache"))))
@@ -8997,7 +9303,7 @@ class Daemon:
             return {"ok": ok, "error": err, "detail": text, "conflicts": ufw_now.get("conflicts") or []}
 
         if cmd == "alerts":
-            return {"ok": True, "alerts": self.state.get("alerts", [])}
+            return {"ok": True, "alerts": self.visible_alerts(uid)}
 
         if cmd == "forget_habit":
             # Forget a learned habit: bursts from this program / this folder are reported again
@@ -9045,10 +9351,13 @@ class Daemon:
             if cmd == "protected_folder_add":
                 if not os.path.isdir(path) or path in ("/", "/home", "/usr", "/etc", "/var", "/tmp") or path.startswith(("/proc", "/sys", "/dev", "/run")):
                     return {"ok": False, "error": "invalid_path"}
+                path = os.path.realpath(path)
                 try:
-                    if uid != 0 and os.stat(path).st_uid != uid:
-                        return {"ok": False, "error": "forbidden"}       # seulement ses propres dossiers
-                except OSError:
+                    home = (pwd.getpwuid(uid).pw_dir if uid else "/").rstrip("/") + "/"
+                    # Only one's own folders, inside one's home (resolved: a link to / is not a home folder)
+                    if uid != 0 and (os.stat(path).st_uid != uid or not path.startswith(os.path.realpath(home).rstrip("/") + "/")):
+                        return {"ok": False, "error": "forbidden"}
+                except (OSError, KeyError):
                     return {"ok": False, "error": "invalid_path"}
                 extra.append(path)
             self.state.update(protected_extra=sorted(set(extra)))
@@ -9062,7 +9371,12 @@ class Daemon:
             return {"ok": True, "dev_packages": self.state.get("dev_packages") or {}}
 
         if cmd == "ssh_keys":
-            return {"ok": True, "ssh_keys": self.guard.ssh_keys()}
+            keys = self.guard.ssh_keys()
+            if not self.admin_member(uid):
+                # Another account's keys (and their comments) are none of this account's business
+                me = self._user_name(uid)
+                keys = [k for k in keys if isinstance(k, dict) and k.get("user") == me] if isinstance(keys, list) else keys
+            return {"ok": True, "ssh_keys": keys}
 
         if cmd == "ssh_key_remove":
             path, fp = str(req.get("path") or ""), str(req.get("fp") or "")
@@ -9110,10 +9424,13 @@ class Daemon:
             profiles = hygiene.browser_security([pw])
             fx = [p_ for p_ in profiles if p_["browser"] == "firefox"]
             for p_ in fx:
-                if req.get("remove"):
-                    hygiene.firefox_unharden(p_["path"])
-                else:
-                    hygiene.firefox_harden(p_["path"], pw)
+                try:
+                    if req.get("remove"):
+                        hygiene.firefox_unharden(p_["path"], pw)
+                    else:
+                        hygiene.firefox_harden(p_["path"], pw)
+                except (OSError, subprocess.SubprocessError, ValueError) as e:
+                    self.write_log(f"browser security: {p_['path']}: {e}")
             dirs = [] if req.get("remove") else hygiene.chrome_harden([p_["browser"] for p_ in profiles if p_["browser"] != "firefox"])
             if req.get("remove"):
                 for d in hygiene.CHROME_POLICY_DIRS:
@@ -9313,6 +9630,9 @@ class Daemon:
             exe = normalize_exe(req.get("exe"))
             if not exe or not os.path.isabs(exe):
                 return {"ok": False, "error": "invalid_path"}
+            if is_interpreter(exe):
+                # Trusting python3 or bash would trust every script: trust the script itself instead
+                return {"ok": False, "error": "interpreter"}
             try:
                 who = pwd.getpwuid(uid).pw_name
             except KeyError:
@@ -9435,6 +9755,14 @@ class Daemon:
                       and (title is None or str(a.get("title") or a.get("comm") or "") == str(title))]
             if not marked:
                 return {"ok": False, "error": "not_found"}
+            # Only the account the alert is about may call it normal (another account, or a program trying to train
+            # the shield, needs the administrator)
+            try:
+                me = pwd.getpwuid(uid).pw_name if uid > 0 else ""
+            except KeyError:
+                me = ""
+            if uid != 0 and any(str(a.get("user") or "") not in ("", me) for a in marked) and not self.is_unlocked(uid, req):
+                return {"ok": False, "error": "admin_required"}
             for a in marked:
                 if a.get("kind") == "burst" and bool(a.get("ignored")) == bool(req.get("remove")) \
                         and not a.get("infected_exe") and not a.get("infected_files"):
@@ -9569,12 +9897,17 @@ class Daemon:
             return {"ok": True}
 
         if cmd == "quarantine_list":
-            return {"ok": True, "files": self.quarantine_list()}
+            files = self.quarantine_list()
+            if not self.admin_member(uid):
+                files = [f for f in files if self._quarantine_owner(f["path"]) == uid]
+            return {"ok": True, "files": files}
 
         if cmd == "quarantine_delete":
             p = req.get("path", "")
             if not self._in_quarantine(p):
                 return {"ok": False, "error": "forbidden"}
+            if uid != 0 and self._quarantine_owner(p) != uid and not self.is_unlocked(uid, req):
+                return {"ok": False, "error": "admin_required"}
             os.remove(p)
             self.write_log(f"quarantine: deleted {os.path.basename(p)}")
             return {"ok": True, "msg_key": "msg.quarantine.deleted",
@@ -9584,24 +9917,41 @@ class Daemon:
             p, dest = req.get("path", ""), req.get("dest", "")
             if not self._in_quarantine(p):
                 return {"ok": False, "error": "forbidden"}
-            if not (os.path.isabs(dest) and os.path.isdir(dest) and self._dest_allowed(dest, uid)):
+            if not (os.path.isabs(dest) and os.path.isdir(dest) and self._dest_allowed(os.path.realpath(dest), uid)):
                 return {"ok": False, "error": "restore_dest"}
-            target = os.path.join(dest, os.path.basename(p))
-            shutil.move(p, target)
-            if uid:
-                try:
-                    pw = pwd.getpwuid(uid)
-                    os.chown(target, pw.pw_uid, pw.pw_gid)
-                except (KeyError, OSError):
-                    pass
+            # Only the owner of the file (or an administrator) may take it back
+            name = os.path.basename(p)
+            if uid != 0 and self._quarantine_owner(p) != uid and not self.is_unlocked(uid, req):
+                return {"ok": False, "error": "admin_required"}
+            # The copy is written by a process with the user's rights, never by root into a folder the user picked
+            # (a symbolic link there would have pointed root's write at /etc)
+            try:
+                pw = pwd.getpwuid(uid)
+                src = os.open(p, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            except (KeyError, OSError):
+                return {"ok": False, "error": "restore_dest"}
+            try:
+                if not _stat.S_ISREG(os.fstat(src).st_mode):
+                    return {"ok": False, "error": "forbidden"}
+                target = run_as_user(pw.pw_uid, pw.pw_gid, "dukiwi_shield_common", "restore_copy", src, dest, name,
+                                     pass_fds=(src,), timeout=600)
+            except (OSError, subprocess.SubprocessError, ValueError) as e:
+                self.write_log(f"quarantine: restore of {name} failed: {e}")
+                return {"ok": False, "error": "restore_dest"}
+            finally:
+                os.close(src)
+            os.unlink(p)
             self.write_log(f"quarantine: restored {os.path.basename(p)} -> {dest}")
             return {"ok": True, "msg_key": "msg.quarantine.restored",
                     "msg_params": {"name": os.path.basename(p)}}
 
         if cmd == "quarantine_empty":
+            # A user empties their own files; everything only as administrator
+            everything = uid == 0 or self.is_unlocked(uid, req)
             count = 0
             for f in Path(SYSTEM_QUARANTINE_DIR).iterdir():
-                if f.is_file() and not f.name.startswith(".clamav-quarantine-lock"):
+                if f.is_file() and not f.name.startswith(".clamav-quarantine-lock") and \
+                        (everything or self._quarantine_owner(str(f)) == uid):
                     f.unlink()
                     count += 1
             self.write_log(f"quarantine: emptied ({count})")
@@ -9613,9 +9963,13 @@ class Daemon:
                 days = max(1, min(400, int(req.get("days") or 30)))
             except (TypeError, ValueError):
                 days = 30
+            if not self.admin_member(uid):
+                return {"ok": True, "journal": {"days": days, "events": []}}     # the service log covers every account
             return {"ok": True, "journal": {"days": days, "events": security_journal(self, days)}}
 
         if cmd == "get_log":
+            if not self.admin_member(uid):
+                return {"ok": True, "lines": []}
             n = int(req.get("lines", 200))
             try:
                 with open(SYSTEM_LOG_FILE) as f:
@@ -9703,8 +10057,9 @@ class Daemon:
             if req is None:
                 return
             if req.get("cmd") == "subscribe":
-                conn.send(self.status(uid))
+                conn.send(self.status(uid, req))
                 sock.settimeout(5)   # never block broadcasting on a slow client
+                conn.uid = uid
                 with self.sub_lock:
                     self.subscribers.append(conn)
                 return               # the connection stays open, handled by broadcast()
@@ -9726,6 +10081,12 @@ class Daemon:
                   os.path.dirname(DAEMON_SOCKET), USB_MOUNT_ROOT):
             os.makedirs(d, exist_ok=True)
         os.chmod(SYSTEM_QUARANTINE_DIR, 0o700)
+        if not TEST_MODE:
+            # State, logs and the private USB mounts: root only (decoy names, every account's file lists, keys being
+            # scanned); the socket folder stays reachable by all accounts
+            for d in (SYSTEM_STATE_DIR, SYSTEM_LOG_DIR, USB_MOUNT_ROOT):
+                os.chmod(d, 0o700)
+            os.chmod(os.path.dirname(DAEMON_SOCKET), 0o755)
 
         # Refuse to start if a daemon already answers on the socket
         if daemon_request("ping", timeout=1).get("ok"):

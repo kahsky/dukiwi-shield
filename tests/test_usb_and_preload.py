@@ -38,7 +38,8 @@ for fs in ("vfat", "iso9660", "exfat", "ntfs", "ext4"):
 d.run_quiet = real_run
 R.check("FAT and ISO keys are mounted with UTF-8 file names; other file systems unchanged",
         "utf8" in opts["vfat"] and "umask=077" in opts["vfat"] and "utf8" in opts["iso9660"]
-        and opts["exfat"] == ["nosuid", "nodev", "noexec", "umask=077"] and opts["ext4"] == ["nosuid", "nodev", "noexec"], opts)
+        and opts["exfat"] == ["nosuid", "nodev", "noexec", "nosymfollow", "umask=077"]
+        and opts["ext4"] == ["nosuid", "nodev", "noexec", "nosymfollow"], opts)
 
 # ── approval keys ──
 a = f"{HEAD}\n/home/u/lib.so (sha256 aaaaaaaaaaaa) <- bash, plank"

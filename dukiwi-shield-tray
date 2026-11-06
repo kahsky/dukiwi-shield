@@ -8,7 +8,8 @@
 # Test variables: DUKIWI_SHIELD_TRAY_UNIT (unit name), DUKIWI_SHIELD_TRAY_CMD (command).
 UNIT="${DUKIWI_SHIELD_TRAY_UNIT:-dukiwi-shield-tray}"
 CMD="${DUKIWI_SHIELD_TRAY_CMD:-/usr/bin/python3 /opt/dukiwi-shield/dukiwi-shield.py --tray}"
-LOCKDIR="${XDG_RUNTIME_DIR:-/tmp}"; [ -d "$LOCKDIR" ] && [ -w "$LOCKDIR" ] || LOCKDIR=/tmp
+# Lock in a folder of this account only (a shared /tmp name could be taken by another account)
+LOCKDIR="${XDG_RUNTIME_DIR:-$HOME/.cache}"; [ -d "$LOCKDIR" ] && [ -w "$LOCKDIR" ] || { LOCKDIR="$HOME/.cache"; mkdir -p "$LOCKDIR"; }
 LOCK="$LOCKDIR/$UNIT.$(id -u).launch.lock"
 if command -v systemd-run >/dev/null 2>&1 && [ -n "$XDG_RUNTIME_DIR" ]; then
     i=0

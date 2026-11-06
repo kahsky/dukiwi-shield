@@ -8,7 +8,7 @@
 set -e
 
 APP_NAME="dukiwi-shield"
-VERSION="2.8.2"
+VERSION="2.9.0"
 ARCH="all"
 PKG_DIR="${APP_NAME}_${VERSION}_${ARCH}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -98,6 +98,7 @@ chmod +x "${PKG_DIR}/opt/${APP_NAME}/dukiwi-shield-unlock"
 chmod +x "${PKG_DIR}/opt/${APP_NAME}/dukiwi-shield-tray"
 chmod +x "${PKG_DIR}/opt/${APP_NAME}/dukiwi-shield-scan-nemo.sh"
 chmod +x "${PKG_DIR}/opt/${APP_NAME}/dukiwi-shield-sandbox" "${PKG_DIR}/opt/${APP_NAME}/dukiwi-shield-shred" "${PKG_DIR}/opt/${APP_NAME}/dukiwi-shield-cli"
+chmod +x "${PKG_DIR}/opt/${APP_NAME}/dukiwi-shield-browser-setup" "${PKG_DIR}/opt/${APP_NAME}/dukiwi-shield-native-host"
 chmod +x "${PKG_DIR}/usr/bin/dukiwi-shield"
 
 # ── Integrity manifest (sha256 of every packaged file), signed with the Dukiwi key if present ──
@@ -131,6 +132,9 @@ if [ -d "${REPO_KEYS}" ]; then
 else
     echo "  (clé privée absente : integrity.json non signé)"
 fi
+# Written after the mode normalization above: same 644 as every other file, whatever the builder's umask
+chmod 644 "${PKG_DIR}/opt/${APP_NAME}/integrity.json"
+[ -f "${PKG_DIR}/opt/${APP_NAME}/integrity.json.sig" ] && chmod 644 "${PKG_DIR}/opt/${APP_NAME}/integrity.json.sig"
 
 if [ -n "$STAGE_ONLY" ]; then
     rm -rf "${PKG_DIR}/DEBIAN"
@@ -209,7 +213,11 @@ for f in /etc/hosts /etc/login.defs /etc/sysctl.d/90-dukiwi-shield* /etc/securit
          /etc/needrestart/conf.d/90-dukiwi-shield*; do
     # rewritten in place (same inode: /etc/hosts can be a mount), never blocking
     if [ -f "$f" ] && grep -q '# ClamAV Antivirus GUI' "$f" 2>/dev/null; then
-        sed 's/# ClamAV Antivirus GUI/# Dukiwi Shield/' "$f" > "$f.dukiwi-tmp" && cat "$f.dukiwi-tmp" > "$f" || true
+        # A backup is kept until the rewrite is complete (disk full during cat would otherwise leave it truncated)
+        if cp -p "$f" "$f.dukiwi-bak" && sed 's/# ClamAV Antivirus GUI/# Dukiwi Shield/' "$f" > "$f.dukiwi-tmp" \
+                && [ "$(wc -l < "$f.dukiwi-tmp")" -eq "$(wc -l < "$f")" ] && cat "$f.dukiwi-tmp" > "$f"; then
+            rm -f "$f.dukiwi-bak"
+        fi
         rm -f "$f.dukiwi-tmp"
     fi
 done

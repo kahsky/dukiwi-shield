@@ -24,6 +24,8 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 
+from dukiwi_shield_common import open_user_file, run_as_user, write_file_atomic
+
 PWQ_DROPIN = "/etc/security/pwquality.conf.d/90-dukiwi-shield.conf"
 PWQ_MINLEN = 12
 FIREFOX_MARK_BEGIN = "// ── Dukiwi Shield : réglages de sécurité (début) ──"
@@ -47,7 +49,7 @@ def run(cmd, timeout=60, env=None):
 
 def _read(path):
     try:
-        with open(path, errors="replace") as f:
+        with open_user_file(path) as f:
             return f.read()
     except OSError:
         return ""
@@ -230,27 +232,29 @@ def browser_security(users):
     return out
 
 
-def firefox_harden(profile, pw):
-    """Block of settings added (or replaced) in user.js, the user's file; Firefox reads it at startup."""
+def firefox_user_js(profile, harden):
+    """Adds (harden) or removes the Dukiwi block of <profile>/user.js. Runs as the profile owner (see firefox_harden)."""
     path = os.path.join(profile, "user.js")
-    text = _read(path)
-    text = re.sub(re.escape(FIREFOX_MARK_BEGIN) + r".*?" + re.escape(FIREFOX_MARK_END) + r"\n?", "", text, flags=re.S)
-    block = FIREFOX_MARK_BEGIN + "\n" + "".join(f'user_pref("{k}", {v});\n' for k, v in FIREFOX_PREFS.items()) + FIREFOX_MARK_END + "\n"
-    tmp = path + ".dukiwi-tmp"
-    with open(tmp, "w") as f:
-        f.write(text.rstrip("\n") + ("\n" if text.strip() else "") + block)
-    os.chown(tmp, pw.pw_uid, pw.pw_gid)
-    os.chmod(tmp, 0o644)
-    os.replace(tmp, path)
-
-
-def firefox_unharden(profile):
-    path = os.path.join(profile, "user.js")
+    if os.path.islink(path):
+        raise OSError("user.js is a symbolic link")
     text = _read(path)
     new = re.sub(re.escape(FIREFOX_MARK_BEGIN) + r".*?" + re.escape(FIREFOX_MARK_END) + r"\n?", "", text, flags=re.S)
+    if harden:
+        block = FIREFOX_MARK_BEGIN + "\n" + "".join(f'user_pref("{k}", {v});\n' for k, v in FIREFOX_PREFS.items()) + FIREFOX_MARK_END + "\n"
+        new = new.rstrip("\n") + ("\n" if new.strip() else "") + block
     if new != text:
-        with open(path, "w") as f:
-            f.write(new)
+        write_file_atomic(path, new, 0o644)
+    return True
+
+
+def firefox_harden(profile, pw):
+    """Block of settings added (or replaced) in user.js, the user's file; Firefox reads it at startup. The file is
+    in the user's home folder, so the work is done with the user's rights, never root's."""
+    return run_as_user(pw.pw_uid, pw.pw_gid, "dukiwi_shield_hygiene", "firefox_user_js", profile, True)
+
+
+def firefox_unharden(profile, pw):
+    return run_as_user(pw.pw_uid, pw.pw_gid, "dukiwi_shield_hygiene", "firefox_user_js", profile, False)
 
 
 def chrome_harden(browsers):

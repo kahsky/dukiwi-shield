@@ -15,6 +15,7 @@ allow {host, remove} · scan {name, data (base64), sender, subject} · status
 import base64
 import json
 import os
+import stat
 import struct
 import sys
 import tempfile
@@ -49,11 +50,16 @@ def detect_app():
     return "other"
 
 
+MAX_MESSAGE = 300 * 1024 * 1024        # an attachment of 200 MB in base64, plus margin
+
+
 def read_message():
     raw = sys.stdin.buffer.read(4)
     if len(raw) < 4:
         return None
     (length,) = struct.unpack("=I", raw)
+    if length > MAX_MESSAGE:
+        return None                          # the browser never sends that much: stop rather than allocate 4 GB
     data = sys.stdin.buffer.read(length)
     if len(data) < length:
         return None
@@ -70,10 +76,22 @@ def send_message(obj):
 
 
 def mail_tmp_dir():
-    path = f"/tmp/dukiwi-shield-mail-{os.getuid()}"
-    os.makedirs(path, mode=0o700, exist_ok=True)
-    os.chmod(path, 0o700)
-    return path
+    """Private folder for attachments being scanned. The usual name is reused only if it really is this account's
+    own folder (another account could create it first, or leave a link there): otherwise a new random one."""
+    uid = os.getuid()
+    path = f"/tmp/dukiwi-shield-mail-{uid}"
+    try:
+        os.mkdir(path, 0o700)
+    except FileExistsError:
+        pass
+    try:
+        st = os.lstat(path)
+        if stat.S_ISDIR(st.st_mode) and st.st_uid == uid:
+            os.chmod(path, 0o700)
+            return path
+    except OSError:
+        pass
+    return tempfile.mkdtemp(prefix=f"dukiwi-shield-mail-{uid}-")
 
 
 def handle(msg, app):

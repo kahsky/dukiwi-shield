@@ -89,7 +89,8 @@ if not shutil.which("php") or not os.path.isfile(os.path.join(api, "telemetry.ph
     R.skip("server endpoint telemetry.php", "php or ../repo/api/telemetry.php not found")
 else:
     web = h.tmpdir("php")
-    shutil.copy(os.path.join(api, "telemetry.php"), web)
+    for name in ("telemetry.php", "downloads.php"):          # downloads.php: rate limiter and salt (2.9.0)
+        shutil.copy(os.path.join(api, name), web)
     os.makedirs(os.path.join(web, "data"))
     old = {"install_id": "1" * 32, "version": "2.7.3", "acknowledged_persistence": ["crontab:/var/spool/cron/crontabs/papa"]}
     with open(os.path.join(web, "data", f"telemetry-{datetime.utcnow():%Y-%m}.jsonl"), "w") as f:

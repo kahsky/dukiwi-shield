@@ -13,7 +13,7 @@ import struct
 import subprocess
 from datetime import datetime
 
-VERSION = "2.8.2"
+VERSION = "2.9.0"
 
 # ─── System paths (root daemon) ─────────────────────────────────────────────
 # Can be overridden by environment variables for tests without root.
@@ -216,6 +216,135 @@ NOISE_SUFFIXES = (": Empty file", ": No such file or directory", ": Excluded", "
 
 
 # ── Quarantine index: isolated file → original path and signature (fed by the "moved to" lines) ──
+# ═══ Doing file work as the user ════════════════════════════════════════
+# The root daemon must never open, create or rename files in a folder a user controls: a symbolic link put there in
+# advance would turn the write into one on /etc/passwd or the read into one of /etc/shadow. Such work runs in a child
+# process with the user's uid, gid and no supplementary group, so the kernel applies that user's rights.
+_CODE_DIR = os.path.dirname(os.path.abspath(__file__))
+_AS_USER_CODE = ("import json, sys; sys.path.insert(0, sys.argv[1]); import importlib; "
+                 "a = json.load(sys.stdin); r = getattr(importlib.import_module(sys.argv[2]), sys.argv[3])(*a); "
+                 "sys.stdout.write(json.dumps(r))")
+
+
+def open_user_file(path, mode="r", limit=4 << 20):
+    """Reads a file found in a folder a user controls, safely for root: never blocks (a FIFO put in its place is
+    refused instead of freezing the thread), only a regular file (not /dev/zero through a link), at most `limit`
+    bytes. Returns an in-memory file (text decoded as UTF-8 with replacement, or bytes for mode "rb")."""
+    import io
+    import stat as _st
+    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC)
+    try:
+        st = os.fstat(fd)
+        if not _st.S_ISREG(st.st_mode) or st.st_size > limit:
+            raise OSError(22, "not a regular file or too large", path)
+        chunks, total = [], 0
+        while total <= limit:
+            b = os.read(fd, min(1 << 20, limit + 1 - total))
+            if not b:
+                break
+            chunks.append(b)
+            total += len(b)
+    finally:
+        os.close(fd)
+    data = b"".join(chunks)
+    if len(data) > limit:
+        raise OSError(27, "file too large", path)
+    return io.BytesIO(data) if "b" in mode else io.StringIO(data.decode("utf-8", "replace"))
+
+
+def run_as_user(uid, gid, module, func, *args, timeout=60, pass_fds=()):
+    """Calls module.func(*args) in a child process running as uid:gid; returns its JSON result.
+    Raises OSError with the child's last error line when it fails."""
+    import sys
+    kw = {}
+    if os.geteuid() == 0 and uid != 0:
+        kw = {"user": uid, "group": gid, "extra_groups": []}
+    elif uid != os.geteuid():
+        raise PermissionError("cannot switch user")
+    r = subprocess.run([sys.executable, "-I", "-c", _AS_USER_CODE, _CODE_DIR, module, func],
+                       input=json.dumps(list(args)), capture_output=True, text=True, timeout=timeout, cwd="/", pass_fds=pass_fds,
+                       env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}, **kw)
+    if r.returncode != 0:
+        lines = (r.stderr or "").strip().splitlines()
+        raise OSError(lines[-1] if lines else f"exit {r.returncode}")
+    return json.loads(r.stdout or "null")
+
+
+def write_file_atomic(path, text, mode=0o644):
+    """Replaces path with text through a new temporary file in the same folder (never follows a symbolic link)."""
+    d, name = os.path.split(path)
+    tmp = os.path.join(d, f".{name}.dukiwi-{os.getpid()}")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode)
+    try:
+        os.fchmod(fd, mode)
+        with os.fdopen(fd, "w") as f:
+            f.write(text)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def write_decoy_file(path, hexdata, mtime):
+    """Writes a ransomware decoy (bytes given in hex) with an old date. Run as the owner of the folder (see
+    run_as_user): root never creates files in a folder a user controls. Returns [inode, size, mtime]."""
+    data = bytes.fromhex(hexdata)
+    d, name = os.path.split(path)
+    tmp = os.path.join(d, f".{name}.{os.getpid()}.tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+    try:
+        os.write(fd, data)
+    finally:
+        os.close(fd)
+    os.replace(tmp, path)
+    os.utime(path, (mtime, mtime), follow_symlinks=False)
+    st = os.lstat(path)
+    return [st.st_ino, st.st_size, st.st_mtime]
+
+
+def drop_lines(path, lines, mode):
+    """Rewrites path without the given lines (exact text). Run as the file owner (see run_as_user)."""
+    if os.path.islink(path):
+        raise OSError("symbolic link")
+    with open(path, errors="replace") as f:
+        current = f.read().splitlines()
+    drop = set(lines)
+    kept = [ln for ln in current if ln not in drop]
+    if len(kept) != len(current):
+        write_file_atomic(path, "\n".join(kept) + ("\n" if kept else ""), mode)
+    return len(current) - len(kept)
+
+
+def restore_copy(src_fd, dest_dir, name):
+    """Copies the open file src_fd to a new file dest_dir/name (name.1, name.2… if taken). Run as the user who
+    restores (see run_as_user): the folder and the new file are then subject to that user's rights only."""
+    base, n = os.path.basename(name) or "restored", 0
+    dfd = os.open(dest_dir, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        while True:
+            target = base if n == 0 else f"{base}.{n}"
+            try:
+                out = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644, dir_fd=dfd)
+                break
+            except FileExistsError:
+                n += 1
+                if n > 999:
+                    raise
+        os.lseek(src_fd, 0, os.SEEK_SET)
+        with os.fdopen(out, "wb") as f:
+            while True:
+                chunk = os.read(src_fd, 1 << 20)
+                if not chunk:
+                    break
+                f.write(chunk)
+        return os.path.join(dest_dir, target)
+    finally:
+        os.close(dfd)
+
+
 def quarantine_index_path(quarantine_dir):
     return os.path.join(os.path.dirname(quarantine_dir.rstrip("/")), "quarantine-index.json")
 
@@ -229,10 +358,16 @@ def quarantine_index_load(quarantine_dir):
         return {}
 
 
-def quarantine_index_add(quarantine_dir, dest, origin, signature):
-    """Records, for the isolated file `dest`, its original path and the detected signature."""
+def quarantine_index_add(quarantine_dir, dest, origin, signature, owner=None):
+    """Records, for the isolated file `dest`, its original path, the detected signature and the uid of its owner
+    (only that user, or an administrator, may restore it)."""
+    if owner is None:
+        try:
+            owner = os.lstat(dest).st_uid
+        except OSError:
+            owner = 0
     index = quarantine_index_load(quarantine_dir)
-    index[os.path.basename(dest)] = {"origin": origin, "signature": signature or "",
+    index[os.path.basename(dest)] = {"origin": origin, "signature": signature or "", "owner": int(owner),
                                      "time": datetime.now().isoformat(timespec="seconds")}
     if len(index) > 5000:
         for k in sorted(index, key=lambda k: index[k].get("time", ""))[:-5000]:
@@ -270,9 +405,14 @@ def quarantine_enrich(files, quarantine_dir):
 def find_command(path, exclude=SCAN_EXCLUDE, stat=False):
     """find command listing the regular files to scan under `path` (a path or a list of paths). With `stat`, each
     line also carries the fingerprint (size, mtime, ctime, inode) separated by tabs, for the clean-file cache."""
-    cmd = ['find'] + (list(path) if isinstance(path, (list, tuple)) else [path]) + ['-type', 'f']
+    paths = list(path) if isinstance(path, (list, tuple)) else [path]
+    # A path starting with "-" would be read by find as an option (-delete…)
+    cmd = ['find'] + [p if p.startswith("/") else "./" + p for p in paths] + ['-type', 'f']
     for excl in exclude:
         cmd += ['!', '-path', excl]
+    # One file per line in the list given to clamdscan: a name containing a line break could otherwise add any
+    # path (another account's files, /root) to the list root scans
+    cmd += ['!', '-name', '*\n*', '!', '-name', '*\t*']
     if stat:
         cmd += ['-printf', '%p\t%s\t%T@\t%C@\t%i\n']
     return cmd
@@ -590,9 +730,23 @@ def daemon_connect(timeout=2.0):
     return LineSocket(sock)
 
 
+# Administrator session token of this process (set by the GUI after pkexec), sent with every request
+ADMIN_TOKEN = None
+
+
+def admin_token_from(output):
+    """Token printed by dukiwi-shield-unlock ("token=…"), or None."""
+    for line in (output or "").splitlines():
+        if line.startswith("token=") and len(line) > 6:
+            return line[6:].strip()
+    return None
+
+
 def daemon_request(cmd, timeout=2.0, **kwargs):
     """Sends a single command to the daemon and returns the response (dict).
     Returns {"ok": False, "error": ..., "unavailable": True} if the daemon does not respond."""
+    if ADMIN_TOKEN and "admin_token" not in kwargs:
+        kwargs["admin_token"] = ADMIN_TOKEN
     try:
         conn = daemon_connect(timeout=timeout)
     except OSError as e:

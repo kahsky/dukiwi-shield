@@ -10,6 +10,7 @@ import hashlib
 import io
 import os
 import pwd
+import re
 import threading
 import time
 import zipfile
@@ -74,9 +75,14 @@ def make(state, owner=True):
 
 
 def paths():
-    tag = gm.machine_tag()
-    return {ext: os.path.join(home, sub, f"{gm.DECOY_PREFIX}{tag}.{ext}") for sub, ext in
-            (("Documents", "docx"), ("Pictures", "jpg"), ("Desktop", "pdf"), ("", "xlsx"))}
+    """Decoys found in the fake home (2.9.0 names: ".<word>-<4 hex>.<ext>", from a random secret of the state)."""
+    out = {}
+    for sub, ext in (("Documents", "docx"), ("Pictures", "jpg"), ("Desktop", "pdf"), ("", "xlsx")):
+        folder = os.path.join(home, sub)
+        found = sorted(f for f in os.listdir(folder) if re.fullmatch(rf"\.[a-z]+-[0-9a-f]{{4}}\.{ext}", f)) \
+            if os.path.isdir(folder) else []
+        out[ext] = os.path.join(folder, found[0]) if found else os.path.join(folder, f".none.{ext}")
+    return out
 
 
 def sha(p):
@@ -144,7 +150,7 @@ R.check("non-root / test instance leaves decoys, state and alerts untouched",
 
 n = len(d3.alerts)
 time.sleep(2.1)
-g5, _d5 = make(h.St())
+g5, _d5 = make(h.St(decoy_seed=state.get("decoy_seed")))   # same installation secret: same decoy names
 g5.sync_decoys()
 after5 = snapshot()
 g3.check_decoys()

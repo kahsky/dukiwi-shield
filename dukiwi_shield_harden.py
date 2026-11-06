@@ -9,6 +9,7 @@ Tests: DUKIWI_SHIELD_HARDEN_ROOT=<folder> prefixes all paths and runs no command
 import os
 import re
 import shutil
+import stat
 import socket
 import subprocess
 
@@ -84,6 +85,7 @@ CATALOG = {
     "PKGS-7346": {"kind": "apply", "fn": "purge_rc", "no_revert": True},
     "PKGS-7410": {"kind": "apply", "fn": "old_kernels", "no_revert": True},
     "PRNT-2307": {"kind": "apply", "fn": "cups_perms"},
+    "MAIL-8818": {"kind": "apply", "fn": "postfix_banner"},
     "NAME-4404": {"kind": "apply", "fn": "hosts"},
     "SSH-7408": {"kind": "apply", "fn": "sshd", "caution": True},
     "TIME-3104": {"kind": "apply", "fn": "ntp", "no_revert": True},
@@ -486,6 +488,31 @@ def revert_cups_perms(prev):
     return "permissions précédentes rétablies"
 
 
+# Postfix greeting without the system and software names (Lynis MAIL-8818): "$myhostname ESMTP" is what RFC 5321
+# requires; "$mail_name (Ubuntu)" tells a scanner which software and distribution to target
+POSTFIX_BANNER = "$myhostname ESMTP"
+
+
+def apply_postfix_banner(_ctx):
+    if not DRY and not shutil.which("postconf"):
+        raise RuntimeError("Postfix absent")
+    r = _run(["postconf", "-n", "smtpd_banner"])
+    prev = {"value": r.stdout.split("=", 1)[1].strip() if "=" in (r.stdout or "") else None}   # None: default value
+    _check(_run(["postconf", "-e", f"smtpd_banner = {POSTFIX_BANNER}"]), "postconf")
+    _run(["systemctl", "reload", "postfix"])
+    return f"bannière SMTP : {POSTFIX_BANNER}", prev
+
+
+def revert_postfix_banner(prev):
+    value = (prev or {}).get("value")
+    if value:
+        _check(_run(["postconf", "-e", f"smtpd_banner = {value}"]), "postconf")
+    else:
+        _check(_run(["postconf", "-X", "smtpd_banner"]), "postconf")       # back to the Postfix default
+    _run(["systemctl", "reload", "postfix"])
+    return "bannière SMTP précédente rétablie"
+
+
 def apply_hosts(_ctx):
     host = socket.gethostname()
     text = _read("/etc/hosts")
@@ -548,10 +575,18 @@ def apply_file_perms(ctx):
     prev, done = {}, []
     for it in items:
         full = _p(it["path"])
-        if not os.path.exists(full):
+        try:
+            st = os.lstat(full)
+            expected = int(str(it["expected"]), 8)
+        except (OSError, ValueError, KeyError):
             continue
-        prev[it["path"]] = oct(os.stat(full).st_mode & 0o777)
-        os.chmod(full, int(it["expected"], 8))
+        current = st.st_mode & 0o777
+        # Only ever remove permissions, on a real file or folder owned by root: the path and mode come from the
+        # Lynis log, where a file name chosen by a user could otherwise have asked for /etc/shadow in 666
+        if stat.S_ISLNK(st.st_mode) or st.st_uid != 0 or expected & ~current or expected > 0o777:
+            continue
+        prev[it["path"]] = oct(current)
+        os.chmod(full, expected)
         done.append(f"{it['path']} → {it['expected']}")
     if not done:
         raise RuntimeError("fichiers introuvables")

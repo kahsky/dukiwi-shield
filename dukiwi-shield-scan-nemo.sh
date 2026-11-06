@@ -6,7 +6,15 @@
 
 QUARANTINE_DIR="$HOME/.local/share/dukiwi-shield/quarantine"
 LOG_FILE="$HOME/.local/share/dukiwi-shield/scan.log"
-TARGET="$1"
+# Every selected item (%F gives them all), not only the first one
+TARGETS=("$@")
+TARGET="${1:-}"
+
+# File names go into zenity's Pango markup: escape what markup and its \n handling would interpret, so a name
+# such as "</i><b>No threats</b>" cannot fake the result
+markup_escape() {
+    printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/\\/\\\\/g'
+}
 
 # Ensure directories exist
 mkdir -p "$QUARANTINE_DIR"
@@ -27,13 +35,15 @@ if [ -z "$TARGET" ]; then
     exit 1
 fi
 
-BASENAME=$(basename "$TARGET")
+BASENAME=$(basename -- "$TARGET")
+[ "${#TARGETS[@]}" -gt 1 ] && BASENAME="$BASENAME (+$(( ${#TARGETS[@]} - 1 )))"
+BASENAME_M=$(markup_escape "$BASENAME")
 TMPFILE=$(mktemp /tmp/clamav-scan-XXXXXX.log)
 
 # Run scan with progress
 (
     echo "# Analyse de : $BASENAME"
-    clamscan -r --infected --suppress-ok-results --move="$QUARANTINE_DIR" "$TARGET" > "$TMPFILE" 2>&1
+    clamscan -r --infected --suppress-ok-results --move="$QUARANTINE_DIR" -- "${TARGETS[@]}" > "$TMPFILE" 2>&1
     echo "100"
 ) | zenity --progress --title="Dukiwi Shield" \
     --text="Analyse en cours..." \
@@ -45,18 +55,18 @@ SCANNED=$(grep "Scanned files:" "$TMPFILE" | awk '{print $NF}' 2>/dev/null || ec
 SCAN_TIME=$(grep "Time:" "$TMPFILE" | head -1 | sed 's/Time: *//' 2>/dev/null || echo "?")
 
 # Log results
-echo "[$(date -Iseconds)] Nemo scan: $TARGET — $INFECTED infected" >> "$LOG_FILE"
+echo "[$(date -Iseconds)] Nemo scan: ${TARGETS[*]} — $INFECTED infected" >> "$LOG_FILE"
 cat "$TMPFILE" >> "$LOG_FILE"
 
 # Show results
 if [ "$INFECTED" -gt 0 ]; then
-    FOUND_FILES=$(grep "FOUND" "$TMPFILE" | sed 's/: .* FOUND$//' | sed 's|^|  • |')
+    FOUND_FILES=$(markup_escape "$(grep "FOUND" "$TMPFILE" | sed 's/: .* FOUND$//' | sed 's|^|  • |')")
     zenity --warning --title="Dukiwi Shield — Menaces détectées !" \
-        --text="<b>$INFECTED menace(s) détectée(s)</b> dans :\n<i>$BASENAME</i>\n\nFichiers infectés (déplacés en quarantaine) :\n$FOUND_FILES\n\nFichiers analysés : $SCANNED\nDurée : $SCAN_TIME" \
+        --text="<b>$INFECTED menace(s) détectée(s)</b> dans :\n<i>$BASENAME_M</i>\n\nFichiers infectés (déplacés en quarantaine) :\n$FOUND_FILES\n\nFichiers analysés : $SCANNED\nDurée : $SCAN_TIME" \
         --width=500 2>/dev/null
 else
     zenity --info --title="Dukiwi Shield — Aucune menace" \
-        --text="<b>Aucune menace détectée</b>\n\nCible : <i>$BASENAME</i>\nFichiers analysés : $SCANNED\nDurée : $SCAN_TIME" \
+        --text="<b>Aucune menace détectée</b>\n\nCible : <i>$BASENAME_M</i>\nFichiers analysés : $SCANNED\nDurée : $SCAN_TIME" \
         --width=400 2>/dev/null
 fi
 

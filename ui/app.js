@@ -2144,6 +2144,8 @@ function onFolderPicked({ path, purpose, extra }) {
         startScan(path);
     } else if (purpose === 'restore' && extra) {
         sendToBackend({ action: 'restore_quarantine', path: extra.path, scope: extra.scope, dest: path });
+    } else if (purpose === 'backup_dest') {
+        sendToBackend({ action: 'backup_add_local', path });      // folder on a NAS or another disk, then listed in the assistant
     }
 }
 
@@ -2751,8 +2753,12 @@ function escapeHtml(str) {
     return d.innerHTML;
 }
 
+/** Text made safe for a JS string literal written inside an HTML attribute (onclick="f('…')"): every character
+ *  outside a small safe set becomes a \uXXXX escape. Quotes, &, <, >, backslash and line breaks therefore never
+ *  appear raw, so neither the HTML attribute nor the JS string can be closed by a file name, an e-mail attachment
+ *  name or an SSH key comment (a backslash escapes nothing in HTML, and &#39; would decode to a quote). */
 function escapeJs(str) {
-    return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
+    return String(str).replace(/[^A-Za-z0-9 _.,:\/@+=~-]/g, ch => '\\u' + ch.charCodeAt(0).toString(16).padStart(4, '0'));
 }
 
 /** Path shown with a left-side ellipsis (direction: rtl) without moving the slashes. */
@@ -3445,7 +3451,8 @@ function backupRowInfo() {
     if ((ts.state === 'warn' || ts.state === 'danger') && timeshiftIgnored()) value += ` · ${t('simple.backup.timeshift_ignored')}`;
     else if (ts.state === 'warn' || ts.state === 'danger') { state = state === 'ok' ? 'warn' : state; value += ` · ${t(`simple.backup.timeshift_${ts.kind || 'off'}`) !== `simple.backup.timeshift_${ts.kind || 'off'}` ? t(`simple.backup.timeshift_${ts.kind || 'off'}`) : t('simple.backup.timeshift_off')}`; }
     else if (ts.state === 'ok') value += ` · ${t('simple.backup.timeshift_ok')}`;
-    return { state, value, action: { label: t('simple.backup.btn'), fn: 'openBackupWizard()' } };
+    const setup = !((b.user || {}).destinations) && u.state === 'none';      // nothing configured yet: the button sets it up
+    return { state, value, action: { label: t(setup ? 'simple.backup.btn_setup' : 'simple.backup.btn'), fn: 'openBackupWizard()' } };
 }
 
 // ── Assistant (vue simple) ──
@@ -3509,11 +3516,15 @@ function renderBackupWizard() {
                 <span class="backup-choice-sub">${escapeHtml(dr.mountpoint)} · ${t('backup.wizard.free', { free: fmtBytes(dr.free), size: fmtBytes(dr.size) })}${dr.writable ? '' : ` · ${t('backup.wizard.readonly')}`}${known && known.last ? ` · ${t('backup.dest.last', { rel: formatRelative(known.last) })}` : ''}</span></div>
             <button class="btn btn-primary btn-sm" ${dr.writable && !running ? '' : 'disabled'} onclick="backupQuick(${i})">${t('backup.wizard.here')}</button></div>`;
     });
+    // Without a plugged drive the assistant still offers a way to set backups up: a folder (NAS, other disk) or a cloud
+    html += `<h4>${t('backup.wizard.other_ways')}</h4><div class="backup-other-ways">
+        <button class="btn btn-secondary btn-sm" ${running ? 'disabled' : ''} onclick="pickFolder('backup_dest')">${t('backup.wizard.pick_folder')}</button>
+        <button class="btn btn-secondary btn-sm" onclick="hideBackupWizard(); setViewMode('advanced'); switchTab('backup'); setTimeout(() => revealEl($('backupCloudForm')), 200)">${t('backup.wizard.setup_cloud')}</button></div>`;
     const clouds = (d.destinations || []).filter(x => x.type !== 'local');
     if (clouds.length) {
         html += `<h4>${t('backup.wizard.clouds')}</h4>`;
         clouds.forEach(c => {
-            html += `<div class="backup-choice ${c.available ? '' : 'disabled'}"><div class="backup-choice-icon">${cloudIcon()}</div>
+            html += `<div class="backup-choice ${c.available ? '' : 'disabled'}"><div class="backup-choice-icon">${c.type === 'path' ? driveIcon() : cloudIcon()}</div>
                 <div class="backup-choice-text"><span class="backup-choice-title">${escapeHtml(c.label)}</span><span class="backup-choice-sub">${escapeHtml(c.remote || c.mountpoint || '')} · ${c.last ? t('backup.dest.last', { rel: formatRelative(c.last) }) : t('backup.dest.never')}</span></div>
                 <button class="btn btn-primary btn-sm" ${c.available && !running ? '' : 'disabled'} onclick="sendToBackend({action:'backup_run', dest_id:'${escapeJs(c.id)}'})">${t('backup.wizard.here')}</button></div>`;
         });

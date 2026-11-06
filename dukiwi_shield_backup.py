@@ -165,6 +165,14 @@ def rclone_remotes():
     return [x.strip().rstrip(":") for x in (r.stdout or "").splitlines() if x.strip()]
 
 
+def valid_remote(target):
+    """True for "name:" or "name:sub/folder" where name is an rclone remote configured by the user. Refuses on-the-fly
+    remotes (":webdav,url=…:" would send the home folder anywhere and may carry command options) and option-like
+    values starting with "-"."""
+    m = re.fullmatch(r"([A-Za-z0-9_][A-Za-z0-9_. -]*):([^\x00-\x1f]*)", target or "")
+    return bool(m) and m.group(1) in rclone_remotes() and not m.group(2).startswith("-")
+
+
 def cloud_configure(kind, name, params):
     """Creates (or replaces) an rclone remote. Returns (ok, detail)."""
     if not rclone_path():
@@ -386,6 +394,8 @@ class BackupRunner(threading.Thread):
 
     # ── rclone (cloud) ──
     def _run_cloud(self, remote):
+        if not valid_remote(remote):
+            raise RuntimeError("invalid_remote")
         remote = remote.rstrip("/")
         base = f"{remote}/{BACKUP_DIRNAME}/{_hostuser()}"
         stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")

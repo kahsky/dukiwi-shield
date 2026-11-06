@@ -22,4 +22,6 @@ resp = daemon_request("unlock", timeout=5, uid=int(uid))
 if not resp.get("ok"):
     print(f"Déverrouillage refusé : {resp.get('error')}", file=sys.stderr)
     sys.exit(1)
-print(f"Session administrateur ouverte pour l'uid {uid} ({resp.get('ttl')} s).")
+# The session token goes to stdout, read only by the program that ran pkexec (the GUI); it is not broadcast
+print(f"token={resp.get('token', '')}")
+print(f"Session administrateur ouverte pour l'uid {uid} ({resp.get('ttl')} s).", file=sys.stderr)

@@ -11,6 +11,16 @@
     const verdicts = new Map();          // href → result
     let banner, authLine, linksLine, attsLine, confirmBox;
 
+    /* The message's own CSS must not hide the banner or the confirmation (display:none!important on our classes):
+       inline !important declarations win over any stylesheet of the message. */
+    function pin(el, display) {
+        const keep = { display: display || 'block', visibility: 'visible', opacity: '1', position: 'relative', 'z-index': '2147483647',
+                       'clip-path': 'none', clip: 'auto', transform: 'none', filter: 'none', 'max-height': 'none',
+                       height: 'auto', overflow: 'visible', 'pointer-events': 'auto' };
+        for (const [k, v] of Object.entries(keep)) el.style.setProperty(k, v, 'important');
+        return el;
+    }
+
     function ensureBanner() {
         if (banner) return banner;
         banner = document.createElement('div');
@@ -23,6 +33,7 @@
         attsLine = document.createElement('div'); attsLine.className = 'ug-line ug-atts';
         body.appendChild(authLine); body.appendChild(linksLine); body.appendChild(attsLine);
         banner.appendChild(logo); banner.appendChild(body);
+        pin(banner, 'flex'); pin(body);
         (document.body || document.documentElement).insertBefore(banner, (document.body || document.documentElement).firstChild);
         return banner;
     }
@@ -69,6 +80,7 @@
         confirmBox.appendChild(title); confirmBox.appendChild(addr); confirmBox.appendChild(why);
         if (meta.textContent) confirmBox.appendChild(meta);
         confirmBox.appendChild(actions);
+        pin(confirmBox);
         ensureBanner().appendChild(confirmBox);
         confirmBox.scrollIntoView({ block: 'nearest' });
     }

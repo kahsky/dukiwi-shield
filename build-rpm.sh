@@ -18,6 +18,7 @@ mkdir -p "$SRC" "$WORK/rpmbuild"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 mkdir -p "$SRC/tree/usr"
 if [ -d "$SRC/tree/lib" ]; then cp -a "$SRC/tree/lib/." "$SRC/tree/usr/lib/"; rm -rf "$SRC/tree/lib"; fi
 cp "$SCRIPT_DIR/dukiwi.repo" "$SRC/"
+cp "$SCRIPT_DIR/RPM-GPG-KEY-dukiwi" "$SRC/"
 tar -C "$WORK" -czf "$WORK/rpmbuild/SOURCES/${APP_NAME}-${VERSION}.tar.gz" "${APP_NAME}-${VERSION}"
 rpmbuild -bb --define "_topdir $WORK/rpmbuild" --define "version $VERSION" --define "dist %{nil}" \
          --define "_unitdir /usr/lib/systemd/system" --define "_udevrulesdir /usr/lib/udev/rules.d" \

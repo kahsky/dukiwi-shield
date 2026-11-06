@@ -2,6 +2,9 @@
 import time
 from datetime import datetime
 
+import os
+import pwd
+
 import _harness as h
 
 R = h.Results("Alerts and honeypot")
@@ -10,7 +13,9 @@ now = datetime.now().isoformat(timespec="seconds")
 # ── "It's OK" on a serious alert, through the service ──
 state = {"alerts": [
     {"kind": "download", "severity": "danger", "time": now, "title": "facture.exe", "detail": "Win.Test", "top_dir": "/home/x/Downloads",
-     "pid": 0, "comm": "", "exe": "", "user": "x"},
+     "pid": 0, "comm": "", "exe": "", "user": pwd.getpwuid(os.getuid()).pw_name},
+    {"kind": "download", "severity": "danger", "time": now, "title": "theirs.exe", "detail": "Win.Test", "top_dir": "/home/y/Downloads",
+     "pid": 0, "comm": "", "exe": "", "user": "someone-else", "ignored": True},
     {"kind": "honeypot", "severity": "danger", "time": now, "ip": "192.168.1.50", "host": "printer", "title": "printer", "ports": [],
      "fw_ports": ["udp/161"], "reasons": ["port_scan"], "pid": 0, "comm": "", "exe": ""},
     {"kind": "honeypot", "severity": "danger", "time": now, "ip": "192.168.1.77", "host": "other", "title": "other", "ports": [],
@@ -26,11 +31,14 @@ with h.TestDaemon(state=state, tag="alerts") as dm:
     R.check("a serious alert of the last 24 h keeps the shield red", "danger_alert" in reasons(), reasons())
     a = dm.request("acknowledge_alert", time=now, kind="download", title="facture.exe")
     R.check("\"It's OK\": the alert stays listed, marked ignored, and no longer turns the shield red",
-            a.get("ok") and a.get("n") == 1 and "danger_alert" not in reasons() and flags("download") == {"facture.exe": True}, (a, reasons()))
+            a.get("ok") and a.get("n") == 1 and "danger_alert" not in reasons() and flags("download").get("facture.exe") is True, (a, reasons()))
     b = dm.request("acknowledge_alert", time=now, kind="download", title="facture.exe", remove=True)
     R.check("\"Undo\": the alert counts again", b.get("ok") and "danger_alert" in reasons(), reasons())
     n = dm.request("acknowledge_alert", time="2001-01-01T00:00:00", kind="download")
     w = dm.request("acknowledge_alert", time=now, kind="download", title="other.exe")
+    other = dm.request("acknowledge_alert", time=now, kind="download", title="theirs.exe")
+    R.check("an alert about another account needs the administrator to be called normal",
+            other.get("error") == "admin_required", other)
     R.check("unknown alert or wrong title: refused", n.get("error") == "not_found" and w.get("error") == "not_found", (n, w))
     i1 = dm.request("honeypot_ignore", timeout=30, ip="192.168.1.50")
     f1 = flags("honeypot")

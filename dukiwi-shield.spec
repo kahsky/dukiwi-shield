@@ -55,6 +55,7 @@ rm -rf %{buildroot}
 mkdir -p %{buildroot}
 cp -a tree/. %{buildroot}/
 install -D -m 644 dukiwi.repo %{buildroot}%{_sysconfdir}/yum.repos.d/dukiwi.repo
+install -D -m 644 RPM-GPG-KEY-dukiwi %{buildroot}%{_sysconfdir}/pki/rpm-gpg/RPM-GPG-KEY-dukiwi
 
 %post
 mkdir -p /var/lib/dukiwi-shield
@@ -104,7 +105,11 @@ for f in /etc/hosts /etc/login.defs /etc/sysctl.d/90-dukiwi-shield* /etc/securit
          /etc/needrestart/conf.d/90-dukiwi-shield*; do
     # rewritten in place (same inode: /etc/hosts can be a mount), never blocking
     if [ -f "$f" ] && grep -q '# ClamAV Antivirus GUI' "$f" 2>/dev/null; then
-        sed 's/# ClamAV Antivirus GUI/# Dukiwi Shield/' "$f" > "$f.dukiwi-tmp" && cat "$f.dukiwi-tmp" > "$f" || true
+        # A backup is kept until the rewrite is complete (disk full during cat would otherwise leave it truncated)
+        if cp -p "$f" "$f.dukiwi-bak" && sed 's/# ClamAV Antivirus GUI/# Dukiwi Shield/' "$f" > "$f.dukiwi-tmp" \
+                && [ "$(wc -l < "$f.dukiwi-tmp")" -eq "$(wc -l < "$f")" ] && cat "$f.dukiwi-tmp" > "$f"; then
+            rm -f "$f.dukiwi-bak"
+        fi
         rm -f "$f.dukiwi-tmp"
     fi
 done
@@ -165,6 +170,7 @@ udevadm control --reload-rules >/dev/null 2>&1 || true
 %{_datadir}/polkit-1/actions/com.dukiwi.dukiwi-shield.policy
 %config(noreplace) %{_sysconfdir}/xdg/autostart/dukiwi-shield-autostart.desktop
 %config(noreplace) %{_sysconfdir}/yum.repos.d/dukiwi.repo
+%{_sysconfdir}/pki/rpm-gpg/RPM-GPG-KEY-dukiwi
 
 %changelog
 * Thu Oct 15 2026 Dukiwi SA <info@dukiwi.ch> - %{version}-1

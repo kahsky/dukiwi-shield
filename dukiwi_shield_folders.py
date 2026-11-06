@@ -24,6 +24,8 @@ import subprocess
 import threading
 import time
 
+from dukiwi_shield_common import open_user_file
+
 FAN_CLOEXEC = 0x01
 FAN_NONBLOCK = 0x02
 FAN_CLASS_CONTENT = 0x04
@@ -80,7 +82,19 @@ class ProtectedFolders(threading.Thread):
                 p = xdg_dir(pw, key, default)
                 if p and os.path.isdir(p):
                     roots.append(p)
-        return sorted({os.path.realpath(r) for r in roots if os.path.isdir(r)})
+        # Only folders inside a home directory and owned by an account: a path redirected later by a symbolic link
+        # (to "/", /usr…) or an XDG entry naming a system folder would otherwise mark the whole machine
+        homes = [os.path.realpath(pw.pw_dir).rstrip("/") + "/" for pw in self.d_users()]
+        out = set()
+        for r in roots:
+            real = os.path.realpath(r)
+            try:
+                st = os.stat(real)
+            except OSError:
+                continue
+            if os.path.isdir(real) and st.st_uid >= 1000 and any(real.startswith(h) for h in homes):
+                out.add(real)
+        return sorted(out)
 
     def d_users(self):
         return [pw for pw in self.d_human_users() if pw.pw_uid >= 1000]
@@ -227,7 +241,7 @@ class ProtectedFolders(threading.Thread):
                 pid, exe, script = self.pending_alerts.get(timeout=2)
             except queue.Empty:
                 continue
-            if pid in self.test_pids or exe.startswith("/tmp/.dukiwi-protected-test"):
+            if pid in self.test_pids or (getattr(self, "rogue_dir", "") and exe.startswith(self.rogue_dir + "/")):
                 continue
             key = script or exe
             now = time.time()
@@ -255,16 +269,17 @@ class ProtectedFolders(threading.Thread):
         if self.libc.fanotify_mark(self.fd, FAN_MARK_ADD, FAN_OPEN_PERM | FAN_EVENT_ON_CHILD, AT_FDCWD, base.encode()) != 0:
             return False, "mark_failed"
         cat = shutil.which("cat") or "/usr/bin/cat"
-        rogue = "/tmp/.dukiwi-protected-test"
+        # A private folder with a random name (root only): a fixed name in /tmp could be created first by any
+        # account, which either broke the test (protection turned off) or handed root a program to run
+        import tempfile
+        self.rogue_dir = tempfile.mkdtemp(prefix=".dukiwi-protected-test-", dir="/tmp")
+        rogue = os.path.join(self.rogue_dir, "cat")
         shutil.copy2(cat, rogue)
         try:
             ok_allowed = self._run_test([cat, probe], expect=True)
             ok_denied = self._run_test([rogue, probe], expect=False)
         finally:
-            try:
-                os.unlink(rogue)
-            except OSError:
-                pass
+            shutil.rmtree(self.rogue_dir, ignore_errors=True)
         if ok_allowed is None or ok_denied is None:
             return False, "timeout"
         if not ok_allowed:
@@ -332,7 +347,16 @@ class ProtectedFolders(threading.Thread):
             self.d.publish_alert({"kind": "protected", "severity": "warn", "time": time.strftime("%Y-%m-%dT%H:%M:%S"), "pid": 0, "comm": "",
                                   "exe": "", "title": "", "detail": err, "count": 0, "top_dir": "", "reasons": ["protected_selftest_failed"], "sample": []})
             return
-        n = self.mark_all()
+        # Marking thousands of folders takes a while: answer the permission requests meanwhile, otherwise every
+        # program opening a file there waits for the walk to end
+        marker = threading.Thread(target=self.loop, daemon=True, name="protected-mark-loop")
+        marker.start()
+        try:
+            n = self.mark_all()
+        finally:
+            self.stop_event.set()
+            marker.join(timeout=3)
+            self.stop_event.clear()
         self.active = True
         self.status["active"] = True
         self.write_log(f"protected folders on: {len(self.roots)} folder(s), {n} directories marked")
@@ -371,7 +395,7 @@ def appimage_of(pid):
 
 def xdg_dir(pw, key, default):
     try:
-        with open(os.path.join(pw.pw_dir, ".config", "user-dirs.dirs")) as f:
+        with open_user_file(os.path.join(pw.pw_dir, ".config", "user-dirs.dirs")) as f:
             for ln in f:
                 if ln.strip().startswith(f"XDG_{key}_DIR="):
                     path = ln.split("=", 1)[1].strip().strip('"').replace("$HOME", pw.pw_dir)

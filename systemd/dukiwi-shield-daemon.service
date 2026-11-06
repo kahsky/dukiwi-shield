@@ -9,14 +9,23 @@ Type=simple
 ExecStart=/usr/bin/python3 /opt/dukiwi-shield/dukiwi-shield-daemon.py
 Restart=on-failure
 RestartSec=5
-# /run/dukiwi-shield (socket), /var/lib/dukiwi-shield (state, quarantine), /var/log/dukiwi-shield
+# /run/dukiwi-shield (socket, open to all accounts), /var/lib/dukiwi-shield (state, quarantine) and
+# /var/log/dukiwi-shield: root only (since 2.9.0) — they hold the decoy names, the scanned file lists of every
+# account, the alerts with command lines; accounts get their own view through the socket
 RuntimeDirectory=dukiwi-shield
 RuntimeDirectoryMode=0755
 StateDirectory=dukiwi-shield
-StateDirectoryMode=0755
+StateDirectoryMode=0700
 LogsDirectory=dukiwi-shield
-LogsDirectoryMode=0755
+LogsDirectoryMode=0700
+# Files keep 644 (the service also writes /etc files that everybody must read): the folders above protect them
 UMask=0022
+# Light sandboxing that changes nothing for the service (it installs packages, writes /etc and scans every folder,
+# so ProtectSystem/ProtectHome/NoNewPrivileges/RestrictSUIDSGID cannot be used here)
+LockPersonality=yes
+RestrictRealtime=yes
+ProtectHostname=yes
+ProtectClock=yes
 # Give the daemon time to save the scan progress for resuming
 KillMode=mixed
 TimeoutStopSec=20

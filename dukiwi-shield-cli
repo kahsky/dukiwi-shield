@@ -11,6 +11,7 @@ like the interface); an action reserved for the administrator is run with sudo.
 """
 
 import json
+import re
 import os
 import sys
 import time
@@ -68,11 +69,11 @@ def cmd_status(as_json):
     print(f"  {T('cli.signatures')} : {(st.get('db_last_update') or '—')[:16].replace('T', ' ')}")
     state = st.get("state") or {}
     if state.get("last_scan"):
-        print(f"  {T('cli.last_scan')} : {str(state['last_scan'])[:16].replace('T', ' ')} — {state.get('last_scan_path')} "
+        print(f"  {T('cli.last_scan')} : {str(state['last_scan'])[:16].replace('T', ' ')} — {clean(state.get('last_scan_path'))} "
               f"({state.get('last_scan_infected', 0)} {T('cli.threats')})")
     job = st.get("job")
     if job:
-        print(f"  {T('cli.running')} : {job.get('kind')} {job.get('path') or ''} {job.get('scanned', 0)}/{job.get('total', 0)}")
+        print(f"  {T('cli.running')} : {clean(job.get('kind'))} {clean(job.get('path') or '')} {job.get('scanned', 0)}/{job.get('total', 0)}")
     if st.get("isolated"):
         print(paint(f"  {T('isolate.banner', time=str(st['isolated'].get('at', ''))[:16].replace('T', ' '), n=len(st['isolated'].get('suspended') or []))}", "red"))
     ck = request("checklist", timeout=120).get("checklist") or {}
@@ -118,6 +119,15 @@ def cmd_scan(path, wait, as_json, integrity=False):
     return wait_job(resp.get("job_id"), "scan") if wait else 0
 
 
+_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+
+
+def clean(text):
+    """Text from alerts (file, attachment or process names) without control characters: an escape sequence in a
+    name could otherwise hide lines, fake output or set the clipboard of the terminal."""
+    return _CONTROL.sub("?", str(text if text is not None else ""))
+
+
 def cmd_alerts(n, as_json):
     alerts = (request("alerts").get("alerts") or [])[:n]
     if as_json:
@@ -126,10 +136,10 @@ def cmd_alerts(n, as_json):
         print(T("cli.no_alerts"))
     for a in alerts:
         sev = a.get("severity", "info")
-        what = a.get("comm") or a.get("title") or ""
-        detail = a.get("detail") or a.get("exe") or ""
+        what = clean(a.get("comm") or a.get("title") or "")
+        detail = clean(a.get("detail") or a.get("exe") or "")
         print(f"{str(a.get('time', ''))[:16].replace('T', ' ')}  {paint(sev.upper().ljust(6), {'danger': 'red', 'warn': 'yellow'}.get(sev, 'blue'))} "
-              f"{a.get('kind', ''):12s} {what} {('— ' + detail) if detail and detail != what else ''}".rstrip())
+              f"{clean(a.get('kind', '')):12s} {what} {('— ' + detail) if detail and detail != what else ''}".rstrip())
 
 
 def cmd_checklist(as_json):
@@ -141,7 +151,7 @@ def cmd_checklist(as_json):
     for it in sorted(ck.get("items") or [], key=lambda i: ({"fail": 0, "warn": 1, "ok": 2}.get(i["status"], 3), -i.get("weight", 0))):
         if it["status"] not in marks:
             continue
-        print(f"  {marks[it['status']]} {T('check.' + it['key'] + '.title')}" + (f" — {it['detail']}" if it.get("detail") and it["status"] != "ok" else ""))
+        print(f"  {marks[it['status']]} {T('check.' + it['key'] + '.title')}" + (f" — {clean(it['detail'])}" if it.get("detail") and it["status"] != "ok" else ""))
 
 
 def cmd_journal(days, as_json):
@@ -150,7 +160,7 @@ def cmd_journal(days, as_json):
     if as_json:
         return show_json(events)
     for e in events[:200]:
-        print(f"{e['t'][:16].replace('T', ' ')}  {e['sev']:6s} {e['cat']:11s} {e['text']}")
+        print(f"{e['t'][:16].replace('T', ' ')}  {e['sev']:6s} {clean(e['cat']):11s} {clean(e['text'])}")
 
 
 def main(argv):

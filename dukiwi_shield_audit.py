@@ -26,6 +26,8 @@ import subprocess
 import time
 from datetime import datetime
 
+from dukiwi_shield_common import open_user_file
+
 # Programs that normally read keyboards: display server, compositors, session and power management,
 # remapping and gesture tools, game controllers
 INPUT_READERS = {"Xorg", "Xwayland", "X", "gnome-shell", "mutter", "kwin_wayland", "kwin_wayland_wr", "sway", "Hyprland",
@@ -277,10 +279,10 @@ def flatpak_audit(users):
             text = run(["flatpak", "info", "--system", "--show-permissions", a["app"]], timeout=30).stdout or ""
         else:
             meta = glob.glob(os.path.join(a["home"], ".local/share/flatpak/app", a["app"], "current/active/metadata"))
-            text = open(meta[0], errors="replace").read() if meta else ""
+            text = open_user_file(meta[0]).read() if meta else ""
             override = os.path.join(a["home"], ".local/share/flatpak/overrides", a["app"])
             if os.path.isfile(override):
-                text += "\n" + open(override, errors="replace").read()
+                text += "\n" + open_user_file(override).read()
         for path in (f"/var/lib/flatpak/overrides/{a['app']}",):
             if os.path.isfile(path):
                 text += "\n" + open(path, errors="replace").read()
@@ -305,7 +307,7 @@ def pip_packages(users):
         for meta in glob.glob(os.path.join(d, "*.dist-info", "METADATA")):
             name = version = ""
             try:
-                with open(meta, errors="replace") as f:
+                with open_user_file(meta) as f:
                     for ln in f:
                         if ln.startswith("Name:"):
                             name = ln.split(":", 1)[1].strip()
@@ -334,7 +336,7 @@ def npm_packages(users):
             continue
         for pkg in glob.glob(os.path.join(d, "*/package.json")) + glob.glob(os.path.join(d, "@*/*/package.json")):
             try:
-                with open(pkg, errors="replace") as f:
+                with open_user_file(pkg) as f:
                     meta = json.load(f)
             except (OSError, ValueError):
                 continue
@@ -404,7 +406,7 @@ def editor_extensions(user, home):
             continue
         sources = {}
         try:
-            with open(os.path.join(base, "extensions.json"), errors="replace") as f:
+            with open_user_file(os.path.join(base, "extensions.json")) as f:
                 for e in json.load(f):
                     ident = ((e.get("identifier") or {}).get("id") or "").lower()
                     sources[ident] = (e.get("metadata") or {}).get("source") or ""
@@ -415,7 +417,7 @@ def editor_extensions(user, home):
             if not os.path.isfile(pkg):
                 continue
             try:
-                with open(pkg, errors="replace") as f:
+                with open_user_file(pkg) as f:
                     meta = json.load(f)
             except (OSError, ValueError):
                 continue

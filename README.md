@@ -48,15 +48,15 @@ versions itself (popup or Security tab) and can install them on its own when the
 
 ### Direct download
 
-- Mint / Ubuntu: [dukiwi-shield_2.8.2_all.deb](https://www.dukiwi.com/repo/dukiwi-shield/dukiwi-shield_2.8.2_all.deb)
-- Fedora: [dukiwi-shield-2.8.2-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/dukiwi-shield-2.8.2-1.noarch.rpm)
+- Mint / Ubuntu: [dukiwi-shield_2.9.0_all.deb](https://www.dukiwi.com/repo/dukiwi-shield/dukiwi-shield_2.9.0_all.deb)
+- Fedora: [dukiwi-shield-2.9.0-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/dukiwi-shield-2.9.0-1.noarch.rpm)
 - All versions: [www.dukiwi.com/repo](https://www.dukiwi.com/repo)
 
 ### Installing a downloaded package by hand
 
 ```bash
-sudo apt install ./dukiwi-shield_2.8.2_all.deb          # Mint / Ubuntu
-sudo dnf install ./dukiwi-shield-2.8.2-1.noarch.rpm      # Fedora
+sudo apt install ./dukiwi-shield_2.9.0_all.deb          # Mint / Ubuntu
+sudo dnf install ./dukiwi-shield-2.9.0-1.noarch.rpm      # Fedora
 ```
 
 The installation enables the system service and the scheduler, then starts the initial scan:
@@ -78,6 +78,26 @@ sudo dnf remove dukiwi-shield   # Fedora
 
 ## Features
 
+- **2.9.0: security review — no local path to root, safer interface and update chain** — a full review of the service,
+  the interface, the package and the server, with every finding fixed. The root service no longer opens, writes or
+  moves files in a folder a user controls through a path: Firefox `user.js`, `authorized_keys`, ransomware decoys and
+  restored quarantine files are written with the user's own rights; quarantine works through file descriptors with an
+  inode check; the USB manifest never follows a link (drives mounted `nosymfollow`); only drives announced by the
+  service can receive it; trusting a program, weakening a protection (switching off real-time scanning, decoys, link
+  checking, raising thresholds…), resuming a stopped process, clearing the log or alerts, Timeshift on another drive
+  and restoring or deleting someone else's quarantined file need the administrator password; the unlock is bound to a
+  secret token given only to the window that asked for it; scripts are judged by their own file, never by their
+  interpreter (`python3`, `bash`, `node` are never trusted nor learned); "launched by apt" is checked on the real
+  program file running as root; programs in `/opt` and central-allowlist programs are trusted only when root owns them
+  and their folders; home-folder patterns never make a program trusted; a trusted Electron app started in Node mode or
+  with a debugger port is not trusted; state and log folders are root-only; scan file names, alerts, keys, quarantine
+  and the log are shown to the account concerned and administrators only; decoys get random names (no common prefix);
+  the interface escapes every name placed in a button (a crafted file or attachment name could run script), the window
+  never leaves its own page, developer tools and clipboard access are off; cloud backups accept configured rclone
+  remotes only; signed allowlists and update manifests cannot be replayed with an older version; the in-app update
+  never downgrades; the Fedora repository key is shipped in the package; reads of user files never block or follow
+  into a device; Lynis-driven permission fixes only ever remove permissions; also: a Fix button for Lynis MAIL-8818
+  (SMTP banner), and backup set-up from the simple view (other folder or cloud).
 - **2.8.2: Timeshift snapshots no longer flood the screen with SUID alerts** — the daily search for SUID/SGID files
   outside packages also went through the Timeshift snapshots, which copy the system's own SUID programs (`passwd`,
   `chfn`, `chrome-sandbox`…): every new snapshot raised one popup per file. Snapshot folders (`/timeshift/snapshots`,
@@ -834,8 +854,8 @@ python3 dukiwi-shield.py
 ## Building the packages
 
 ```bash
-./build-deb.sh        # dukiwi-shield_2.8.2_all.deb   (Mint / Ubuntu)
-./build-rpm.sh        # dukiwi-shield-2.8.2-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
+./build-deb.sh        # dukiwi-shield_2.9.0_all.deb   (Mint / Ubuntu)
+./build-rpm.sh        # dukiwi-shield-2.9.0-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
 ```
 
 Both packages share the same file tree (`build-deb.sh --stage-only`) and the same signed integrity manifest.

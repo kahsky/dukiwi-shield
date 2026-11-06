@@ -72,8 +72,11 @@ if shutil.which("rpm"):
         time.sleep(0.1)
     cpid = int(open(pidfile).read().strip())
     burst(mon, cpid, DOCS, 60)
-    R.check("program started by a package manager (rpm → sh → program): ignored automatically, logged",
-            dm.alerts == [] and any("launched by rpm" in x for x in dm.logs), (dm.alerts, dm.logs))
+    # 2.9.0: only a package manager running as root counts (anyone can start rpm or name a process "apt")
+    expect_ignored = os.geteuid() == 0
+    R.check("program started by a package manager (rpm → sh → program): ignored only when the manager runs as root",
+            (dm.alerts == [] and any("launched by rpm" in x for x in dm.logs)) if expect_ignored
+            else (len(dm.alerts) == 1 and not any("launched by" in x for x in dm.logs)), (dm.alerts, dm.logs))
     subprocess.run(["kill", str(cpid)], check=False)
     rp.wait(5)
 else:

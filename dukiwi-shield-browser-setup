@@ -16,11 +16,13 @@ import os
 import sys
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
-EXT_DIR = os.environ.get("CLAMAV_SETUP_EXT_DIR") or os.path.join(APP_DIR, "extensions")
+# Test prefixes: ignored when running as root (postinst), whatever the environment says
+_TEST_ENV = os.environ if os.geteuid() != 0 else {}
+EXT_DIR = _TEST_ENV.get("CLAMAV_SETUP_EXT_DIR") or os.path.join(APP_DIR, "extensions")
 INFO = os.path.join(EXT_DIR, "manifest-info.json")
 HOST = os.path.join(APP_DIR, "dukiwi-shield-native-host")
 NAME = "dukiwi_shield"
-ROOT = os.environ.get("CLAMAV_SETUP_ROOT", "")            # test prefix (never in production)
+ROOT = _TEST_ENV.get("CLAMAV_SETUP_ROOT", "")            # test prefix (never in production)
 STATE = ROOT + "/var/lib/dukiwi-shield/browser-setup.json"
 DESC = "Dukiwi Shield — contrôle des liens et des courriels"
 

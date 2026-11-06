@@ -49,6 +49,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import dukiwi_shield_common as _common  # noqa: E402
 from dukiwi_shield_common import (  # noqa: E402
     VERSION, DAEMON_ALLOWED_ROOTS, UPDATE_TIMER_UNIT, DAEMON_UNIT, LANGUAGES,
     DEFAULT_SETTINGS, daemon_connect, daemon_request, find_command, is_noise_line,
@@ -1137,10 +1138,16 @@ class ClamAVAntivirusApp:
 
         self.webview = WebKit2.WebView.new_with_user_content_manager(ucm)
         settings = self.webview.get_settings()
-        settings.set_enable_developer_extras(True)
-        settings.set_javascript_can_access_clipboard(True)
+        # The inspector only on request (DUKIWI_SHIELD_DEVTOOLS=1); the page never needs the clipboard
+        settings.set_enable_developer_extras(os.environ.get("DUKIWI_SHIELD_DEVTOOLS") == "1")
+        settings.set_javascript_can_access_clipboard(False)
+        self.ui_uri = f"file://{os.path.join(UI_DIR, 'index.html')}"
+        # The "backend" message handler survives a navigation: the view must never leave the UI page (a dropped
+        # file or a link would otherwise get every act_* action). Web links open in the browser instead.
+        self.webview.connect("decide-policy", self.on_decide_policy)
+        self.webview.connect("create", lambda *_a: None)
         self.webview.connect("load-changed", self.on_load_changed)
-        self.webview.load_uri(f"file://{os.path.join(UI_DIR, 'index.html')}")
+        self.webview.load_uri(self.ui_uri)
         self.window.add(self.webview)
 
         self.popups = PopupManager()
@@ -1244,6 +1251,8 @@ class ClamAVAntivirusApp:
                 try:
                     r = subprocess.run(["pkexec", UNLOCK_HELPER], capture_output=True, text=True, timeout=300)
                     unlocked = r.returncode == 0
+                    if unlocked:
+                        _common.ADMIN_TOKEN = _common.admin_token_from(r.stdout)
                 except Exception:  # noqa: BLE001
                     unlocked = False
                 if not unlocked:
@@ -1289,13 +1298,15 @@ class ClamAVAntivirusApp:
         return user_settings()["popups"].get(kind, True)
 
     def process_action(self, pid, action):
-        resp = DaemonClient.request("process_action", pid=pid, action=action)
-        if resp.get("ok"):
-            key = {"kill": "msg.process_killed", "continue": "msg.process_resumed", "quarantine": "msg.process_quarantined"}[action]
-            self.send_to_js("operationResult", {"status": "success", "message": self.T(key)})
-        else:
-            self.send_to_js("operationResult", {"status": "error", "message": self.daemon_error(resp)})
-        self.send_status()
+        # Resuming a stopped process (or acting on another user's) asks for the administrator
+        def done(resp):
+            if resp.get("ok"):
+                key = {"kill": "msg.process_killed", "continue": "msg.process_resumed", "quarantine": "msg.process_quarantined"}[action]
+                self.send_to_js("operationResult", {"status": "success", "message": self.T(key)})
+            else:
+                self.send_to_js("operationResult", {"status": "error", "message": self.daemon_error(resp)})
+            self.send_status()
+        self.run_admin("process_action", {"pid": pid, "action": action}, done)
 
     def show_alert(self, alert):
         T = self.T
@@ -2112,15 +2123,14 @@ class ClamAVAntivirusApp:
         devnode = usb.get("devnode", "")
         mountpoint = None
         try:
-            r = subprocess.run(["udisksctl", "mount", "-b", devnode], capture_output=True, text=True, timeout=60)
-            out = (r.stdout or "") + (r.stderr or "")
-            if " at " in out:
-                mountpoint = out.rsplit(" at ", 1)[1].strip().rstrip(".").strip("`'\"")     # also "already mounted at `/media/…'"
+            # The mount point is read from findmnt below, never parsed from this message: it contains the drive
+            # label, and a label such as "x at /tmp/evil.desktop" would have chosen the folder opened
+            subprocess.run(["udisksctl", "mount", "-b", devnode], capture_output=True, text=True, timeout=60)
         except Exception:  # noqa: BLE001
             pass
         if not mountpoint:
             try:
-                r = subprocess.run(["findmnt", "-n", "-o", "TARGET", devnode], capture_output=True, text=True, timeout=10)
+                r = subprocess.run(["findmnt", "-n", "-o", "TARGET", "--source", devnode], capture_output=True, text=True, timeout=10)
                 lines = (r.stdout or "").strip().splitlines()
                 mountpoint = lines[0].strip() if lines else None
             except Exception:  # noqa: BLE001
@@ -2184,7 +2194,23 @@ class ClamAVAntivirusApp:
         return False
 
     # ── Messages from the frontend ──────────────────────────────────────
+    def on_decide_policy(self, _webview, decision, kind):
+        """Only the UI page itself may load in the view; http(s) links go to the default browser."""
+        if kind not in (WebKit2.PolicyDecisionType.NAVIGATION_ACTION, WebKit2.PolicyDecisionType.NEW_WINDOW_ACTION):
+            return False
+        uri = decision.get_navigation_action().get_request().get_uri() or ""
+        if kind == WebKit2.PolicyDecisionType.NAVIGATION_ACTION and uri.split("#", 1)[0] == self.ui_uri:
+            decision.use()
+            return True
+        decision.ignore()
+        if uri.startswith(("https://", "http://")):
+            subprocess.Popen(["xdg-open", uri], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        return True
+
     def on_message_from_js(self, ucm, result):
+        # Messages are accepted from the UI page only (never from a page the view was made to load)
+        if (self.webview.get_uri() or "").split("#", 1)[0] != self.ui_uri:
+            return
         try:
             data = json.loads(result.get_js_value().to_string())
             action = data.get("action")
@@ -2309,9 +2335,9 @@ class ClamAVAntivirusApp:
     def act_clear_log(self, data):
         scope = data.get("scope", "system")
         if scope == "system":
-            DaemonClient.request("clear_log")
-        else:
-            open(LOG_FILE, "w").close()
+            self.run_admin("clear_log", {}, lambda _r: self.act_get_log({"scope": scope}))
+            return
+        open(LOG_FILE, "w").close()
         self.act_get_log({"scope": scope})
 
     def act_get_quarantine(self, _data):
@@ -2337,14 +2363,14 @@ class ClamAVAntivirusApp:
 
     def act_delete_quarantine(self, data):
         if data.get("scope") == "system":
-            self._daemon_quarantine_result(DaemonClient.request("quarantine_delete", path=data.get("path", "")))
+            self.run_admin("quarantine_delete", {"path": data.get("path", "")}, self._daemon_quarantine_result)
         else:
             self._quarantine_result(*ClamAVBackend.delete_quarantine_file(data.get("path", "")))
 
     def act_restore_quarantine(self, data):
         dest = data.get("dest") or HOME_DIR
         if data.get("scope") == "system":
-            self._daemon_quarantine_result(DaemonClient.request("quarantine_restore", path=data.get("path", ""), dest=dest))
+            self.run_admin("quarantine_restore", {"path": data.get("path", ""), "dest": dest}, self._daemon_quarantine_result)
         else:
             self._quarantine_result(*ClamAVBackend.restore_quarantine_file(data.get("path", ""), dest))
 
@@ -2390,6 +2416,8 @@ class ClamAVAntivirusApp:
             return
         win = Gtk.OffscreenWindow()
         view = WebKit2.WebView()
+        # The report is static HTML built from service data: no script needs to run while it is printed
+        view.get_settings().set_enable_javascript(False)
         view.set_size_request(900, 1200)
         win.add(view)
         win.show_all()
@@ -2455,8 +2483,7 @@ class ClamAVAntivirusApp:
                                        "available": bool(resp.get("ok"))})
 
     def act_clear_alerts(self, _data):
-        DaemonClient.request("clear_alerts")
-        self.act_get_alerts({})
+        self.run_admin("clear_alerts", {}, lambda _r: self.act_get_alerts({}))
 
     def act_accept_disclaimer(self, _data):
         save_state({"disclaimer_accepted": DISCLAIMER_VERSION, "disclaimer_date": now_iso()})
@@ -2974,7 +3001,7 @@ class ClamAVAntivirusApp:
 
         def worker():
             if kind == "existing":
-                ok, detail = (True, remote) if remote else (False, "no_remote")
+                ok, detail = (True, remote) if backup.valid_remote(remote) else (False, "no_remote")
             else:
                 ok, detail = backup.cloud_configure(kind, name, params)
             target = detail if ok else ""
@@ -3052,10 +3079,9 @@ class ClamAVAntivirusApp:
         since 1.18.7 but the service may be busy (system measurement, snapshot in progress)."""
         self.send_to_js("operationResult", {"status": "info", "message": self.T("msg.timeshift_enabling")})
 
-        def worker():
-            resp = daemon_request("timeshift_enable", timeout=120, device_uuid=str((data or {}).get("device_uuid") or ""))
-            GLib.idle_add(self._timeshift_enable_reply, resp)
-        threading.Thread(target=worker, daemon=True).start()
+        uuid = str((data or {}).get("device_uuid") or "")
+        # Another drive asks for the administrator (the snapshots hold the whole system): pkexec, then retry
+        self.run_admin("timeshift_enable", {"device_uuid": uuid} if uuid else {}, self._timeshift_enable_reply)
 
     def _timeshift_enable_reply(self, resp):
         if resp.get("ok") and resp.get("pending"):
@@ -3696,6 +3722,8 @@ class ClamAVAntivirusApp:
             try:
                 r = subprocess.run(["pkexec", UNLOCK_HELPER], capture_output=True, text=True, timeout=300)
                 ok = r.returncode == 0
+                if ok:
+                    _common.ADMIN_TOKEN = _common.admin_token_from(r.stdout)
             except Exception:  # noqa: BLE001
                 ok = False
             GLib.idle_add(self.send_to_js, "operationResult",
@@ -4023,6 +4051,7 @@ def start_instance_server(app):
         while True:
             try:
                 conn, _ = server.accept()
+                conn.settimeout(1)           # a client that connects and stays silent must not block the listener
                 msg = conn.recv(16).decode().strip()
                 conn.close()
                 if msg == "show":
