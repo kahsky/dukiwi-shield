@@ -3084,6 +3084,14 @@ input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-o
     padding: 6px 10px; border-radius: 6px; cursor: pointer; line-height: 1.3;
 }
 .nav-sub-btn { display: flex; align-items: center; gap: 8px; }
+/* Timeshift: no room on the main disk */
+.ts-nospace { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; }
+.ts-nospace p { margin: 0 0 8px; }
+/* What's new in the offered application update */
+.app-update-changes { margin-top: 10px; }
+.app-update-changes h4 { margin: 0 0 6px; font-size: 13px; }
+.app-update-change summary { cursor: pointer; padding: 4px 0; }
+.app-update-change p { margin: 4px 0 8px 4px; line-height: 1.45; }
 .nav-sub-label { flex: 1; min-width: 0; }
 /* Submenu badge: number of items awaiting an action (red: threat, amber: improvement) */
 .nav-sub-badge {

@@ -48,15 +48,15 @@ versions itself (popup or Security tab) and can install them on its own when the
 
 ### Direct download
 
-- Mint / Ubuntu: [dukiwi-shield_2.7.12_all.deb](https://www.dukiwi.com/repo/dukiwi-shield/dukiwi-shield_2.7.12_all.deb)
-- Fedora: [dukiwi-shield-2.7.12-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/dukiwi-shield-2.7.12-1.noarch.rpm)
+- Mint / Ubuntu: [dukiwi-shield_2.8.0_all.deb](https://www.dukiwi.com/repo/dukiwi-shield/dukiwi-shield_2.8.0_all.deb)
+- Fedora: [dukiwi-shield-2.8.0-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/dukiwi-shield-2.8.0-1.noarch.rpm)
 - All versions: [www.dukiwi.com/repo](https://www.dukiwi.com/repo)
 
 ### Installing a downloaded package by hand
 
 ```bash
-sudo apt install ./dukiwi-shield_2.7.12_all.deb          # Mint / Ubuntu
-sudo dnf install ./dukiwi-shield-2.7.12-1.noarch.rpm      # Fedora
+sudo apt install ./dukiwi-shield_2.8.0_all.deb          # Mint / Ubuntu
+sudo dnf install ./dukiwi-shield-2.8.0-1.noarch.rpm      # Fedora
 ```
 
 The installation enables the system service and the scheduler, then starts the initial scan:
@@ -78,6 +78,18 @@ sudo dnf remove dukiwi-shield   # Fedora
 
 ## Features
 
+- **2.8.0: what's new in the update offer, snapshots on another drive, password and encryption follow-up, monthly
+  e-mail report, migration from the old package** — the update offer (popup and Security › Application update) lists
+  what changed since the installed version, read from the signed update manifest. When the main disk has no room for
+  Timeshift snapshots, the offer lists the other plugged drives formatted for Linux that can hold them, or lets you go
+  without (the reminder goes away, the score keeps counting it). Once the password rules are set, the checklist asks
+  each account whose password is older than them to change it ("Change my password" opens the account settings); the
+  encryption check now tells a LUKS system disk from an encrypted home folder alone, and flags a swap written to disk
+  in clear next to it. On the 1st of each month a report of the past 30 days (score, alerts, backups, snapshots,
+  updates) is e-mailed when e-mail notifications already work. Computers still on the old ClamAV Antivirus package are
+  moved to Dukiwi Shield: a transitional package through APT, and the old built-in update now offers Dukiwi Shield.
+  The telemetry dashboard lists the installations behind the published version or silent for two weeks, and the
+  adoption of each version from the reports sent right after an update.
 - **2.7.12: changelog for the package manager** — the package now carries its changelog
   (`/usr/share/doc/dukiwi-shield/changelog.gz`, built from this list), and the APT repository serves it, so
   `apt changelog dukiwi-shield` shows what changed in each version.
@@ -813,8 +825,8 @@ python3 dukiwi-shield.py
 ## Building the packages
 
 ```bash
-./build-deb.sh        # dukiwi-shield_2.7.12_all.deb   (Mint / Ubuntu)
-./build-rpm.sh        # dukiwi-shield-2.7.12-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
+./build-deb.sh        # dukiwi-shield_2.8.0_all.deb   (Mint / Ubuntu)
+./build-rpm.sh        # dukiwi-shield-2.8.0-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
 ```
 
 Both packages share the same file tree (`build-deb.sh --stage-only`) and the same signed integrity manifest.

@@ -1345,8 +1345,11 @@ class ClamAVAntivirusApp:
             if not self.popups_enabled("update"):
                 return
             upd = alert.get("update") or {}
-            self.popup("info", T("popup.appupdate.title", version=upd.get("version", "")),
-                       T("popup.appupdate.body", version=upd.get("version", ""), current=VERSION),
+            body = T("popup.appupdate.body", version=upd.get("version", ""), current=VERSION)
+            news = [c.get("title") for c in (upd.get("changes") or []) if c.get("title")][:3]
+            if news:
+                body += "\n" + T("popup.appupdate.news") + "\n" + "\n".join(f"• {x}" for x in news)
+            self.popup("info", T("popup.appupdate.title", version=upd.get("version", "")), body,
                        timeout=30, on_activate=lambda: self.show_tab("security"),
                        buttons=[(T("popup.btn.install"), "primary", lambda: self.act_install_update({})),
                                 (T("popup.btn.details"), None, lambda: self.show_tab("security"))])
@@ -2518,6 +2521,24 @@ class ClamAVAntivirusApp:
     def act_trust_program(self, data):
         self.trust_program(data.get("exe"), data.get("comm") or "")
 
+    def act_open_account_settings(self, _data):
+        """Password step 2: the desktop's own account settings, where the user changes their password (checked against
+        the new rules); a terminal running passwd when no settings tool is found."""
+        desktop = (os.environ.get("XDG_CURRENT_DESKTOP") or "").lower()
+        candidates = [["cinnamon-settings", "user"]] if "cinnamon" in desktop else []
+        candidates += [["gnome-control-center", "system", "users"], ["gnome-control-center", "user-accounts"], ["kcmshell6", "kcm_users"],
+                       ["kcmshell5", "kcm_users"], ["mate-about-me"], ["xfce4-terminal", "-e", "passwd"], ["gnome-terminal", "--", "passwd"],
+                       ["x-terminal-emulator", "-e", "passwd"]]
+        for cmd in candidates:
+            if shutil.which(cmd[0]):
+                try:
+                    subprocess.Popen(cmd, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    self.send_to_js("operationResult", {"status": "info", "message": self.T("msg.password_change_opened")})
+                    return
+                except OSError:
+                    continue
+        self.send_to_js("operationResult", {"status": "error", "message": self.T("msg.password_change_manual")})
+
     def act_forget_habit(self, data):
         """Forget a learned habit (burst declared normal): it will be reported again."""
         def done(resp):
@@ -3025,13 +3046,13 @@ class ClamAVAntivirusApp:
             if avail:
                 subprocess.Popen(["xdg-open", os.path.join(target, backup.BACKUP_DIRNAME, backup._hostuser())])
 
-    def act_timeshift_enable(self, _data):
+    def act_timeshift_enable(self, data):
         """Activation (or automatic scheduling): off the main thread, generous timeout — the answer is immediate
         since 1.18.7 but the service may be busy (system measurement, snapshot in progress)."""
         self.send_to_js("operationResult", {"status": "info", "message": self.T("msg.timeshift_enabling")})
 
         def worker():
-            resp = daemon_request("timeshift_enable", timeout=120)
+            resp = daemon_request("timeshift_enable", timeout=120, device_uuid=str((data or {}).get("device_uuid") or ""))
             GLib.idle_add(self._timeshift_enable_reply, resp)
         threading.Thread(target=worker, daemon=True).start()
 
@@ -3053,10 +3074,16 @@ class ClamAVAntivirusApp:
             def gb(n):
                 return round((n or 0) / 1e9)
             body = T("msg.timeshift_no_space", size=gb(resp.get("size")), needed=gb(resp.get("needed")), free=gb(resp.get("free")))
+            targets = [d for d in (resp.get("targets") or []) if d.get("enough")]
+            # The main disk has no room: snapshots on another plugged drive, or no snapshots on purpose (the reminder is
+            # ignored, the security score keeps counting it)
+            self.send_to_js("timeshiftNoSpace", {"targets": resp.get("targets") or [], "needed": resp.get("needed"), "free": resp.get("free")})
             self.send_to_js("operationResult", {"status": "error", "message": body})
-            self.popup("warning", T("backup.timeshift.title"), body, timeout=40,
-                       buttons=[(T("backup.open_timeshift"), "primary", lambda: self.act_backup_open_timeshift({}))],
-                       on_activate=lambda: self.show_tab("backup"))
+            buttons = [(T("backup.timeshift.use_drive", label=d.get("label") or d.get("mountpoint"), free=gb(d.get("free"))), "primary",
+                        lambda u=d["uuid"]: self.act_timeshift_enable({"device_uuid": u})) for d in targets[:2]]
+            buttons.append((T("backup.timeshift.no_room"), None, lambda: self.act_ignore_check({"setting": "timeshift_check", "ignore": True})))
+            self.popup("warning", T("backup.timeshift.title"), body + ("\n" + T("backup.timeshift.other_drive") if targets else ""), timeout=None,
+                       buttons=buttons, on_activate=lambda: self.show_tab("backup"))
         else:
             key = "msg.timeshift_missing" if resp.get("error") == "timeshift_missing" else None
             self.send_to_js("operationResult", {"status": "error", "message": T(key) if key else self.daemon_error(resp)})

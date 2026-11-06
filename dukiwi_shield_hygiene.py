@@ -78,6 +78,67 @@ def password_policy():
             "ok": module == "pwquality" and minlen >= PWQ_MINLEN and dictcheck, "installable": bool(shutil.which("apt-get") or shutil.which("dnf"))}
 
 
+SHADOW_FILE = "/etc/shadow"
+
+
+def passwords_older_than_policy():
+    """Accounts (uid ≥ 1000, home under /home, with a password) whose password was last changed before Dukiwi Shield set
+    the quality rules: their current password was never checked against them. [] when unknown (rules not set by
+    Dukiwi Shield, /etc/shadow unreadable)."""
+    import pwd
+    try:
+        since = int(os.stat(PWQ_DROPIN).st_mtime // 86400)          # /etc/shadow counts days since 1970-01-01
+    except OSError:
+        return []
+    users = {pw.pw_name for pw in pwd.getpwall() if pw.pw_uid >= 1000 and pw.pw_dir.startswith("/home/")
+             and not pw.pw_shell.endswith(("nologin", "false"))}
+    try:
+        lines = open(SHADOW_FILE, encoding="utf-8", errors="replace").read().splitlines()
+    except OSError:
+        return []
+    out = []
+    for ln in lines:
+        f = ln.split(":")
+        if len(f) < 3 or f[0] not in users or not f[1] or f[1][0] in "!*":
+            continue
+        try:
+            if int(f[2]) < since:
+                out.append(f[0])
+        except ValueError:
+            continue
+    return sorted(out)
+
+
+def _ancestor_types(dev):
+    """Device types of `dev` and of everything below it (lsblk --inverse): contains "crypt" for LUKS / dm-crypt."""
+    r = run(["lsblk", "-s", "-n", "-o", "TYPE", dev], timeout=10)
+    return set((r.stdout or "").split()) if r.returncode == 0 else set()
+
+
+def encryption_status():
+    """What is encrypted on this computer: {"root", "home", "swap_clear": [swap areas written to disk in clear]}.
+    Root: the file system of / sits on dm-crypt (LUKS, possibly under LVM). Home: eCryptfs, or /home on dm-crypt.
+    Swap: a partition is fine on dm-crypt, a swap file only if its file system is; zram stays in memory."""
+    src = (run(["findmnt", "-no", "SOURCE", "/"], timeout=10).stdout or "").strip()
+    root = bool(src.startswith("/dev/")) and "crypt" in _ancestor_types(src)
+    home_src = (run(["findmnt", "-no", "SOURCE", "--target", "/home"], timeout=10).stdout or "").strip()
+    home = root or (home_src.startswith("/dev/") and "crypt" in _ancestor_types(home_src)) \
+        or (os.path.isdir("/home/.ecryptfs") and any(os.scandir("/home/.ecryptfs")))
+    swap_clear = []
+    for ln in _read("/proc/swaps").splitlines()[1:]:
+        parts = ln.split()
+        if len(parts) < 2 or parts[0].startswith("/dev/zram"):
+            continue
+        if parts[1] == "partition":
+            enc = "crypt" in _ancestor_types(parts[0])
+        else:
+            fs = (run(["findmnt", "-no", "SOURCE", "--target", parts[0]], timeout=10).stdout or "").strip()
+            enc = fs.startswith("/dev/") and "crypt" in _ancestor_types(fs)
+        if not enc:
+            swap_clear.append(parts[0])
+    return {"root": root, "home": bool(home), "swap_clear": swap_clear}
+
+
 def password_policy_apply():
     """Installs the module if needed (Debian/Ubuntu/Mint: libpam-pwquality adds it to common-password) then writes the
     settings. Never touches the PAM files themselves. Returns (ok, error)."""

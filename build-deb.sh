@@ -8,7 +8,7 @@
 set -e
 
 APP_NAME="dukiwi-shield"
-VERSION="2.7.12"
+VERSION="2.8.0"
 ARCH="all"
 PKG_DIR="${APP_NAME}_${VERSION}_${ARCH}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -146,9 +146,9 @@ Version: ${VERSION}
 Section: utils
 Priority: optional
 Architecture: ${ARCH}
-Conflicts: clamav-antivirus
-Replaces: clamav-antivirus
-Breaks: clamav-antivirus
+Conflicts: clamav-antivirus (<< 2.0~)
+Replaces: clamav-antivirus (<< 2.0~)
+Breaks: clamav-antivirus (<< 2.0~)
 Depends: python3 (>= 3.8), python3-gi, python3-pyudev, python3-apt, gir1.2-webkit2-4.1, gir1.2-ayatanaappindicator3-0.1 | gir1.2-appindicator3-0.1, gir1.2-gtk-3.0, pkexec | policykit-1, clamav, clamav-daemon, clamav-freshclam, lynis, unhide, chkrootkit, debsums, msmtp-mta | mail-transport-agent, zenity, systemd, udev, udisks2
 Recommends: libnotify-bin, mintupdate | update-manager, timeshift, rclone, rsync, gocryptfs, flatpak, firejail
 Maintainer: Dukiwi SA <info@dukiwi.ch>
@@ -322,6 +322,13 @@ echo ""
 
 # ── Clean build dir ──
 rm -rf "${PKG_DIR}"
+
+# ── Transitional package for computers still on the old name (clamav-antivirus ≤ 1.31.1) ──
+# Published in the APT repository next to dukiwi-shield: "apt upgrade" / Update Manager upgrade the old package to this
+# empty one, which pulls dukiwi-shield in; it can be removed afterwards.
+if [ -z "$STAGE_ONLY" ]; then
+    "${SCRIPT_DIR}/tools/build-transitional.sh" "${VERSION}"
+fi
 
 SIZE=$(du -h "${PKG_DIR}.deb" | cut -f1)
 echo "══════════════════════════════════════════"

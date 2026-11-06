@@ -173,6 +173,7 @@ function onBackendMessage(msg) {
         case 'backupStatus':    onBackupStatus(data); break;
         case 'hibpResult':      onHibpResult(data); break;
         case 'appsData':        renderApps(data); break;
+        case 'timeshiftNoSpace': timeshiftNoSpace = data; renderBackupWizard(); if (typeof renderBackupTab === 'function') renderBackupTab(); break;
         case 'vaultStatus':     renderVault(data); break;
         case 'backupSnapshots': onBackupSnapshots(data); break;
         case 'restoreProgress': onRestoreProgress(data); break;
@@ -507,6 +508,9 @@ function renderChecklist() {
     items.forEach(i => { if (counts[i.status] !== undefined) counts[i.status]++; });
     $('checklistCounts').textContent = t('security.checklist.counts', { ok: counts.ok, warn: counts.warn, fail: counts.fail });
     const order = { fail: 0, warn: 1, unknown: 2, ok: 3, na: 4 };
+    // A second-stage state replaces the generic hint (password rules set but password older; only the home folder
+    // encrypted with a swap in clear): the specific text is shown on its own
+    items.forEach(i => { if (['check.password_policy.change', 'check.disk_encryption.swap_clear'].includes(i.detail_key)) i.hint_key = i.detail_key; });
     items.forEach(i => { if (i.key === 'secrets' && i.params && (i.params.secrets || []).length) i.detail = i.params.secrets.map(s => `${s.user}: ${s.name} (${t('check.secrets.kind.' + s.kind)})`).join(', '); });
     items.forEach(i => { if (i.key === 'browser_security' && i.params && (i.params.browsers || []).length) i.detail = i.params.browsers.map(b => `${b.browser} (${b.user}) : ${b.issues.map(x => t('check.browser_security.issue.' + x)).join(', ')}`).join(' · '); });
     items.forEach(i => { if (i.key === 'containers' && i.params && (i.params.issues || []).length) i.detail = i.params.issues.filter(x => x.level !== 'info').map(x => `${t('check.containers.issue.' + x.key)} (${x.detail})`).join(', '); });
@@ -520,9 +524,9 @@ function renderChecklist() {
             <span class="check-icon">${i.status === 'ok' ? '✓' : i.status === 'fail' ? '✕' : i.status === 'warn' ? '!' : '?'}</span>
             <div class="check-text">
                 <span class="check-title">${t(`check.${i.key}.title`)}</span>
-                <span class="check-detail">${i.extras ? t('check.auto_updates.extras', { list: checkExtrasText(i.extras) }) : t(`check.${i.key}.${i.status === 'ok' ? 'ok' : 'hint'}`, i.params || {})}${i.detail_key ? ` — ${escapeHtml(t(i.detail_key, i.detail_params || {}))}` : i.detail ? ` — ${escapeHtml(i.detail)}` : ''}</span>
+                <span class="check-detail">${i.extras ? t('check.auto_updates.extras', { list: checkExtrasText(i.extras) }) : i.hint_key ? t(i.hint_key, i.detail_params || {}) : t(`check.${i.key}.${i.status === 'ok' ? 'ok' : 'hint'}`, i.params || {})}${i.hint_key ? '' : i.detail_key ? ` — ${escapeHtml(t(i.detail_key, i.detail_params || {}))}` : i.detail ? ` — ${escapeHtml(i.detail)}` : ''}</span>
             </div>
-            ${i.status !== 'ok' && i.status !== 'na' ? `<span class="check-actions">${CHECK_ACK[i.key] ? `<button class="btn btn-secondary btn-sm" onclick="CHECK_ACK['${escapeJs(i.key)}']()" title="${escapeHtml(t('security.ignore_hint'))}">${t('security.ignore')}</button>` : ''}<button class="btn ${i.status === 'fail' ? 'btn-danger' : 'btn-secondary'} btn-sm check-fix-btn" onclick="fixCheck('${escapeJs(i.key)}')">${CHECK_FIX_LABEL[i.key] ? t(CHECK_FIX_LABEL[i.key]) : CHECK_FIX[i.key] ? t('security.fix') : t('security.fix.how')}</button></span>` : ''}
+            ${i.status !== 'ok' && i.status !== 'na' ? `<span class="check-actions">${CHECK_ACK[i.key] ? `<button class="btn btn-secondary btn-sm" onclick="CHECK_ACK['${escapeJs(i.key)}']()" title="${escapeHtml(t('security.ignore_hint'))}">${t('security.ignore')}</button>` : ''}<button class="btn ${i.status === 'fail' ? 'btn-danger' : 'btn-secondary'} btn-sm check-fix-btn" onclick="fixCheck('${escapeJs(i.key)}')">${i.key === 'password_policy' && i.params && (i.params.stale || []).length ? t('check.password_policy.change_action') : CHECK_FIX_LABEL[i.key] ? t(CHECK_FIX_LABEL[i.key]) : CHECK_FIX[i.key] ? t('security.fix') : t('security.fix.how')}</button></span>` : ''}
             <span class="check-weight">${i.weight}</span>
             ${t(`check.${i.key}.fix`) !== `check.${i.key}.fix` ? `<div class="check-fix" id="fix-${escapeHtml(i.key)}" hidden>${escapeHtml(t(`check.${i.key}.fix`, i.params || {}))}</div>` : ''}
         </div>`).join('');
@@ -827,6 +831,15 @@ function renderAppUpdate() {
         $('btnInstallUpdate').hidden = true;
     }
     $('appUpdateRepo').textContent = t(((lastStatus || {}).distro || {}).family === 'rpm' ? 'security.update.repo_hint_rpm' : 'security.update.repo_hint');
+    // What's new in the offered version (from the signed manifest, English text of the changelog)
+    const changes = (u && u.available && u.changes) || [];
+    const box = $('appUpdateChanges');
+    if (box) {
+        box.hidden = !changes.length;
+        box.innerHTML = changes.length ? `<h4>${t('security.update.news')}</h4>` + changes.map(c => `<details class="app-update-change"${c === changes[0] ? ' open' : ''}>
+            <summary><span class="scope-badge scope-user">${escapeHtml(c.version)}</span> ${escapeHtml(c.title)}</summary>
+            <p class="text-muted">${escapeHtml(c.text)}</p></details>`).join('') : '';
+    }
 }
 
 function renderConnections() {
@@ -1390,7 +1403,7 @@ function onMailStatus(data) {
         $('mailUser').value = m.user || ''; $('mailPassword').value = ''; $('mailPassword').placeholder = m.password_set ? '••••••••' : '';
         $('mailFrom').value = m.from || ''; $('mailTo').value = (m.to || []).join(', ');
         $('mailFrequency').value = m.frequency || 'daily'; $('mailHour').value = m.hour ?? 8; $('mailDay').value = m.day ?? 0; $('mailLang').value = m.lang || lang;
-        const ev = m.events || {}; $('mailEvDanger').checked = ev.danger !== false; $('mailEvScan').checked = !!ev.scan; $('mailEvReport').checked = ev.report !== false;
+        const ev = m.events || {}; $('mailEvDanger').checked = ev.danger !== false; $('mailEvScan').checked = !!ev.scan; $('mailEvReport').checked = ev.report !== false; if ($('mailEvMonthly')) $('mailEvMonthly').checked = ev.monthly !== false;
     }
     const parts = [];
     if (m.transport && m.transport !== 'msmtp') parts.push(t('settings.mail.transport_other', { name: m.transport }));
@@ -1407,7 +1420,7 @@ function saveMail() {
     const mail = { enabled: $('mailEnabled').checked, host: $('mailHost').value.trim(), port: parseInt($('mailPort').value, 10) || 587,
         security: $('mailSecurity').value, user: $('mailUser').value.trim(), from: $('mailFrom').value.trim(), to: $('mailTo').value,
         frequency: $('mailFrequency').value, hour: parseInt($('mailHour').value, 10) || 0, day: parseInt($('mailDay').value, 10) || 0, lang: $('mailLang').value,
-        events: { danger: $('mailEvDanger').checked, scan: $('mailEvScan').checked, report: $('mailEvReport').checked } };
+        events: { danger: $('mailEvDanger').checked, scan: $('mailEvScan').checked, report: $('mailEvReport').checked, monthly: $('mailEvMonthly') ? $('mailEvMonthly').checked : true } };
     sendToBackend({ action: 'mail_configure', mail, password: $('mailPassword').value });
 }
 function testMail() { sendToBackend({ action: 'mail_test' }); }
@@ -3450,6 +3463,24 @@ function hideBackupWizard() {
 function driveIcon() { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="2"/><circle cx="12" cy="17" r="2"/><path d="M8 6h8"/></svg>'; }
 function cloudIcon() { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.5 19H7a4 4 0 0 1-.6-7.95A6 6 0 0 1 18 9a4.5 4.5 0 0 1-.5 10z"/></svg>'; }
 
+// Last "not enough room for snapshots" answer: other drives that can hold them, and the choice to go without
+let timeshiftNoSpace = null;
+
+function timeshiftNoSpaceHtml() {
+    const ns = timeshiftNoSpace;
+    if (!ns) return '';
+    const gb = (n) => Math.round((n || 0) / 1e9);
+    const usable = (ns.targets || []).filter(d => d.enough);
+    let html = `<div class="ts-nospace"><p>${escapeHtml(t('backup.timeshift.nospace_intro', { needed: gb(ns.needed), free: gb(ns.free) }))}</p>`;
+    html += usable.length ? usable.map(d => `<div class="backup-choice"><div class="backup-choice-icon">${driveIcon()}</div>
+        <div class="backup-choice-text"><span class="backup-choice-title">${escapeHtml(d.label || d.mountpoint)}</span><span class="backup-choice-sub">${escapeHtml(d.mountpoint)} · ${escapeHtml(d.fstype)} · ${t('backup.wizard.free', { free: fmtBytes(d.free), size: fmtBytes(d.size) })}</span></div>
+        <button class="btn btn-primary btn-sm" onclick="sendToBackend({action:'timeshift_enable', device_uuid:'${escapeJs(d.uuid)}'})">${t('backup.timeshift.use_here')}</button></div>`).join('')
+        : `<p class="text-muted">${escapeHtml(t('backup.timeshift.no_target'))}</p>`;
+    html += `<p class="text-muted">${escapeHtml(t('backup.timeshift.drive_hint'))}</p>
+        <button class="btn btn-secondary btn-sm" onclick="timeshiftNoSpace = null; ignoreCheck('timeshift_check', true)">${t('backup.timeshift.no_room')}</button></div>`;
+    return html;
+}
+
 function renderBackupWizard() {
     const box = $('backupWizardBody');
     if (!box || $('simpleBackup').hidden) return;
@@ -3494,6 +3525,7 @@ function renderBackupWizard() {
           : (d.timeshift && d.timeshift.configured && (d.timeshift.schedule || []).length) ? `${d.timeshift.managed ? '' : `<button class="btn btn-primary btn-sm" onclick="sendToBackend({action:'timeshift_enable'})" title="${escapeHtml(t('backup.timeshift.auto_hint', { sched: tsSchedLabel(d.timeshift) }))}">${t('backup.timeshift.auto')}</button>`}<button class="btn btn-secondary btn-sm" onclick="sendToBackend({action:'backup_open_timeshift'})">${t('backup.open_timeshift')}</button>`
           : `<button class="btn btn-primary btn-sm" onclick="sendToBackend({action:'timeshift_enable'})">${t('backup.timeshift.enable_simple')}</button>`}${timeshiftIgnoreBtn(d)}</div>
         <p class="text-muted">${(d.timeshift && d.timeshift.configured && (d.timeshift.schedule || []).length && !d.timeshift.managed) ? t('backup.timeshift.auto_hint', { sched: tsSchedLabel(d.timeshift) }) : t('backup.timeshift.enable_hint')}</p>`;
+    html += timeshiftNoSpaceHtml();
     box.innerHTML = html;
 }
 
@@ -3622,7 +3654,12 @@ const CHECK_FIX = {
     ssh: () => openSection('firewall', 'ssh'),
     disk_encryption: () => openSection('security', 'encryption'),
     filtered_dns: () => openSection('firewall', 'dns'),
-    password_policy: () => confirmCenterAction('password_policy', { action: 'password_policy_apply' }),
+    // Step 1: set the rules; step 2 (rules set, password older than them): open the system's account settings
+    password_policy: () => {
+        const it = ((secData.checklist || {}).items || []).find(i => i.key === 'password_policy');
+        if (it && it.params && (it.params.stale || []).length) sendToBackend({ action: 'open_account_settings' });
+        else confirmCenterAction('password_policy', { action: 'password_policy_apply' });
+    },
     browser_security: () => confirmCenterAction('browser_security', { action: 'browser_harden' }),
     internet_exposure: () => openSection('firewall', 'exposure'),
     restore_test: () => switchTab('backup'),

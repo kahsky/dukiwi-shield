@@ -248,6 +248,16 @@ def version_gt(a, b):
     return version_compare(a, b) > 0
 
 
+def manifest_changes(manifest, current, limit=10):
+    """What changed since `current`, from the signed update manifest: [{version, title, text}], newest first."""
+    out = []
+    for c in manifest.get("changes") or []:
+        if not isinstance(c, dict) or not c.get("version") or not version_gt(str(c["version"]), current):
+            continue
+        out.append({"version": str(c["version"])[:40], "title": str(c.get("title") or "")[:200], "text": str(c.get("text") or "")[:1200]})
+    return out[:limit]
+
+
 def uid_groups(uid):
     try:
         pw = pwd.getpwuid(uid)
@@ -1470,6 +1480,33 @@ def timeshift_best_practice_config(existing=None):
     return cfg, btrfs
 
 
+TIMESHIFT_TARGET_FS = ("ext4", "ext3", "xfs", "btrfs")       # Linux file systems with hard links (rsync snapshots)
+
+
+def timeshift_targets(needed):
+    """Mounted drives other than the system disk that can hold the snapshots (Linux file system), with their free
+    space: [{uuid, label, mountpoint, fstype, free, size, enough}]. Offered when the main disk has no room."""
+    r = run_quiet(["lsblk", "-J", "-b", "-o", "NAME,UUID,FSTYPE,MOUNTPOINT,FSAVAIL,SIZE,LABEL,MODEL,PKNAME"], timeout=15)
+    try:
+        tree = json.loads(r.stdout or "{}").get("blockdevices") or []
+    except ValueError:
+        return []
+    root = run_quiet(["findmnt", "-no", "UUID", "/"], timeout=10).stdout.strip()
+    out, stack = [], [(n, "") for n in tree]
+    while stack:
+        n, model = stack.pop()
+        model = n.get("model") or model
+        stack += [(c, model) for c in n.get("children") or []]
+        mp, fs, uuid = n.get("mountpoint") or "", (n.get("fstype") or "").lower(), n.get("uuid") or ""
+        if not uuid or uuid == root or fs not in TIMESHIFT_TARGET_FS or not mp or mp in ("/", "/boot", "/boot/efi", "/home") \
+                or mp.startswith(("/snap/", "/var/", "/usr/")):
+            continue
+        free = int(n.get("fsavail") or 0)
+        out.append({"uuid": uuid, "label": n.get("label") or (model or "").strip() or os.path.basename(mp), "mountpoint": mp,
+                    "fstype": fs, "free": free, "size": int(n.get("size") or 0), "enough": bool(needed) and free >= needed})
+    return sorted(out, key=lambda d: (not d["enough"], -d["free"]))
+
+
 def timeshift_write_config(cfg):
     os.makedirs(os.path.dirname(TIMESHIFT_CONF), exist_ok=True)
     tmp = TIMESHIFT_CONF + ".tmp"
@@ -2554,6 +2591,7 @@ class UpdateChecker:
             if not version_gt(info["version"], VERSION):
                 return info
             info["available"] = True
+            info["changes"] = manifest_changes(manifest, VERSION)
             pkg_name = (manifest.get("rpm") or {}).get("file") if distro.is_rpm() else manifest.get("deb")
             deb_path = os.path.join(UPDATES_DIR, os.path.basename(pkg_name or (f"dukiwi-shield-{info['version']}-1.noarch.rpm" if distro.is_rpm() else f"dukiwi-shield_{info['version']}_all.deb")))
             if not (os.path.exists(deb_path) and sha256_file(deb_path) == info["sha256"]):
@@ -3362,12 +3400,17 @@ def collect_checklist(daemon):
         add("ssh", "ok" if (ufw.get("active") and ssh.get("allowed_by_firewall")) else "warn", 6, f"port {ssh.get('port')}")
     else:
         add("ssh", "ok", 6, "off")
-    # Disk encryption
-    r = run_quiet(["lsblk", "-rno", "TYPE,FSTYPE"], timeout=10)
-    encrypted = any("crypt" in line or "LUKS" in line for line in (r.stdout or "").splitlines())
-    if not encrypted:
-        encrypted = os.path.isdir("/home/.ecryptfs") and any(os.scandir("/home/.ecryptfs")) if os.path.isdir("/home/.ecryptfs") else False
-    add("disk_encryption", "ok" if encrypted else "warn", 8)
+    # Disk encryption: system disk (LUKS), or at least the home folders; with only the home folders encrypted, a swap area
+    # written to disk in clear can still hold pieces of the session (opened documents, passwords in memory)
+    enc = hygiene.encryption_status()
+    if enc["root"]:
+        add("disk_encryption", "ok", 8, params={"scope": "disk"})
+    elif enc["home"] and enc["swap_clear"]:
+        add("disk_encryption", "warn", 8, ", ".join(enc["swap_clear"]), params={"scope": "home", "swap": enc["swap_clear"]})
+        items[-1]["detail_key"] = "check.disk_encryption.swap_clear"
+        items[-1]["detail_params"] = {"swap": ", ".join(enc["swap_clear"])}
+    else:
+        add("disk_encryption", "ok" if enc["home"] else "warn", 8, params={"scope": "home" if enc["home"] else ""})
     # Secure Boot
     sb = "unknown"
     if shutil.which("mokutil"):
@@ -3543,8 +3586,14 @@ def collect_checklist(daemon):
         daemon.state.update(known_users=names)
     # Quality of new passwords (pam_pwquality)
     pol = daemon.cached("password_policy", 600, hygiene.password_policy)
-    add("password_policy", "ok" if pol["ok"] else "warn", 2, f"pam_{pol['module']} · minlen {pol['minlen']}" if pol["module"] else "pam_pwquality —",
-        params={"minlen": hygiene.PWQ_MINLEN})
+    # Step 2 once the rules are set: passwords chosen before them were never checked → change them
+    stale = hygiene.passwords_older_than_policy() if pol["ok"] else []
+    add("password_policy", "ok" if pol["ok"] and not stale else "warn", 2,
+        f"pam_{pol['module']} · minlen {pol['minlen']}" if pol["module"] else "pam_pwquality —",
+        params={"minlen": hygiene.PWQ_MINLEN, "stale": stale})
+    if stale:
+        items[-1]["detail_key"] = "check.password_policy.change"
+        items[-1]["detail_params"] = {"users": ", ".join(stale)}
     # Browser security settings
     browsers = daemon.cached("browser_security", 600, lambda: hygiene.browser_security(users))
     issues = [b for b in browsers if b["issues"]]
@@ -5214,7 +5263,7 @@ MAIL_LOG_FILE = os.path.join(SYSTEM_LOG_DIR, "msmtp.log")
 MAIL_MAX_PER_DAY = 30
 MAIL_QUEUE_MAX = 200
 MAIL_DEFAULT = {"enabled": False, "host": "", "port": 587, "security": "starttls", "user": "", "from": "", "to": [],
-                "frequency": "daily", "hour": 8, "day": 0, "events": {"danger": True, "scan": False, "report": True},
+                "frequency": "daily", "hour": 8, "day": 0, "events": {"danger": True, "scan": False, "report": True, "monthly": True},
                 "lang": "fr", "password_set": False, "last_sent": None, "last_error": "", "last_digest": "", "sent_day": "", "sent_today": 0}
 MAIL_ADDR_RE = re.compile(r"^[A-Za-z0-9._%+'-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
 MAIL_HOST_RE = re.compile(r"^[A-Za-z0-9.-]{1,253}$")
@@ -5334,7 +5383,7 @@ def mail_sanitize(incoming, current):
         return None, "invalid_time"
     ev = inc.get("events", cfg["events"])
     if isinstance(ev, dict):
-        cfg["events"] = {k: bool(ev.get(k, cfg["events"].get(k))) for k in ("danger", "scan", "report")}
+        cfg["events"] = {k: bool(ev.get(k, (cfg["events"] or {}).get(k, MAIL_DEFAULT["events"][k]))) for k in ("danger", "scan", "report", "monthly")}
     lang = str(inc.get("lang", cfg["lang"]) or "fr")
     cfg["lang"] = lang if lang in LANGUAGES else "fr"
     if cfg["enabled"] and (not cfg["to"] or (mail_transport() == "msmtp" and not cfg["host"])):
@@ -6394,32 +6443,42 @@ class Daemon:
         log(f"Taille du système : {size // 10**9} Go")
         return size
 
-    def _timeshift_enable_now(self, existing, size):
-        """Safeguard then activation: refused if free space is less than 1.2 × the system + 10 GB."""
+    def _timeshift_enable_now(self, existing, size, device_uuid=""):
+        """Safeguard then activation: refused if free space is less than 1.2 × the system + 10 GB. `device_uuid`: snapshots
+        on another drive (rsync mode), offered when the main disk has no room; Timeshift takes them while it is plugged."""
         cfg, btrfs = timeshift_best_practice_config(existing)
-        free, path = timeshift_free_bytes(None)
+        if device_uuid:
+            target = next((d for d in timeshift_targets(0) if d["uuid"] == device_uuid), None)
+            if not target:
+                return {"ok": False, "error": "timeshift_target_missing"}
+            cfg.update(backup_device_uuid=device_uuid, btrfs_mode="false", exclude=["/root/**", "/home/*/**"])
+            btrfs = False
+        free, path = timeshift_free_bytes(cfg if device_uuid else None)
         needed = timeshift_space_needed(size, btrfs)
         if free is not None and free < needed:
             self.write_log(f"timeshift refused: {free // 10**9} GB free on {path}, {needed // 10**9} GB needed "
                            f"(system {size // 10**9} GB)")
-            return {"ok": False, "error": "timeshift_no_space", "free": free, "needed": needed, "size": size, "path": path}
+            return {"ok": False, "error": "timeshift_no_space", "free": free, "needed": needed, "size": size, "path": path,
+                    "targets": [d for d in timeshift_targets(needed) if d["uuid"] != device_uuid][:4]}
         timeshift_write_config(cfg)
         with open(TIMESHIFT_CRON, "w") as f:
             f.write(TIMESHIFT_GUARD_CRON)
         os.chmod(TIMESHIFT_CRON, 0o644)
         self.state.update(timeshift_suspended=None)
         self.write_log(f"timeshift enabled ({'btrfs' if btrfs else 'rsync'}, daily 5 / weekly 3 / monthly 2, "
-                       f"{'?' if free is None else free // 10**9} GB free for a {size // 10**9} GB system)")
+                       f"{'?' if free is None else free // 10**9} GB free for a {size // 10**9} GB system"
+                       + (f", on {path}" if device_uuid else "") + ")")
         self._timeshift_state_quick()                     # immediate answer; full status check after the first snapshot
         threading.Thread(target=self._timeshift_first_snapshot, daemon=True).start()
         self.refresh_overall()
-        return {"ok": True, "mode": "btrfs" if btrfs else "rsync", "started": True, "free": free, "size": size}
+        return {"ok": True, "mode": "btrfs" if btrfs else "rsync", "started": True, "free": free, "size": size,
+                "device": path if device_uuid else ""}
 
-    def _timeshift_enable_worker(self, existing):
+    def _timeshift_enable_worker(self, existing, device_uuid=""):
         """Deferred activation: system measurement (one to two minutes), safeguard, activation; result broadcast."""
         try:
             size = self.refresh_system_size(force=True)
-            result = self._timeshift_enable_now(existing, size) if size is not None \
+            result = self._timeshift_enable_now(existing, size, device_uuid) if size is not None \
                 else {"ok": False, "error": "command_failed", "detail": "du"}
         except Exception as e:  # noqa: BLE001
             log(f"Timeshift : {e}")
@@ -7028,6 +7087,46 @@ class Daemon:
             lang = cfg.get("lang") or "fr"
             self.mail_deliver(t(lang, "mail.weekly.subject", score=summary["score"] if summary["score"] is not None else "—"),
                               self.weekly_summary_text(summary, lang), kind="weekly")
+
+    def check_monthly_report(self):
+        """On the 1st of the month from 8 a.m. (or at the first start after that): report of the past month sent by
+        e-mail, only when e-mail notifications work (a message already delivered, no error since) and the user has not
+        turned the monthly report off."""
+        now = datetime.now()
+        month = now.strftime("%Y-%m")
+        if self.state.get("monthly_report_month") == month or now.hour < 8:
+            return
+        cfg = self.mail_cfg()
+        if not cfg.get("enabled") or not cfg.get("last_sent") or cfg.get("last_error") \
+                or (cfg.get("events") or {}).get("monthly", True) is False or not cfg.get("to"):
+            return
+        lang = cfg.get("lang") or "fr"
+        summary = self.weekly_summary(days=30)
+        ok, err = self.mail_deliver(t(lang, "mail.monthly.subject", month=datetime.fromtimestamp(now.replace(day=1).timestamp() - 86400).strftime("%m/%Y"),
+                                      score=summary["score"] if summary["score"] is not None else "—"),
+                                    self.monthly_report_text(summary, lang), kind="monthly")
+        if ok:
+            self.state.update(monthly_report_month=month)
+
+    def monthly_report_text(self, s_, lang):
+        """Weekly summary lines over 30 days, plus backups, system snapshots, pending updates and versions."""
+        lines = self.weekly_summary_text(s_, lang).split("\n")
+        lines[0] = t(lang, "mail.monthly.title")
+        states = [b.get("state") for b in user_backup_states(self.state.get("backup_states")).values()]
+        worst = next((st for st in ("none", "missing", "old", "ok") if st in states), "")
+        ts = self.state.get("timeshift") or {}
+        snaps = "ignored" if self.settings.get("timeshift_check") is False and not ts.get("schedule") else ("on" if ts.get("schedule") else "off")
+        sysst = self.state.get("system_status") or {}
+        db = db_last_update()
+        extra = ["", t(lang, "mail.monthly.availability"),
+                 f"- {t(lang, 'mail.monthly.files')} : {t(lang, f'mail.monthly.backup.{worst}') if worst else '—'}",
+                 f"- {t(lang, 'mail.monthly.snapshots')} : {t(lang, f'mail.monthly.snap.{snaps}')}",
+                 "", t(lang, "mail.monthly.maintenance"),
+                 f"- {t(lang, 'mail.summary.updates')} : {sysst.get('security', 0)} / {sysst.get('upgradable', 0)}",
+                 f"- {t(lang, 'mail.summary.signatures')} : {db.strftime('%Y-%m-%d') if db else '—'}",
+                 f"- Dukiwi Shield : {VERSION}"]
+        todo_at = lines.index("") if "" in lines else len(lines)
+        return "\n".join(lines[:todo_at] + extra + lines[todo_at:])
 
     def weekly_summary_text(self, s_, lang):
         b = s_["blocked"]
@@ -8170,6 +8269,7 @@ class Daemon:
                     threading.Thread(target=self.daily_tasks, daemon=True).start()
                 self.check_weekly_integrity()
                 self.check_weekly_summary()
+                self.check_monthly_report()
                 if time.time() - self.last_urlguard_check > 900 and self.settings.get("url_guard") is not False \
                         and self.urlguard.feeds_stale() and not self.urlguard.refreshing:
                     self.last_urlguard_check = time.time()
@@ -8499,12 +8599,13 @@ class Daemon:
                 # Safeguard: never without measuring the space first (the first rsync copy is the whole system)
                 if self.timeshift_enabling:
                     return {"ok": False, "error": "busy_timeshift"}
+                device_uuid = re.sub(r"[^0-9A-Za-z-]", "", str(req.get("device_uuid") or ""))[:64]
                 size = self.cached_system_size()
                 if size is None:
                     self.timeshift_enabling = True
-                    threading.Thread(target=self._timeshift_enable_worker, args=(existing,), daemon=True).start()
+                    threading.Thread(target=self._timeshift_enable_worker, args=(existing, device_uuid), daemon=True).start()
                     return {"ok": True, "pending": True}
-                return self._timeshift_enable_now(existing, size)
+                return self._timeshift_enable_now(existing, size, device_uuid)
             for k in ("schedule_monthly", "schedule_weekly", "schedule_daily", "schedule_hourly", "schedule_boot"):
                 existing[k] = "false"
             timeshift_write_config(existing)

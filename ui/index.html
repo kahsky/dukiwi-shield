@@ -233,7 +233,7 @@
                     <option value="de">Deutsch</option>
                     <option value="it">Italiano</option>
                 </select></label>
-                <small class="version">v2.7.12 — <a href="#" class="credits-link" onclick="openCredits(); return false;" data-i18n="sidebar.credits">Crédits</a> · <a href="#" class="credits-link" onclick="openLegal(); return false;" data-i18n="legal.link">Avertissement</a></small>
+                <small class="version">v2.8.0 — <a href="#" class="credits-link" onclick="openCredits(); return false;" data-i18n="sidebar.credits">Crédits</a> · <a href="#" class="credits-link" onclick="openLegal(); return false;" data-i18n="legal.link">Avertissement</a></small>
             </div>
         </div>
     </aside>
@@ -936,6 +936,7 @@
                         <span class="badge" id="appUpdateBadge">…</span>
                     </div>
                     <p class="text-muted" id="appUpdateSummary"></p>
+                        <div class="app-update-changes" id="appUpdateChanges" hidden></div>
                     <p class="text-muted alerts-intro" data-i18n="security.update.intro">Les mises à jour proviennent du dépôt Dukiwi. Un manifeste signé (clé Ed25519 conservée hors ligne) indique la version, l'empreinte SHA-256 du paquet et celle de chaque fichier : une mise à jour non signée ou modifiée est refusée, même si le serveur était compromis.</p>
                     <div class="fw-actions">
                         <button class="btn btn-secondary btn-sm" onclick="loadSecurityData('app_update', true)" data-i18n="security.update.check">Vérifier</button>
@@ -1398,6 +1399,7 @@
                     <label class="setting-row toggle"><span data-i18n="settings.mail.ev_danger">Alertes graves (menace trouvée, rootkit, processus suspect, programme suspendu)</span><input type="checkbox" id="mailEvDanger" checked></label>
                     <label class="setting-row toggle"><span data-i18n="settings.mail.ev_scan">Résultat de chaque analyse complète (et des clés USB infectées)</span><input type="checkbox" id="mailEvScan"></label>
                     <label class="setting-row toggle"><span data-i18n="settings.mail.ev_report">Bilan de l'état du système dans chaque courrier quotidien ou hebdomadaire</span><input type="checkbox" id="mailEvReport" checked></label>
+                    <label class="setting-row toggle"><span data-i18n="settings.mail.ev_monthly">Rapport mensuel le 1er du mois (score, alertes, sauvegardes, mises à jour), seulement si l'envoi fonctionne</span><input type="checkbox" id="mailEvMonthly" checked></label>
                     <p class="text-muted setting-note" id="mailStatusLine"></p>
                     <div class="log-actions-right">
                         <button class="btn btn-secondary btn-sm" onclick="testMail()" data-i18n="settings.mail.test">Envoyer un courrier de test</button>
