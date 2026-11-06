@@ -48,15 +48,15 @@ versions itself (popup or Security tab) and can install them on its own when the
 
 ### Direct download
 
-- Mint / Ubuntu: [dukiwi-shield_2.7.4_all.deb](https://www.dukiwi.com/repo/dukiwi-shield/dukiwi-shield_2.7.4_all.deb)
-- Fedora: [dukiwi-shield-2.7.4-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/dukiwi-shield-2.7.4-1.noarch.rpm)
+- Mint / Ubuntu: [dukiwi-shield_2.7.5_all.deb](https://www.dukiwi.com/repo/dukiwi-shield/dukiwi-shield_2.7.5_all.deb)
+- Fedora: [dukiwi-shield-2.7.5-1.noarch.rpm](https://www.dukiwi.com/repo/rpm/fedora/noarch/dukiwi-shield-2.7.5-1.noarch.rpm)
 - All versions: [www.dukiwi.com/repo](https://www.dukiwi.com/repo)
 
 ### Installing a downloaded package by hand
 
 ```bash
-sudo apt install ./dukiwi-shield_2.7.4_all.deb          # Mint / Ubuntu
-sudo dnf install ./dukiwi-shield-2.7.4-1.noarch.rpm      # Fedora
+sudo apt install ./dukiwi-shield_2.7.5_all.deb          # Mint / Ubuntu
+sudo dnf install ./dukiwi-shield-2.7.5-1.noarch.rpm      # Fedora
 ```
 
 The installation enables the system service and the scheduler, then starts the initial scan:
@@ -78,6 +78,14 @@ sudo dnf remove dukiwi-shield   # Fedora
 
 ## Features
 
+- **2.7.5: no more false ransomware alerts caused by the decoys themselves** — the hidden decoy documents (.docx,
+  .xlsx) embedded the time they were written, so a decoy rewritten with the same content (restored backup,
+  synchronisation, a second copy of the service started for a test) looked "replaced" and raised a ransomware
+  warning. Their content is now fully reproducible. A service started outside the system service (test mode) no
+  longer places, checks or removes decoys in the real home folders. On an encrypted home (eCryptfs) the decoy
+  fingerprints are kept while the home is unmounted: the decoys are no longer rewritten at every login, a decoy
+  changed while the service was stopped is reported, and switching the protection off removes the decoys as soon as
+  the home is mounted again.
 - **2.7.4: a full scan can no longer hang in the integrity check** — Lynis, unhide, chkrootkit and debsums ran
   without any time limit: a tool that stopped answering kept the full scan in "Integrity check in progress" for
   hours, and "Stop" was ignored until the tool printed something. Each tool now has a silence limit (15 minutes
@@ -757,8 +765,8 @@ python3 dukiwi-shield.py
 ## Building the packages
 
 ```bash
-./build-deb.sh        # dukiwi-shield_2.7.4_all.deb   (Mint / Ubuntu)
-./build-rpm.sh        # dukiwi-shield-2.7.4-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
+./build-deb.sh        # dukiwi-shield_2.7.5_all.deb   (Mint / Ubuntu)
+./build-rpm.sh        # dukiwi-shield-2.7.5-1.noarch.rpm (Fedora; requires rpmbuild: sudo apt install rpm)
 ```
 
 Both packages share the same file tree (`build-deb.sh --stage-only`) and the same signed integrity manifest.

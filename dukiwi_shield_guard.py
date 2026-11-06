@@ -166,15 +166,31 @@ def xdg_dir(pw, key, default):
     return os.path.join(pw.pw_dir, default)
 
 
+def system_instance():
+    """Vrai service système : root, sans socket ni dossier d'état redirigés. Un service lancé à côté pour un essai (mode
+    test, `unshare -r`) voit les mêmes dossiers personnels que le service installé : s'il y posait aussi ses leurres,
+    chacun trouverait ceux de l'autre « remplacés » et les réécrirait en boucle (fausses alertes rançongiciel)."""
+    return os.geteuid() == 0 and not any(os.environ.get(k) for k in ("DUKIWI_SHIELD_SOCKET", "DUKIWI_SHIELD_STATE_DIR"))
+
+
 def decoy_bytes(ext, seed):
-    """Contenu vraisemblable (vrai document zip pour docx/xlsx, en-têtes JPEG/PDF) : un rançongiciel qui trie par type le prend."""
-    filler = hashlib.sha256(seed.encode()).hexdigest() * 64
+    """Contenu vraisemblable (vrai document zip pour docx/xlsx, en-têtes JPEG/PDF) : un rançongiciel qui trie par type le prend.
+    Les octets ne dépendent que de `seed`, jamais de l'heure d'écriture (date des entrées zip tirée de `seed`) : un leurre
+    réécrit à l'identique (synchronisation, sauvegarde restaurée) garde son empreinte et ne déclenche rien."""
+    digest = hashlib.sha256(seed.encode()).hexdigest()
+    filler = digest * 64
     if ext in ("docx", "xlsx"):
         import io
+        n = int(digest[:8], 16)
+        stamp = (2019 + n % 5, 1 + (n >> 4) % 12, 1 + (n >> 8) % 28, (n >> 13) % 24, (n >> 18) % 60, 2 * ((n >> 24) % 30))
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-            z.writestr("[Content_Types].xml", '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>')
-            z.writestr("word/document.xml" if ext == "docx" else "xl/workbook.xml", f"<doc>{filler}</doc>")
+            for name, text in (("[Content_Types].xml", '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>'),
+                               ("word/document.xml" if ext == "docx" else "xl/workbook.xml", f"<doc>{filler}</doc>")):
+                info = zipfile.ZipInfo(name, date_time=stamp)
+                info.compress_type = zipfile.ZIP_DEFLATED
+                info.external_attr = 0o600 << 16
+                z.writestr(info, text)
         return buf.getvalue()
     if ext == "jpg":
         return b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00" + filler.encode() + b"\xff\xd9"
@@ -192,6 +208,7 @@ class SecurityGuard(threading.Thread):
         self.human_users = helpers["human_users"]
         self.lock = threading.Lock()
         self.tag = machine_tag()
+        self.owns_decoys = system_instance()   # faux en mode test : aucun leurre posé, vérifié ni retiré (un essai le force à vrai sur un dossier factice)
         self.decoys = {}                 # chemin → {sha, ino, size, mtime, uid}
         self.decoys_pending = []         # comptes dont le dossier personnel n'est pas encore monté (eCryptfs)
         self.last_decoy_sync = 0.0
@@ -290,6 +307,8 @@ class SecurityGuard(threading.Thread):
     def sync_decoys(self):
         """Crée les leurres manquants (ou les retire si la protection est désactivée). Au démarrage, un leurre modifié
         pendant l'arrêt du service est signalé puis réécrit."""
+        if not self.owns_decoys:
+            return
         stored = self.d.state.get("decoys") or {}
         self.last_decoy_sync = time.time()
         if not self.setting("ransomware_decoys"):
@@ -316,6 +335,8 @@ class SecurityGuard(threading.Thread):
             self.save_decoys()
 
     def remove_decoys(self):
+        if not self.owns_decoys:
+            return
         with self.lock:
             stored = dict(self.d.state.get("decoys") or {})
             stored.update(self.decoys)
@@ -326,11 +347,20 @@ class SecurityGuard(threading.Thread):
                     except OSError:
                         pass
             self.decoys = {}
+            # Dossier chiffré non monté : son leurre n'a pas pu être retiré, son empreinte reste pour le prochain passage
+            self.decoys_pending = [pw.pw_name for pw in self.human_users() if pw.pw_uid >= 1000 and not home_mounted(pw)]
             self.save_decoys()
 
     def save_decoys(self):
         data = {p: {k: v for k, v in i.items() if k in ("sha", "uid", "ext", "user")} for p, i in self.decoys.items()}
-        if data != (self.d.state.get("decoys") or {}):
+        stored = self.d.state.get("decoys") or {}
+        # Dossier personnel chiffré pas encore monté (démarrage, session fermée) : ses empreintes restent enregistrées.
+        # Sans elles, ses leurres seraient réécrits sans comparaison à l'ouverture de session et un leurre modifié
+        # pendant l'arrêt du service ne serait jamais signalé.
+        for path, info in stored.items():
+            if path not in data and info.get("user") in self.decoys_pending:
+                data[path] = info
+        if data != stored:
             self.d.state.update(decoys=data)
 
     @staticmethod
@@ -346,7 +376,7 @@ class SecurityGuard(threading.Thread):
 
     def consider(self, pid, path):
         """Appelé par le moniteur d'activité (fanotify) pour chaque fichier écrit puis fermé."""
-        if path in self.decoys and self.setting("ransomware_decoys"):
+        if self.owns_decoys and path in self.decoys and self.setting("ransomware_decoys"):
             threading.Thread(target=self.decoy_written, args=(pid, path), daemon=True).start()
 
     def decoy_written(self, pid, path):
@@ -379,7 +409,7 @@ class SecurityGuard(threading.Thread):
         try:
             pw = pwd.getpwuid(meta.get("uid"))
             self.write_decoy(path, pw, meta.get("ext") or path.rsplit(".", 1)[-1])
-            self.save_decoys()                            # nouvelle empreinte (un .docx/.xlsx change à chaque écriture)
+            self.save_decoys()                            # empreinte enregistrée (inchangée, sauf leurre écrit par une version précédente)
         except (KeyError, OSError, TypeError) as e:
             self.log(f"Leurre {path} : recréation impossible ({e})")
 
@@ -397,6 +427,8 @@ class SecurityGuard(threading.Thread):
         return best
 
     def check_decoys(self):
+        if not self.owns_decoys:
+            return
         if not self.setting("ransomware_decoys"):
             if self.decoys:
                 self.remove_decoys()
