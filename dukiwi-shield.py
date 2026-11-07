@@ -55,13 +55,23 @@ from dukiwi_shield_common import (  # noqa: E402
     DEFAULT_SETTINGS, daemon_connect, daemon_request, find_command, is_noise_line,
     classify_line, db_last_update, db_files_info, systemd_next_elapse,
     systemd_is_active, load_i18n, pick_language, t as translate,
-    quarantine_index_add, quarantine_enrich, parse_moved_line,
+    quarantine_index_add, quarantine_enrich, parse_moved_line, ntfs_mount_problem,
 )
 
 # User-specific settings (the rest is handled by the daemon)
 import dukiwi_shield_backup as backup   # backup of the user's files (user rights)
 import dukiwi_shield_extras as extras   # leaks, applications outside the repositories, encrypted vault, weekly summary
 import dukiwi_shield_distro as distro   # Debian/Mint (apt, ufw) ou Fedora (dnf, firewalld)
+
+def idle_once(fn, *args):
+    """Runs fn(*args) once in the GTK main loop. GLib calls an idle callback again for as long as it returns a true
+    value: idle_add(self.popup, ...) got the Popup back and opened a new notification on every turn of the loop,
+    thousands of them until the desktop gave up (2.9.2, failed mount of a USB drive)."""
+    def run():
+        fn(*args)
+        return False
+    return GLib.idle_add(run)
+
 
 USER_DEFAULTS = {
     "view_mode": "simple",
@@ -203,23 +213,23 @@ class DaemonClient:
             except (OSError, ValueError):
                 if self.available:
                     self.available = False
-                    GLib.idle_add(self.on_event, {"event": "disconnected"})
+                    idle_once(self.on_event, {"event": "disconnected"})
                 time.sleep(5)
                 continue
             self.available = True
-            GLib.idle_add(self.on_event, {"event": "connected", "status": initial})
+            idle_once(self.on_event, {"event": "connected", "status": initial})
             try:
                 while True:
                     ev = conn.recv()
                     if ev is None:
                         break
-                    GLib.idle_add(self.on_event, ev)
+                    idle_once(self.on_event, ev)
             except (OSError, ValueError):
                 pass
             finally:
                 conn.close()
             self.available = False
-            GLib.idle_add(self.on_event, {"event": "disconnected"})
+            idle_once(self.on_event, {"event": "disconnected"})
             time.sleep(3)
 
 
@@ -277,7 +287,7 @@ class LocalScan:
         }
 
     def emit(self, event, data):
-        GLib.idle_add(self.callback, event, data)
+        idle_once(self.callback, event, data)
 
     def done(self, status, key, params=None):
         self.emit("done", {"status": status, "msg_key": key, "msg_params": params or {},
@@ -510,16 +520,16 @@ class ClamAVBackend:
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
                 )
                 for line in proc.stdout:
-                    GLib.idle_add(callback, "progress", line.strip(), None)
+                    idle_once(callback, "progress", line.strip(), None)
                 proc.wait()
                 if proc.returncode == 0:
-                    GLib.idle_add(callback, "success", "msg.install.success", {})
+                    idle_once(callback, "success", "msg.install.success", {})
                 elif proc.returncode in (126, 127):
-                    GLib.idle_add(callback, "error", "msg.auth_cancelled", {})
+                    idle_once(callback, "error", "msg.auth_cancelled", {})
                 else:
-                    GLib.idle_add(callback, "error", "msg.install.failed", {"code": proc.returncode})
+                    idle_once(callback, "error", "msg.install.failed", {"code": proc.returncode})
             except Exception as e:  # noqa: BLE001
-                GLib.idle_add(callback, "error", "msg.scan.internal", {"error": str(e)})
+                idle_once(callback, "error", "msg.scan.internal", {"error": str(e)})
         threading.Thread(target=run, daemon=True).start()
 
     @staticmethod
@@ -542,21 +552,21 @@ class ClamAVBackend:
                 output = []
                 for line in proc.stdout:
                     output.append(line.strip())
-                    GLib.idle_add(callback, "progress", line.strip(), None)
+                    idle_once(callback, "progress", line.strip(), None)
                 proc.wait()
                 if proc.returncode == 0:
                     save_state({"last_update": now_iso()})
                     changed = any("updated (" in line for line in output)
                     db = db_last_update()
-                    GLib.idle_add(callback, "success",
-                                  "msg.update.updated" if changed else "msg.update.uptodate",
-                                  {"date": db.strftime("%d.%m.%Y %H:%M") if db else ""})
+                    idle_once(callback, "success",
+                              "msg.update.updated" if changed else "msg.update.uptodate",
+                              {"date": db.strftime("%d.%m.%Y %H:%M") if db else ""})
                 elif proc.returncode in (126, 127):
-                    GLib.idle_add(callback, "error", "msg.auth_cancelled", {})
+                    idle_once(callback, "error", "msg.auth_cancelled", {})
                 else:
-                    GLib.idle_add(callback, "error", "msg.update.failed", {"code": proc.returncode})
+                    idle_once(callback, "error", "msg.update.failed", {"code": proc.returncode})
             except Exception as e:  # noqa: BLE001
-                GLib.idle_add(callback, "error", "msg.scan.internal", {"error": str(e)})
+                idle_once(callback, "error", "msg.scan.internal", {"error": str(e)})
         threading.Thread(target=run, daemon=True).start()
 
     @staticmethod
@@ -1208,6 +1218,8 @@ class ClamAVAntivirusApp:
         self.window.add(self.webview)
 
         self.popups = PopupManager()
+        self.usb_mount_lock = threading.Lock()
+        self.usb_mounting = set()      # devnodes being mounted for the user (one attempt at a time)
         self.tray = TrayIcon(self)
         self.daemon = DaemonClient(self.on_daemon_event)
 
@@ -1304,7 +1316,7 @@ class ClamAVAntivirusApp:
         def worker():
             resp = daemon_request(cmd, timeout=600, **params)
             if resp.get("error") == "admin_required":
-                GLib.idle_add(self.send_to_js, "operationResult", {"status": "info", "message": self.T("msg.admin_auth")})
+                idle_once(self.send_to_js, "operationResult", {"status": "info", "message": self.T("msg.admin_auth")})
                 try:
                     r = subprocess.run(["pkexec", UNLOCK_HELPER], capture_output=True, text=True, timeout=300)
                     unlocked = r.returncode == 0
@@ -1316,7 +1328,7 @@ class ClamAVAntivirusApp:
                     resp = {"ok": False, "error": "auth_cancelled"}
                 else:
                     resp = daemon_request(cmd, timeout=600, **params)
-            GLib.idle_add(on_result, resp)
+            idle_once(on_result, resp)
         threading.Thread(target=worker, daemon=True).start()
 
     def msg(self, key, params=None):
@@ -2176,25 +2188,48 @@ class ClamAVAntivirusApp:
         threading.Thread(target=self.mount_for_user, args=(usb, True, scan), daemon=True).start()
 
     def mount_for_user(self, usb, open_after=True, scan_after=False):
-        """Mounts the media via udisks (user rights) and opens it in the file manager."""
+        """Mounts the media via udisks (user rights) and opens it in the file manager. One attempt at a time per
+        drive and never retried: a drive that refuses to mount gives one notification saying why (2.9.2)."""
         devnode = usb.get("devnode", "")
-        mountpoint = None
+        with self.usb_mount_lock:
+            if devnode in self.usb_mounting:
+                return
+            self.usb_mounting.add(devnode)
         try:
-            # The mount point is read from findmnt below, never parsed from this message: it contains the drive
-            # label, and a label such as "x at /tmp/evil.desktop" would have chosen the folder opened
-            subprocess.run(["udisksctl", "mount", "-b", devnode], capture_output=True, text=True, timeout=60)
+            self._mount_for_user(usb, devnode, open_after, scan_after)
+        finally:
+            with self.usb_mount_lock:
+                self.usb_mounting.discard(devnode)
+
+    @staticmethod
+    def _mountpoint_of(devnode):
+        try:
+            r = subprocess.run(["findmnt", "-n", "-o", "TARGET", "--source", devnode], capture_output=True, text=True, timeout=10)
+            lines = (r.stdout or "").strip().splitlines()
+            return lines[0].strip() if lines else None
         except Exception:  # noqa: BLE001
-            pass
+            return None
+
+    def _mount_for_user(self, usb, devnode, open_after, scan_after):
+        error = ""
+        # The mount point is read from findmnt below, never parsed from the udisks message: it contains the drive
+        # label, and a label such as "x at /tmp/evil.desktop" would have chosen the folder opened
+        mountpoint = self._mountpoint_of(devnode)
         if not mountpoint:
             try:
-                r = subprocess.run(["findmnt", "-n", "-o", "TARGET", "--source", devnode], capture_output=True, text=True, timeout=10)
-                lines = (r.stdout or "").strip().splitlines()
-                mountpoint = lines[0].strip() if lines else None
-            except Exception:  # noqa: BLE001
-                mountpoint = None
+                r = subprocess.run(["udisksctl", "mount", "-b", devnode], capture_output=True, text=True, timeout=60)
+                error = (r.stderr or "").strip() if r.returncode else ""
+            except Exception as e:  # noqa: BLE001
+                error = str(e)
+            mountpoint = self._mountpoint_of(devnode)
+            # The desktop may be mounting the same drive at the same moment ("already mounted" / busy for us)
+            for _ in range(3):
+                if mountpoint or not error:
+                    break
+                time.sleep(1)
+                mountpoint = self._mountpoint_of(devnode)
         if not mountpoint:
-            GLib.idle_add(self.popup, "warning", self.T("popup.usb.error_title"),
-                          self.T("popup.usb.mount_failed", name=self.usb_name(usb)))
+            self.notify_mount_failed(usb, error)
             return
         if open_after:
             try:
@@ -2204,8 +2239,25 @@ class ClamAVAntivirusApp:
         if scan_after:
             resp = DaemonClient.request("scan", path=mountpoint, usb_devnode=devnode)
             if not resp.get("ok"):
-                GLib.idle_add(self.send_to_js, "operationResult",
-                              {"status": "error", "message": self.daemon_error(resp)})
+                idle_once(self.send_to_js, "operationResult",
+                          {"status": "error", "message": self.daemon_error(resp)})
+
+    def notify_mount_failed(self, usb, error):
+        """One notification per drive (keyed): the reason when it is known (NTFS left in use by Windows, file system
+        to repair), otherwise the generic message with the udisks error underneath. Runs in a worker thread."""
+        devnode = usb.get("devnode", "")
+        problem = ntfs_mount_problem(error)
+        if not problem and usb.get("fstype") == "ntfs":
+            # udisks often only says "Unknown error": the service reads the volume state (ntfsfix --no-action)
+            problem = (DaemonClient.request("usb_mount_diagnose", devnode=devnode) or {}).get("problem") or ""
+        name = self.usb_name(usb)
+        if problem in ("hibernated", "inconsistent", "unclean"):
+            body = self.T(f"popup.usb.ntfs_{problem}", name=name, devnode=devnode)
+        else:
+            body = self.T("popup.usb.mount_failed", name=name)
+        detail = error.rsplit(": ", 1)[-1].strip()[:160] if error else ""
+        idle_once(lambda: self.popup("warning", self.T("popup.usb.error_title"), body, key=f"usb-mount:{devnode}",
+                                     meta=" · ".join(x for x in (devnode, detail) if x) or None))
 
     def daemon_error(self, resp):
         err = resp.get("error", "")
@@ -2487,7 +2539,7 @@ class ClamAVAntivirusApp:
             ok = os.path.exists(path) and os.path.getsize(path) > 0
             self.send_to_js("operationResult", {"status": "success" if ok else "error",
                                                 "message": self.T("msg.file_saved", path=path) if ok else self.T("msg.report_failed")})
-            GLib.idle_add(win.destroy)
+            idle_once(win.destroy)
 
         def on_load(v, ev):
             if ev != WebKit2.LoadEvent.FINISHED or state.get("printing"):
@@ -2553,7 +2605,7 @@ class ClamAVAntivirusApp:
 
         def worker():
             resp = daemon_request("telemetry_send", timeout=90)
-            GLib.idle_add(done, resp)
+            idle_once(done, resp)
 
         def done(resp):
             if resp.get("ok"):
@@ -2569,8 +2621,8 @@ class ClamAVAntivirusApp:
         """Exact payload the service would send (without sending), to show it before deciding."""
         def worker():
             resp = daemon_request("telemetry_preview", timeout=30)
-            GLib.idle_add(self.send_to_js, "telemetryPreview",
-                          {"available": bool(resp.get("ok")), "payload": resp.get("payload"), "url": resp.get("url")})
+            idle_once(self.send_to_js, "telemetryPreview",
+                      {"available": bool(resp.get("ok")), "payload": resp.get("payload"), "url": resp.get("url")})
         threading.Thread(target=worker, daemon=True).start()
 
     def act_telemetry_consent(self, data):
@@ -2710,7 +2762,7 @@ class ClamAVAntivirusApp:
 
         def worker():
             resp = daemon_request(cmd, timeout=90, ip=ip, remove=remove)
-            GLib.idle_add(done, resp)
+            idle_once(done, resp)
 
         def done(resp):
             if resp.get("ok"):
@@ -2728,11 +2780,11 @@ class ClamAVAntivirusApp:
     def act_urlguard_refresh(self, _data):
         def worker():
             resp = daemon_request("urlguard_refresh", timeout=30)
-            GLib.idle_add(self.send_to_js, "operationResult", {"status": "info" if resp.get("ok") else "error", "op": "security",
+            idle_once(self.send_to_js, "operationResult", {"status": "info" if resp.get("ok") else "error", "op": "security",
                                                                 "message": self.T("msg.urlguard_refreshing") if resp.get("ok") else self.daemon_error(resp)})
             if resp.get("ok"):
                 time.sleep(12)
-                GLib.idle_add(self.act_get_security_data, {"type": "urlguard"})
+                idle_once(self.act_get_security_data, {"type": "urlguard"})
         threading.Thread(target=worker, daemon=True).start()
 
     def act_url_allow(self, data):
@@ -2743,7 +2795,7 @@ class ClamAVAntivirusApp:
 
         def worker():
             resp = daemon_request("url_allow", timeout=20, host=host, remove=remove, source="gui")
-            GLib.idle_add(done, resp)
+            idle_once(done, resp)
 
         def done(resp):
             if resp.get("ok"):
@@ -2921,7 +2973,7 @@ class ClamAVAntivirusApp:
             cur["restore_test"] = res
             backup.save_state(cur)
             DaemonClient.request("backup_test_report", result=res)
-            GLib.idle_add(self._restore_test_done, res, auto)
+            idle_once(self._restore_test_done, res, auto)
         self.restore_test_thread = threading.Thread(target=worker, daemon=True, name="restore-test")
         self.restore_test_thread.start()
         self.send_to_js("backupStatus", self._backup_payload(drives))
@@ -2948,7 +3000,7 @@ class ClamAVAntivirusApp:
                 resp = daemon_request("backup_status", timeout=180, refresh=True)
                 if resp.get("ok") and isinstance(self.last_daemon_status, dict):
                     self.last_daemon_status["timeshift"] = resp.get("timeshift")
-                GLib.idle_add(lambda: self.send_to_js("backupStatus", self._backup_payload()) or False)
+                idle_once(lambda: self.send_to_js("backupStatus", self._backup_payload()) or False)
             threading.Thread(target=worker, daemon=True).start()
             return
         self.send_to_js("backupStatus", self._backup_payload())
@@ -2961,10 +3013,10 @@ class ClamAVAntivirusApp:
         dest_id = dest.get("id")
 
         def progress(pct, text):
-            GLib.idle_add(self._backup_progress_cb, dest_id, pct, text)
+            idle_once(self._backup_progress_cb, dest_id, pct, text)
 
         def done(result):
-            GLib.idle_add(self._backup_done, result)
+            idle_once(self._backup_done, result)
         self.backup_runner = backup.BackupRunner(dest, st, on_progress=progress, on_done=done, auto=auto)
         self.backup_progress = {"dest_id": dest_id, "dest_label": dest.get("label", ""), "pct": 0, "text": "", "auto": auto}
         self.backup_runner.start()
@@ -3064,7 +3116,7 @@ class ClamAVAntivirusApp:
             target = detail if ok else ""
             if ok:
                 ok, detail = backup.cloud_test(target)
-            GLib.idle_add(finish, ok, detail, target)
+            idle_once(finish, ok, detail, target)
 
         def finish(ok, detail, target):
             if not ok:
@@ -3094,8 +3146,8 @@ class ClamAVAntivirusApp:
             else:
                 ok, detail = backup.destination_available(dest)
                 detail = "ok" if ok else "unavailable"
-            GLib.idle_add(lambda: self.send_to_js("operationResult", {"status": "success" if ok else "error",
-                          "message": self.T("msg.backup_test_ok") if ok else self.T("msg.backup_test_failed", detail=str(detail)[:200])}) or False)
+            idle_once(lambda: self.send_to_js("operationResult", {"status": "success" if ok else "error",
+                      "message": self.T("msg.backup_test_ok") if ok else self.T("msg.backup_test_failed", detail=str(detail)[:200])}) or False)
         threading.Thread(target=worker, daemon=True).start()
 
     def act_backup_remove(self, data):
@@ -3204,8 +3256,8 @@ class ClamAVAntivirusApp:
             resp = DaemonClient.request("status")
             if resp.get("ok"):
                 self.last_daemon_status = resp
-            GLib.idle_add(self.send_status)
-            GLib.idle_add(self.act_backup_status, {})
+            idle_once(self.send_status)
+            idle_once(self.act_backup_status, {})
         threading.Thread(target=worker, daemon=True).start()
 
     def act_timeshift_disable(self, _data):
@@ -3287,7 +3339,7 @@ class ClamAVAntivirusApp:
         state = load_state()
         report = extras.weekly_report(history, alerts, checklist, self.backup_summary(), state.get("read_lessons"), state.get("weekly_prev_score"))
         report["center"] = daemon_request("weekly_summary", timeout=30, now=True).get("weekly_summary") or {}
-        GLib.idle_add(self._show_weekly_report, report)
+        idle_once(self._show_weekly_report, report)
 
     def _show_weekly_report(self, r):
         T = self.T
@@ -3331,7 +3383,7 @@ class ClamAVAntivirusApp:
 
         def worker():
             count, err = extras.check_password(pw)
-            GLib.idle_add(lambda: self.send_to_js("hibpResult", {"type": "password", "count": count, "error": err}) or False)
+            idle_once(lambda: self.send_to_js("hibpResult", {"type": "password", "count": count, "error": err}) or False)
         threading.Thread(target=worker, daemon=True).start()
 
     def act_hibp_save(self, data):
@@ -3394,7 +3446,7 @@ class ClamAVAntivirusApp:
                 results[email] = {"breaches": breaches, "error": err, "checked": now_iso()}
                 if err and err != "":
                     err_all = err
-            GLib.idle_add(self._hibp_done, results, err_all, bool(data.get("silent")))
+            idle_once(self._hibp_done, results, err_all, bool(data.get("silent")))
         threading.Thread(target=worker, daemon=True).start()
 
     def _hibp_done(self, results, err_all, silent):
@@ -3423,7 +3475,7 @@ class ClamAVAntivirusApp:
     def act_get_apps(self, _data):
         def worker():
             inv = extras.inventory_apps()
-            GLib.idle_add(lambda: self.send_to_js("appsData", {"inventory": inv, "acknowledged": load_state().get("apps_ack") or []}) or False)
+            idle_once(lambda: self.send_to_js("appsData", {"inventory": inv, "acknowledged": load_state().get("apps_ack") or []}) or False)
         threading.Thread(target=worker, daemon=True).start()
 
     def act_apps_ack(self, data):
@@ -3470,7 +3522,7 @@ class ClamAVAntivirusApp:
     def _vault_run(self, fn, ok_key):
         def worker():
             ok, detail = fn()
-            GLib.idle_add(self._vault_done, ok, detail, ok_key)
+            idle_once(self._vault_done, ok, detail, ok_key)
         threading.Thread(target=worker, daemon=True).start()
 
     def _vault_done(self, ok, detail, ok_key):
@@ -3533,7 +3585,7 @@ class ClamAVAntivirusApp:
 
         def worker():
             snaps, err = backup.list_snapshots(dest)
-            GLib.idle_add(lambda: self.send_to_js("backupSnapshots", {"dest_id": dest["id"], "snapshots": snaps, "error": err}) or False)
+            idle_once(lambda: self.send_to_js("backupSnapshots", {"dest_id": dest["id"], "snapshots": snaps, "error": err}) or False)
         threading.Thread(target=worker, daemon=True).start()
 
     def act_backup_restore(self, data):
@@ -3546,10 +3598,10 @@ class ClamAVAntivirusApp:
             return
 
         def progress(pct, text):
-            GLib.idle_add(lambda: self.send_to_js("restoreProgress", {"pct": round(pct, 1), "text": text}) or False)
+            idle_once(lambda: self.send_to_js("restoreProgress", {"pct": round(pct, 1), "text": text}) or False)
 
         def done(result):
-            GLib.idle_add(self._restore_done, result)
+            idle_once(self._restore_done, result)
         self.restore_runner = backup.RestoreRunner(dest, data.get("snapshot") or "latest", data.get("folder") or "",
                                                    on_progress=progress, on_done=done)
         self.restore_runner.start()
@@ -3661,7 +3713,7 @@ class ClamAVAntivirusApp:
             save_state({"view_mode": user["view_mode"]})
         if user.get("popup_corner") in POPUP_CORNERS:
             save_state({"popup_corner": user["popup_corner"]})
-            GLib.idle_add(self.popups.relayout)
+            idle_once(self.popups.relayout)
         if user.get("language") in LANGUAGES and user["language"] != self.lang:
             self.act_set_language({"lang": user["language"]})
         system = data.get("system") or {}
@@ -3743,11 +3795,11 @@ class ClamAVAntivirusApp:
         def worker():
             resp = daemon_request(cmd, timeout=900, **params)
             payload = resp.get(kind) or resp.get("update") or {}
-            GLib.idle_add(self.send_to_js, "securityData",
-                          {"type": kind, "data": payload, "available": bool(resp.get("ok")),
+            idle_once(self.send_to_js, "securityData",
+                      {"type": kind, "data": payload, "available": bool(resp.get("ok")),
                            "refreshing": bool(resp.get("refreshing") or resp.get("running"))})
             if kind == "app_update":
-                GLib.idle_add(self.send_status)
+                idle_once(self.send_status)
         threading.Thread(target=worker, daemon=True).start()
 
     def act_install_update(self, _data):
@@ -3783,10 +3835,10 @@ class ClamAVAntivirusApp:
                     _common.ADMIN_TOKEN = _common.admin_token_from(r.stdout)
             except Exception:  # noqa: BLE001
                 ok = False
-            GLib.idle_add(self.send_to_js, "operationResult",
-                          {"status": "success" if ok else "error", "op": "security",
+            idle_once(self.send_to_js, "operationResult",
+                      {"status": "success" if ok else "error", "op": "security",
                            "message": self.T("msg.unlocked") if ok else self.T("msg.auth_cancelled")})
-            GLib.idle_add(self.act_check_status, {})
+            idle_once(self.act_check_status, {})
         threading.Thread(target=worker, daemon=True).start()
 
     def act_lock(self, _data):
@@ -3859,7 +3911,7 @@ class ClamAVAntivirusApp:
         """"Enable": system update automation via the service, then Spices and Flatpak for the user."""
         def worker():
             resp = daemon_request("auto_updates_enable", timeout=120)
-            GLib.idle_add(done, resp)
+            idle_once(done, resp)
 
         def done(resp):
             T = self.T
@@ -3923,7 +3975,7 @@ class ClamAVAntivirusApp:
                 ok = r.returncode == 0
             except Exception:  # noqa: BLE001
                 ok = False
-            GLib.idle_add(self._quit_done, ok)
+            idle_once(self._quit_done, ok)
         threading.Thread(target=worker, daemon=True).start()
 
     def _quit_done(self, ok):
@@ -4112,7 +4164,7 @@ def start_instance_server(app):
                 msg = conn.recv(16).decode().strip()
                 conn.close()
                 if msg == "show":
-                    GLib.idle_add(app.window.present)
+                    idle_once(app.window.present)
             except socket.timeout:
                 continue
             except Exception:

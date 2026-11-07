@@ -85,7 +85,7 @@ from dukiwi_shield_common import (  # noqa: E402
     BURST_PID_COOLDOWN_SEC, BURST_GLOBAL_COOLDOWN, BURST_IGNORE_PREFIXES, BURST_IGNORE_PARTS,
     LineSocket, peer_credentials, daemon_connect, daemon_request, find_command, SCAN_EXCLUDE, home_mounted,
     is_noise_line, classify_line, db_last_update, db_files_info, t,
-    sanitize_settings, parse_ufw_verbose, parse_ufw_numbered, systemd_is_active,
+    sanitize_settings, parse_ufw_verbose, parse_ufw_numbered, systemd_is_active, ntfs_mount_problem,
 )
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -2364,6 +2364,8 @@ class UsbWatcher(threading.Thread):
         self.active = False
         self.pending = {}           # devnode -> info (large disks awaiting decision)
         self.mounted = {}           # devnode -> mountpoint (daemon private mounts)
+        self.present = {}           # devnode -> info of the USB drives plugged in now (mount diagnosis)
+        self.diagnosed = {}         # devnode -> cached answer of diagnose() for this plug
         self.lock = threading.Lock()
 
     def run(self):
@@ -2435,6 +2437,9 @@ class UsbWatcher(threading.Thread):
                 return
             ident = usb_identity(info)
             info["trusted"] = bool(ident and (self.daemon_ref.state.get("trusted_usb") or {}).get(ident))
+            with self.lock:
+                self.present[devnode] = info
+                self.diagnosed.pop(devnode, None)
             log(f"USB détecté : {devnode} ({info['label'] or info['model']}, "
                 f"{info['size'] // 2**20} MiB, {info['kind']}{', de confiance' if info['trusted'] else ''})")
             self.daemon_ref.broadcast({"event": "usb_added", "usb": info})
@@ -2451,6 +2456,8 @@ class UsbWatcher(threading.Thread):
         elif action == "remove":
             with self.lock:
                 info = self.pending.pop(devnode, None)
+                self.present.pop(devnode, None)
+                self.diagnosed.pop(devnode, None)
             job = self.daemon_ref.current_job()
             if job and job.usb and job.usb.get("devnode") == devnode:
                 log(f"USB retiré pendant l'analyse : {devnode}")
@@ -2506,6 +2513,27 @@ class UsbWatcher(threading.Thread):
             os.rmdir(mountpoint)
         except OSError:
             pass
+
+    def diagnose(self, devnode):
+        """Why a plugged USB drive does not mount for the user (2.9.2): for NTFS, the volume state read by
+        `ntfsfix --no-action` (read-only) → "hibernated" / "inconsistent" / "unclean" / "". Only for a drive this
+        watcher announced and still sees, once per plug. udisks itself only reports "Unknown error when mounting"."""
+        with self.lock:
+            info = self.present.get(devnode)
+            if info is None:
+                return None
+            if devnode in self.diagnosed:
+                return self.diagnosed[devnode]
+        problem = ""
+        ntfsfix = shutil.which("ntfsfix")
+        if info.get("fstype") == "ntfs" and ntfsfix and not self.mounted.get(devnode):
+            r = run_quiet([ntfsfix, "--no-action", devnode], timeout=60)
+            problem = ntfs_mount_problem((r.stdout or "") + "\n" + (r.stderr or ""))
+            log(f"USB : diagnostic NTFS {devnode} → {problem or 'rien de connu'}")
+        with self.lock:
+            if devnode in self.present:
+                self.diagnosed[devnode] = problem
+        return problem
 
     def take_pending(self, devnode):
         with self.lock:
@@ -9137,6 +9165,13 @@ class Daemon:
         if cmd == "usb_decision":
             info = self.usb.take_pending(req.get("devnode", ""))
             return {"ok": True, "usb": info}
+
+        if cmd == "usb_mount_diagnose":
+            # Read-only, limited to a USB drive plugged in now: no administrator needed
+            problem = self.usb.diagnose(str(req.get("devnode") or "")[:64])
+            if problem is None:
+                return {"ok": False, "error": "not_found"}
+            return {"ok": True, "problem": problem}
 
         if cmd == "usb_pending":
             return {"ok": True, "pending": self.usb.pending_list()}

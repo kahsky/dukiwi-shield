@@ -13,7 +13,7 @@ import struct
 import subprocess
 from datetime import datetime
 
-VERSION = "2.9.1"
+VERSION = "2.9.2"
 
 # ─── System paths (root daemon) ─────────────────────────────────────────────
 # Can be overridden by environment variables for tests without root.
@@ -759,3 +759,19 @@ def daemon_request(cmd, timeout=2.0, **kwargs):
         return {"ok": False, "error": str(e), "unavailable": True}
     finally:
         conn.close()
+
+
+def ntfs_mount_problem(text):
+    """Why an NTFS volume refuses to mount, from the messages of ntfs-3g / ntfsfix / udisks (2.9.2).
+    "hibernated": Windows hibernated or shut down with fast startup while the drive was attached;
+    "inconsistent": the file system needs a repair ($MFTMirr mismatch, I/O error on the metadata);
+    "unclean": the volume is marked dirty (removed without ejecting it under Windows); "" when unknown."""
+    low = (text or "").lower()
+    if any(k in low for k in ("hibernat", "metadata kept in windows cache", "fast restart", "fast startup")):
+        return "hibernated"
+    if any(k in low for k in ("$mftmirr does not match", "is either inconsistent", "input/output error",
+                              "corrupt", "chkdsk /f")):
+        return "inconsistent"
+    if any(k in low for k in ("unclean file system", "volume is dirty", "dirty volume", "is marked dirty")):
+        return "unclean"
+    return ""

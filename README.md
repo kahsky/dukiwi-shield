@@ -78,6 +78,13 @@ sudo dnf remove dukiwi-shield   # Fedora
 
 ## Features
 
+- **2.9.2: a USB drive that refuses to mount no longer floods the screen** — when a drive could not be mounted, the
+  "Unable to mount" notification was re-posted on every turn of the interface's main loop: thousands of them, still
+  coming after the drive was unplugged, until the desktop crashed. There is now one notification per drive, one mount
+  attempt at a time and no retry. For an NTFS drive the service reads the volume state (read-only) and the
+  notification says why: Windows still holds it (hibernation or fast startup), its file system needs `chkdsk /f`
+  (or `sudo ntfsfix`), or Windows did not close it cleanly. The desktop's automount stays off for USB drives on
+  every udev event, not only when the drive appears, so Cinnamon no longer tries to mount it at the same time.
 - **2.9.1: no more double shield in the taskbar after login** — when the panel was still busy right after login, it
   took more than 25 s to answer the shield's registration: the panel showed the shield anyway, but the tray library
   took the delay as a failure and added its old-style fallback icon next to it, for the whole session. The shield now

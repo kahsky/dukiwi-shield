@@ -3,4 +3,7 @@
 # mounting by udisks is disabled for USB storage devices:
 # the service mounts the drive privately, scans it, then the interface mounts it for
 # the user. Without the service, the usual behaviour is kept.
-ACTION=="add", SUBSYSTEM=="block", ENV{ID_BUS}=="usb", TEST=="/run/dukiwi-shield/daemon.sock", ENV{UDISKS_AUTO}="0"
+# Applied on "change" events too (2.9.2): udev rebuilds the properties of a device on each event, so a
+# rule limited to "add" lost UDISKS_AUTO=0 at the first "change" (partition re-read, probing after a
+# failed mount) and the desktop automounted the drive at the same time as the interface.
+ACTION!="remove", SUBSYSTEM=="block", ENV{ID_BUS}=="usb", TEST=="/run/dukiwi-shield/daemon.sock", ENV{UDISKS_AUTO}="0"
