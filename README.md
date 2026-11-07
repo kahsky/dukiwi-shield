@@ -78,6 +78,11 @@ sudo dnf remove dukiwi-shield   # Fedora
 
 ## Features
 
+- **2.9.1: no more double shield in the taskbar after login** — when the panel was still busy right after login, it
+  took more than 25 s to answer the shield's registration: the panel showed the shield anyway, but the tray library
+  took the delay as a failure and added its old-style fallback icon next to it, for the whole session. The shield now
+  checks every 30 s for that fallback icon and, when the panel already lists the shield, replaces the indicator so
+  only one shield stays. Without any panel tray (fallback icon alone) nothing changes.
 - **2.9.0: security review — no local path to root, safer interface and update chain** — a full review of the service,
   the interface, the package and the server, with every finding fixed. The root service no longer opens, writes or
   moves files in a folder a user controls through a path: Firefox `user.js`, `authorized_keys`, ransomware decoys and

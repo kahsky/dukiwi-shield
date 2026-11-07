@@ -16,6 +16,7 @@ include the tests that open windows.
 | `test_versions.py` | Version comparison in Python, same order as dpkg, works without dpkg (2.7.11) |
 | `test_release_2_8.py` | What's new in the update offer, Timeshift targets, encryption detail, password step 2, monthly e-mail report, telemetry dashboard (needs php), transitional package (2.8.0) |
 | `test_popups.py` | Notifications in the four corners, inside the usable area (GUI only, `--gui`) |
+| `test_tray_double_icon.py` | Panel watcher answering after the D-Bus timeout: the XEmbed fallback shield is removed, none with no watcher (GUI only, `--gui`, private bus, ~1 min) (2.9.1) |
 
 `_harness.py` holds the shared pieces: `isolate()` / `load()` to import the code under test with private state
 folders, `TestDaemon` to run the service in test mode on a given starting state and talk to it, `Results` for the

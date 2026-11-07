@@ -33,7 +33,7 @@ except (ValueError, ImportError):
     gi.require_version('AppIndicator3', '0.1')
     from gi.repository import AppIndicator3
 
-from gi.repository import Gtk, Gdk, WebKit2, GLib
+from gi.repository import Gtk, Gdk, WebKit2, GLib, Gio
 import subprocess
 import signal
 import threading
@@ -993,15 +993,15 @@ class PopupManager:
 class TrayIcon:
     """Shield in the taskbar with a colour depending on the state."""
 
+    # Double icon guard: how often to look, and how many indicator rebuilds per process at most
+    DOUBLE_ICON_CHECK_S = 30
+    DOUBLE_ICON_MAX_REPAIRS = 5
+
     def __init__(self, app):
         self.app = app
-        self.indicator = AppIndicator3.Indicator.new(
-            "dukiwi-shield",
-            os.path.join(ICONS_DIR, "shield-green.svg"),
-            AppIndicator3.IndicatorCategory.APPLICATION_STATUS
-        )
-        self.indicator.set_status(AppIndicator3.IndicatorStatus.ACTIVE)
-        self.indicator.set_title("Dukiwi Shield")
+        self.icon_args = (os.path.join(ICONS_DIR, "shield-green.svg"), "Dukiwi Shield")
+        self.retired = []       # replaced indicators, kept alive (see repair_double_icon)
+        self.repairs = 0
 
         menu = Gtk.Menu()
         self.item_show = Gtk.MenuItem(label="")
@@ -1035,11 +1035,67 @@ class TrayIcon:
         self.item_quit.connect("activate", self.on_quit)
         menu.append(self.item_quit)
         menu.show_all()
-        self.indicator.set_menu(menu)
+        self.menu = menu
+        self.indicator = self.new_indicator()
 
         self.relabel()
         self.update_status()
         GLib.timeout_add_seconds(300, self.update_status)
+        GLib.timeout_add_seconds(self.DOUBLE_ICON_CHECK_S, self.check_double_icon)
+
+    def new_indicator(self):
+        ind = AppIndicator3.Indicator.new(
+            "dukiwi-shield", self.icon_args[0], AppIndicator3.IndicatorCategory.APPLICATION_STATUS)
+        ind.set_status(AppIndicator3.IndicatorStatus.ACTIVE)
+        ind.set_title("Dukiwi Shield")
+        ind.set_icon_full(*self.icon_args)
+        ind.set_menu(self.menu)
+        return ind
+
+    # ── Double shield in the taskbar ──────────────────────────────────────
+    # Right after login the panel's StatusNotifierWatcher can be up but too busy to answer
+    # RegisterStatusNotifierItem within the D-Bus timeout (25 s). The watcher still registers the
+    # item (the panel shows it), but Ayatana takes the timeout as a failure and adds its legacy
+    # XEmbed fallback icon (GtkStatusIcon), and never removes it while the watcher keeps running:
+    # two shields. Ayatana's "connected" property stays True in that state, so we look for the
+    # fallback window ourselves and, when the watcher already lists our item, replace the indicator
+    # (its dispose removes the fallback). Reproduced with a fake watcher answering after 40 s.
+
+    def fallback_icon_shown(self):
+        return any(w.get_visible() and w.__gtype__.name == "GtkTrayIcon" for w in Gtk.Window.list_toplevels())
+
+    def check_double_icon(self):
+        if self.repairs >= self.DOUBLE_ICON_MAX_REPAIRS:
+            return False
+        if self.fallback_icon_shown():
+            # Asynchronous: the main loop must stay free (our own item answers from it)
+            try:
+                bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+                bus.call("org.kde.StatusNotifierWatcher", "/StatusNotifierWatcher",
+                         "org.freedesktop.DBus.Properties", "Get",
+                         GLib.Variant("(ss)", ("org.kde.StatusNotifierWatcher", "RegisteredStatusNotifierItems")),
+                         GLib.VariantType("(v)"), Gio.DBusCallFlags.NONE, 3000, None,
+                         self.on_watcher_items, bus.get_unique_name())
+            except GLib.Error:
+                pass
+        return True
+
+    def on_watcher_items(self, bus, result, unique_name):
+        try:
+            items = bus.call_finish(result).unpack()[0]
+        except GLib.Error:
+            return              # no watcher: the fallback icon is the only one, keep it
+        if any(i.startswith(unique_name + "/") for i in items) and self.fallback_icon_shown():
+            self.repair_double_icon()
+
+    def repair_double_icon(self):
+        self.repairs += 1
+        old = self.indicator
+        old.set_status(AppIndicator3.IndicatorStatus.PASSIVE)
+        old.run_dispose()       # removes the fallback icon and unexports the D-Bus item
+        # Keep a reference: Ayatana still has callbacks pending on it, freeing it crashes the process
+        self.retired.append(old)
+        self.indicator = self.new_indicator()   # same object path, still listed by the watcher
 
     def relabel(self):
         T = self.app.T
@@ -1073,7 +1129,8 @@ class TrayIcon:
                 icon_color = "yellow"           # availability (CIA): files not backed up
             reasons.append(self.app.T(f"overall.reason.backup_{bk['state']}"))
         tooltip = message if not reasons else f"{message} — " + ", ".join(reasons)
-        self.indicator.set_icon_full(os.path.join(ICONS_DIR, f"{OVERALL_ICON.get(icon_color, 'shield-green')}.svg"), tooltip)
+        self.icon_args = (os.path.join(ICONS_DIR, f"{OVERALL_ICON.get(icon_color, 'shield-green')}.svg"), tooltip)
+        self.indicator.set_icon_full(*self.icon_args)
         self.item_status.set_label(self.app.T("tray.status", message=tooltip if len(tooltip) < 90 else message))
         self.app.run_js(f'if(typeof updateTrayStatus==="function")updateTrayStatus({json.dumps(color)},{json.dumps(message)});')
         return True
