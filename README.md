@@ -78,6 +78,12 @@ sudo dnf remove dukiwi-shield   # Fedora
 
 ## Features
 
+- **2.9.5: no more "Possible Linux BPFDoor Malware" for programs waiting on a local socket** — chkrootkit looks for
+  `packet_recvmsg` in the kernel stack of every process, and that text is also part of `unix_seqpacket_recvmsg`: any
+  program waiting on a local UNIX socket (Claude Desktop's sandbox broker, for example) was reported as the BPFDoor
+  backdoor. The shield now names the program and lists that case as a known false positive; a process reading a raw
+  network socket (`packet_recvmsg` itself, what BPFDoor does) is still a warning. The rootkit report is redone once
+  after the update.
 - **2.9.4: no more camera alert when a program only lists the cameras** — Claude Desktop and other Chromium/Electron
   programs open the camera for a second to see which ones exist: it does not film and its light stays off, but the
   shield reported "… is using the camera". The shield now checks that a USB camera is really streaming (its video

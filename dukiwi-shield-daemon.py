@@ -4698,7 +4698,7 @@ def parse_lynis_report(path="/var/log/lynis-report.dat", log_path="/var/log/lyni
     return rep
 
 
-CHK_RULES_VERSION = 7              # built-in classification rules; an older report is redone at startup
+CHK_RULES_VERSION = 8              # built-in classification rules; an older report is redone at startup
 CHK_NOISE = ("RTNETLINK answers", "ip: ", "ifconfig:", "ls: ", "find: ", "grep: ", "netstat:", "ss: ", "Usage:",
              "/usr/sbin/chkrootkit:", "chkrootkit:", "chkproc:", "chkdirs:", "chkutmp:", "eth", "wlan")   # tool messages, not findings
 CHK_NOISE = tuple(x for x in CHK_NOISE if x not in ("eth", "wlan"))
@@ -5001,6 +5001,36 @@ def classify_tmp_paths(paths):
     return notes
 
 
+BPFDOOR_STACK = re.compile(r"^/proc/(\d+)/stack:\s*(?:\[<[0-9a-fA-F]+>\]\s*)?([\w.]+)\+")
+
+
+def classify_bpfdoor(lines):
+    """Built-in verdict for "Possible Linux BPFDoor Malware installed" (2.9.5). chkrootkit runs
+    `egrep packet_recvmsg /proc/*/stack`, which also matches unix_seqpacket_recvmsg: any program waiting on a local
+    UNIX socket (Chromium/Electron sandbox broker, systemd…). BPFDoor waits on a raw packet socket, so its stack
+    shows packet_recvmsg itself: that one stays to check."""
+    notes = []
+    for ln in lines:
+        s = ln.strip()
+        if not s:
+            continue
+        m = BPFDOOR_STACK.match(s)
+        if not m:
+            notes.append({"path": s, "verdict": "unknown", "reason": "bpfdoor"})
+            continue
+        pid, sym = m.group(1), m.group(2)
+        try:
+            exe = os.readlink(f"/proc/{pid}/exe")
+        except OSError:
+            exe = "?"
+        who = f"{exe} (pid {pid}, {sym})"
+        if sym != "packet_recvmsg" and sym.endswith("_seqpacket_recvmsg"):
+            notes.append({"path": who, "verdict": "benign", "reason": "bpfdoor_unix"})
+        else:
+            notes.append({"path": who, "verdict": "unknown", "reason": "bpfdoor"})
+    return notes or None
+
+
 def classify_promisc(lines):
     """Built-in verdict for "Output from ifpromisc": a Wi-Fi interface managed by NetworkManager/wpa_supplicant
     shows up as PACKET SNIFFER (legitimate raw socket). Known process or shipped by a package → benign; otherwise
@@ -5172,6 +5202,8 @@ def chkrootkit_analysis(out):
             verdicts = classify_ports(list(SLAPPER_PORTS))
         elif "scalper" in head:
             verdicts = classify_ports(list(SCALPER_PORTS))
+        elif "bpfdoor" in head:
+            verdicts = classify_bpfdoor(lines[1:])
         elif len(lines) > 1:
             paths = [chk_path(ln) for ln in lines[1:] if ln.strip().startswith("/")]
             if "suspicious files" in head:
