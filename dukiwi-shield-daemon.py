@@ -4698,7 +4698,7 @@ def parse_lynis_report(path="/var/log/lynis-report.dat", log_path="/var/log/lyni
     return rep
 
 
-CHK_RULES_VERSION = 6              # built-in classification rules; an older report is redone at startup
+CHK_RULES_VERSION = 7              # built-in classification rules; an older report is redone at startup
 CHK_NOISE = ("RTNETLINK answers", "ip: ", "ifconfig:", "ls: ", "find: ", "grep: ", "netstat:", "ss: ", "Usage:",
              "/usr/sbin/chkrootkit:", "chkrootkit:", "chkproc:", "chkdirs:", "chkutmp:", "eth", "wlan")   # tool messages, not findings
 CHK_NOISE = tuple(x for x in CHK_NOISE if x not in ("eth", "wlan"))
@@ -4940,6 +4940,16 @@ def _module_file(p):
         return False
 
 
+CHK_PACKAGE_NOTE = re.compile(r"\s+\[From [A-Za-z]+ package: [^\]]*\]$")
+
+
+def chk_path(line):
+    """Path of a chkrootkit path line. Debian's chkrootkit (0.58b-2 and later) appends the owning package:
+    "/usr/lib/firmware/…/.notice.zst [From Debian package: linux-firmware-qualcomm-wireless]". The note is
+    dropped and never trusted: ownership is checked with dpkg on the bare path (a file can be named after it)."""
+    return CHK_PACKAGE_NOTE.sub("", line.strip())
+
+
 def classify_hidden_paths(paths):
     """Built-in verdict for each hidden path reported by chkrootkit: benign (shipped by a package, known name,
     file of an npm/Python module) or unknown (to check). The knowledge lives in the program, not with the user."""
@@ -5163,7 +5173,7 @@ def chkrootkit_analysis(out):
         elif "scalper" in head:
             verdicts = classify_ports(list(SCALPER_PORTS))
         elif len(lines) > 1:
-            paths = [ln.strip() for ln in lines[1:] if ln.strip().startswith("/")]
+            paths = [chk_path(ln) for ln in lines[1:] if ln.strip().startswith("/")]
             if "suspicious files" in head:
                 verdicts = classify_hidden_paths(paths)
             elif "xor.ddos" in head:

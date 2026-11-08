@@ -18,6 +18,7 @@ include the tests that open windows.
 | `test_popups.py` | Notifications in the four corners, inside the usable area (GUI only, `--gui`) |
 | `test_tray_double_icon.py` | Panel watcher answering after the D-Bus timeout: the XEmbed fallback shield is removed, none with no watcher (GUI only, `--gui`, private bus, ~1 min) (2.9.1) |
 | `test_usb_mount_failure.py` | USB drive that refuses to mount: one notification (no main-loop loop), one udisks attempt per drive, NTFS reason (Windows fast startup, file system to repair) read by the service, udev rule also on `change` (2.9.2) |
+| `test_chkrootkit_hidden.py` | Hidden files annotated « [From Debian package: …] » by Debian's chkrootkit: bare path checked with dpkg, the note itself never trusted (2.9.3) |
 
 `_harness.py` holds the shared pieces: `isolate()` / `load()` to import the code under test with private state
 folders, `TestDaemon` to run the service in test mode on a given starting state and talk to it, `Results` for the

@@ -688,7 +688,7 @@ const BENIGN_HIDDEN = /\/\.(build-id|packlist|gitignore|gitkeep|keep|placeholder
 
 function integrityHint(tool, text) {
     if (tool !== 'chkrootkit' || !/suspicious files/i.test(text)) return '';
-    const paths = text.split('\n').slice(1).map(s => s.trim()).filter(s => s.startsWith('/'));
+    const paths = text.split('\n').slice(1).map(s => s.trim().replace(/\s+\[From [A-Za-z]+ package: [^\]]*\]$/, '')).filter(s => s.startsWith('/'));
     if (!paths.length) return '';
     return t(paths.every(p => BENIGN_HIDDEN.test(p)) ? 'security.integrity.hint.hidden_benign' : 'security.integrity.hint.hidden_check');
 }

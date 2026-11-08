@@ -78,6 +78,11 @@ sudo dnf remove dukiwi-shield   # Fedora
 
 ## Features
 
+- **2.9.3: packaged hidden files no longer flagged by the rootkit check** — recent Debian versions of chkrootkit add
+  the owning package after each hidden file they list (`… .notice.zst [From Debian package: linux-firmware-…]`). The
+  whole line was looked up with dpkg, which found nothing, so every packaged file was reported "owned by no package".
+  The note is now removed and the bare path checked with dpkg (the note alone is never trusted: a file can be named
+  after it). The rootkit report is redone once after the update.
 - **2.9.2: a USB drive that refuses to mount no longer floods the screen** — when a drive could not be mounted, the
   "Unable to mount" notification was re-posted on every turn of the interface's main loop: thousands of them, still
   coming after the drive was unplugged, until the desktop crashed. There is now one notification per drive, one mount
