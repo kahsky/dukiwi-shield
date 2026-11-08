@@ -78,6 +78,11 @@ sudo dnf remove dukiwi-shield   # Fedora
 
 ## Features
 
+- **2.9.6: telemetry also reports the integrity warnings still open** — until now only their number was sent, so a
+  false positive seen on another computer could not be identified. With telemetry enabled, each open warning now
+  sends its first line, up to three of the paths it lists and the shield's built-in reasons, anonymised like the
+  rest (no user name: `/home/~/…`). The server keeps the new field and the local summary lists the open warnings by
+  number of installations. The Settings text describing the telemetry says so.
 - **2.9.5: no more "Possible Linux BPFDoor Malware" for programs waiting on a local socket** — chkrootkit looks for
   `packet_recvmsg` in the kernel stack of every process, and that text is also part of `unix_seqpacket_recvmsg`: any
   program waiting on a local UNIX socket (Claude Desktop's sandbox broker, for example) was reported as the BPFDoor

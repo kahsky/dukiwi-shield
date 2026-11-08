@@ -83,6 +83,26 @@ n = len(received)
 R.check("telemetry not accepted: nothing is sent, even after an update", dm.send_telemetry() is False and len(received) == n)
 srv.shutdown()
 
+# ── integrity warnings still open (2.9.6) ──
+import types  # noqa: E402
+chk_text = ("WARNING: The following suspicious files and directories were found:\n/home/papa/.secret-x\n"
+            "/usr/lib/.a\n/usr/lib/.b\n/usr/lib/.c")
+state = {"integrity": {"tools": {
+    "chkrootkit": {"warnings": [chk_text], "ignored": [], "notes": {chk_text: [
+        {"path": "/home/papa/.secret-x", "verdict": "unknown", "reason": "unknown"},
+        {"path": "/usr/lib/.a", "verdict": "benign", "reason": "dpkg"}]}},
+    "debsums": {"warnings": ["/usr/share/icons/x.png   FAILED"], "ignored": ["/etc/y   FAILED"]}}}}
+fake = types.SimpleNamespace(state=types.SimpleNamespace(get=lambda k, default=None: state.get(k, default)),
+                             onaccess=types.SimpleNamespace(stats={}))
+extra = d.Daemon.telemetry_extra(fake)
+opened = {o["tool"]: o for o in extra.get("open_integrity") or []}
+R.check("open integrity warnings: first line, three detail lines anonymised, reasons of the unresolved paths only",
+        opened.get("chkrootkit", {}).get("text", "").startswith("WARNING: The following suspicious files")
+        and opened["chkrootkit"]["detail"] == ["/home/~/.secret-x", "/usr/lib/.a", "/usr/lib/.b"]
+        and opened["chkrootkit"]["reasons"] == ["unknown"]
+        and opened.get("debsums", {}).get("text") == "/usr/share/icons/x.png   FAILED"
+        and [a["text"] for a in extra["acknowledged_integrity"]] == ["/etc/y   FAILED"], extra.get("open_integrity"))
+
 # ── server endpoint (neighbouring web repository) ──
 api = os.environ.get("DUKIWI_TEST_API") or os.path.join(os.path.dirname(h.ROOT), "repo", "api")
 if not shutil.which("php") or not os.path.isfile(os.path.join(api, "telemetry.php")):
@@ -105,6 +125,7 @@ else:
         body = json.dumps({"install_id": "0123456789abcdef0123456789abcdef", "version": "2.7.3", "updated_from": "2.7.2",
                            "acknowledged_persistence": ["autostart:/home/papa/.config/autostart/kDrive.desktop"],
                            "trusted_programs": ["/tmp/.mount_kDriveAAAAAA/usr/bin/kDrive", "/tmp/.mount_kDriveBBBBBB/usr/bin/kDrive"],
+                           "open_integrity": [{"tool": "chkrootkit", "text": "WARNING: x", "detail": ["/home/papa/.y"], "reasons": ["unknown"]}],
                            "not_allowed": "x"}).encode()
         reply = urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{port}/telemetry.php", data=body,
                                                               headers={"Content-Type": "application/json"}), timeout=10).read()
@@ -116,7 +137,8 @@ else:
     R.check("server: incoming report anonymised and deduplicated, updated_from kept, unknown fields dropped",
             reply == b'{"ok":true}' and new["trusted_programs"] == ["/tmp/.mount_~/usr/bin/kDrive"]
             and new["acknowledged_persistence"] == ["autostart:/home/~/.config/autostart/kDrive.desktop"]
-            and new.get("updated_from") == "2.7.2" and "not_allowed" not in new, new)
+            and new.get("updated_from") == "2.7.2" and "not_allowed" not in new
+            and new.get("open_integrity") == [{"tool": "chkrootkit", "text": "WARNING: x", "detail": ["/home/~/.y"], "reasons": ["unknown"]}], new)
     R.check("server: reports stored before are anonymised once (marker file)",
             len(rows) == 2 and rows[0]["acknowledged_persistence"] == ["crontab:/var/spool/cron/crontabs/~"]
             and os.path.exists(os.path.join(web, "data", ".anonymized-v1")), rows[0])

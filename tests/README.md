@@ -12,7 +12,7 @@ include the tests that open windows.
 | `test_trust.py` | Dukiwi applications trusted out of the box (2.7.7), AppImage trusted by content across launches (2.7.9) |
 | `test_bursts.py` | File-write bursts: early identification, package-manager parent (needs rpm), application folders, learned habits (2.7.8) |
 | `test_score.py` | Backups and snapshots in the score even with the reminder ignored, protected folders, learned habits via the service (2.7.8) |
-| `test_telemetry.py` | Path anonymisation (2.7.9), report right after an update (2.7.10), server endpoint `../repo/api/telemetry.php` (needs php) |
+| `test_telemetry.py` | Path anonymisation (2.7.9), report right after an update (2.7.10), open integrity warnings (2.9.6), server endpoint `../repo/api/telemetry.php` (needs php) |
 | `test_versions.py` | Version comparison in Python, same order as dpkg, works without dpkg (2.7.11) |
 | `test_release_2_8.py` | What's new in the update offer, Timeshift targets, encryption detail, password step 2, monthly e-mail report, telemetry dashboard (needs php), transitional package (2.8.0) |
 | `test_popups.py` | Notifications in the four corners, inside the usable area (GUI only, `--gui`) |

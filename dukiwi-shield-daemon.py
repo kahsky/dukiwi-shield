@@ -8215,12 +8215,22 @@ class Daemon:
 
     def telemetry_extra(self):
         """Telemetry fields that feed the built-in rules and the performance measurement (no identifier):
-        approved integrity warnings, benign classifications, last scan, hardening, packages with high-severity
-        vulnerabilities."""
+        approved integrity warnings, benign classifications, integrity warnings still open (2.9.6: first line, up to
+        three detail lines and the built-in reasons, anonymised, so false positives seen elsewhere can be fixed),
+        last scan, hardening, packages with high-severity vulnerabilities."""
         integ = self.state.get("integrity") or {}
         tools = integ.get("tools") or {}
-        acked, benign = [], {}
+        acked, benign, opened = [], {}, []
         for name, t in tools.items():
+            notes = t.get("notes") or {}
+            for w in (t.get("warnings") or [])[:10]:
+                lines = [ln.strip() for ln in str(w).splitlines() if ln.strip()]
+                if not lines:
+                    continue
+                reasons = sorted({n.get("reason") for n in notes.get(w) or []
+                                  if n.get("verdict") != "benign" and n.get("reason")})[:5]
+                opened.append({"tool": name, "text": anonymize_path(lines[0])[:160],
+                               "detail": [anonymize_path(ln)[:160] for ln in lines[1:4]], "reasons": reasons})
             for w in (t.get("ignored") or [])[:10]:
                 acked.append({"tool": name, "text": anonymize_path(str(w).splitlines()[0])[:160]})
             for b in t.get("benign") or []:
@@ -8245,6 +8255,7 @@ class Daemon:
         hard = self.state.get("hardening") or {}
         return {
             "acknowledged_integrity": acked[:30],
+            "open_integrity": opened[:30],
             "benign_findings": benign,
             "integrity_tools": {n: len(t.get("warnings") or []) for n, t in tools.items()},
             "lynis_index": (integ.get("lynis") or {}).get("index"),
