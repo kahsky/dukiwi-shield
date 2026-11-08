@@ -78,6 +78,12 @@ sudo dnf remove dukiwi-shield   # Fedora
 
 ## Features
 
+- **2.9.4: no more camera alert when a program only lists the cameras** — Claude Desktop and other Chromium/Electron
+  programs open the camera for a second to see which ones exist: it does not film and its light stays off, but the
+  shield reported "… is using the camera". The shield now checks that a USB camera is really streaming (its video
+  interface switches to an alternate setting above 0 while it films, exactly when the light comes on). A program that
+  only opens it is written to the log, and checked every second until it closes the camera, so filming that starts
+  afterwards is still reported. Cameras the shield cannot read this way (bulk transfer, not USB) are reported as before.
 - **2.9.3: packaged hidden files no longer flagged by the rootkit check** — recent Debian versions of chkrootkit add
   the owning package after each hidden file they list (`… .notice.zst [From Debian package: linux-firmware-…]`). The
   whole line was looked up with dpkg, which found nothing, so every packaged file was reported "owned by no package".

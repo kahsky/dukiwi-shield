@@ -5,8 +5,8 @@ Dukiwi Shield — security centre detections (system service).
 1. Anti-ransomware decoys: one hidden file per folder (Documents, Pictures, Desktop, home folder). Nobody has any
    reason to write it: a program that modifies it is suspended (automatic response) and reported; a deleted or
    renamed decoy is reported, with the program that was writing in that folder at that moment, if there is one.
-2. Camera and microphone: program that opens /dev/video* (reading /proc/*/fd) or records the microphone (pactl, per
-   session) → information popup, "Always allow" remembered.
+2. Camera and microphone: program that films with the camera (/dev/video* open in /proc/*/fd AND the USB camera
+   streaming, 2.9.4) or records the microphone (pactl, per session) → information popup, "Always allow" remembered.
 3. Cryptocurrency miners: known name, pool address (stratum+tcp://…) or miner options in the command line →
    danger (suspension); connection to a pool port with a saturated CPU, or a program outside packages that
    saturates the CPU for 15 minutes → warning.
@@ -47,6 +47,8 @@ DECOY_MISSING_COOLDOWN = 3600            # s between two "decoy deleted" alerts 
 SUSPECT_WINDOW = 30                      # s: program that was writing in the decoy's folder just before it disappeared
 
 PRIVACY_CHECK_SEC = 5
+PRIVACY_FAST_SEC = 1                     # s between checks while a program holds the camera open without filming
+SYS_V4L = "/sys/class/video4linux"
 PRIVACY_COOLDOWN = 900                   # s before reporting the same program on the same device again
 PRIVACY_IGNORED = {"pipewire", "wireplumber", "pipewire-media-session", "pulseaudio", "pipewire-pulse", "v4l2-relayd",
                    "pavucontrol", "gnome-control-center", "cinnamon-settings", "plasmashell", "kmix", "xdg-desktop-portal"}
@@ -226,6 +228,8 @@ class SecurityGuard(threading.Thread):
         self.decoy_pid_alerted = {}      # pid → horodatage
         self.privacy_active = {}         # (exe, appareil) → {pid, comm, since}
         self.privacy_alerted = {}        # (exe, appareil) → horodatage
+        self.camera_peeks = {}           # (exe, "camera") → time it was logged opening the camera without filming
+        self.camera_idle_open = False    # a program holds the camera open without filming: check every second
         self.cpu_prev = {}               # pid → (ticks, horodatage)
         self.cpu_busy_since = {}         # pid → timestamp when the saturation started
         self.miner_alerted = {}          # exe → horodatage
@@ -250,7 +254,7 @@ class SecurityGuard(threading.Thread):
         self.log(f"Centre de sécurité : leurres ({len(self.decoys)}), caméra/micro, mineurs, certificats, détournement réseau")
         while not self.d.shutdown.wait(1):
             now = time.time()
-            for name, period, fn in (("decoy", DECOY_CHECK_SEC, self.check_decoys), ("privacy", PRIVACY_CHECK_SEC, self.check_privacy),
+            for name, period, fn in (("decoy", DECOY_CHECK_SEC, self.check_decoys), ("privacy", PRIVACY_FAST_SEC if self.camera_idle_open else PRIVACY_CHECK_SEC, self.check_privacy),
                                      ("miner", MINER_CHECK_SEC, self.check_miners), ("slow", SLOW_CHECK_SEC, self.check_slow),
                                      ("watch", WATCH_CHECK_SEC, self.check_persistence), ("ssh", SSH_CHECK_SEC, self.check_ssh_keys),
                                      ("keys", KEYLOGGER_CHECK_SEC, self.check_keyloggers), ("logins", LOGIN_CHECK_SEC, self.check_logins)):
@@ -549,6 +553,40 @@ class SecurityGuard(threading.Thread):
                     break
         return out
 
+    @staticmethod
+    def camera_streaming(device):
+        """Is the camera behind /dev/videoN filming right now? (2.9.4)
+        Programs built on Chromium/Electron (and others) open every /dev/video* for a second to list the cameras:
+        the camera does not film and its light stays off. A USB (UVC) camera that films with isochronous transfers
+        switches its Video Streaming interface to an alternate setting above 0 for as long as it streams.
+        True: streaming; False: open but not filming; None: cannot tell (not USB, bulk-transfer camera, virtual
+        camera…) → treated as in use, as before."""
+        def read(path):
+            try:
+                with open(path) as f:
+                    return f.read().strip()
+            except OSError:
+                return ""
+        node = os.path.basename(device or "")
+        if not re.fullmatch(r"video\d+", node):
+            return None
+        intf = os.path.realpath(os.path.join(SYS_V4L, node, "device"))
+        usb_dev = os.path.dirname(intf)
+        if not re.fullmatch(r"\d+-[\d.]+:\d+\.\d+", os.path.basename(intf)):
+            return None                                  # not a USB interface (MIPI camera, v4l2loopback…)
+        streams = [d for d in glob.glob(os.path.join(usb_dev, os.path.basename(usb_dev) + ":*"))
+                   if read(os.path.join(d, "bInterfaceClass")) == "0e" and read(os.path.join(d, "bInterfaceSubClass")) == "02"]
+        if not streams:
+            return None
+        unknown = False
+        for d in streams:
+            if read(os.path.join(d, "bAlternateSetting")) not in ("", "0"):
+                return True
+            # Alternate setting 0: no bandwidth for an isochronous camera, but a bulk camera streams in it
+            if any(read(os.path.join(ep, "type")) == "Bulk" for ep in glob.glob(os.path.join(d, "ep_*"))):
+                unknown = True
+        return None if unknown else False
+
     def mic_users(self):
         """Ongoing microphone recordings (pactl list source-outputs) for each session that has a sound server."""
         if not shutil.which("pactl"):
@@ -586,11 +624,24 @@ class SecurityGuard(threading.Thread):
     def check_privacy(self):
         if not self.setting("privacy_watch"):
             self.privacy_active = {}
+            self.camera_idle_open = False
             return
-        current = self.camera_users()
+        now = time.time()
+        current, idle_open = {}, False
+        for key, info in self.camera_users().items():
+            if self.camera_streaming(info.get("device")) is False:
+                # Opened to list the cameras, not filming (light off): logged, no popup; checked every second until
+                # it is closed, so filming that starts later is still reported
+                idle_open = True
+                if now - self.camera_peeks.get(key, 0) >= PRIVACY_COOLDOWN:
+                    self.camera_peeks[key] = now
+                    self.write_log(f"privacy: camera opened without filming by {info['comm']} (pid {info['pid']}, {info['exe']}): "
+                                   "device listing, no alert")
+                continue
+            current[key] = info
+        self.camera_idle_open = idle_open
         current.update(self.mic_users())
         allowed = self.d.state.get("privacy_allowed") or {}
-        now = time.time()
         for key, info in current.items():
             if key in self.privacy_active:
                 continue
