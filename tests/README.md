@@ -21,6 +21,7 @@ include the tests that open windows.
 | `test_chkrootkit_hidden.py` | Hidden files annotated « [From Debian package: …] » by Debian's chkrootkit: bare path checked with dpkg, the note itself never trusted (2.9.3) |
 | `test_camera_listing.py` | Camera opened only to list the devices (light off): no popup, checked every second until closed; filming (USB alternate setting above 0) still reported; bulk / non-USB cameras as before (2.9.4) |
 | `test_chkrootkit_bpfdoor.py` | chkrootkit BPFDoor rule: a program waiting on a UNIX seqpacket socket is a known false positive, a raw packet socket (`packet_recvmsg`) stays a warning (2.9.5) |
+| `test_chkrootkit_lkm.py` | chkproc finding without a process number: shell errors ignored, chkproc run again in verbose mode (nothing hidden → false positive, PIDs → classified, chkproc missing → to check) (2.9.7) |
 
 `_harness.py` holds the shared pieces: `isolate()` / `load()` to import the code under test with private state
 folders, `TestDaemon` to run the service in test mode on a given starting state and talk to it, `Results` for the

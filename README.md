@@ -78,6 +78,12 @@ sudo dnf remove dukiwi-shield   # Fedora
 
 ## Features
 
+- **2.9.7: "chkproc: Possible LKM Trojan" without a process number is checked again** — chkrootkit runs chkproc
+  without its verbose mode, so it only says that /proc and ps differ, never which process; the only line shown was
+  a shell error (`sh: 0: getcwd() failed`), printed when chkproc looks at a process that has just ended. The shell
+  message is no longer shown as a finding, and the shield runs chkproc again in verbose mode: nothing hidden any
+  more → known false positive (short-lived process); process numbers → classified as before (ended, visible to
+  ps, or really hidden → to check). The rootkit report is redone once after the update.
 - **2.9.6: telemetry also reports the integrity warnings still open** — until now only their number was sent, so a
   false positive seen on another computer could not be identified. With telemetry enabled, each open warning now
   sends its first line, up to three of the paths it lists and the shield's built-in reasons, anonymised like the

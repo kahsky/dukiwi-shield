@@ -72,13 +72,15 @@ else:
         entry = d.builtin_check("processes", {})
         return [w for w in entry["warnings"] if w.startswith("LD_PRELOAD") and path in w], entry
 
-    h.spawn(bindir, "probe-one", env=env)
+    # The installed shield watches the real processes every 5 minutes: probes that lived 30 s were caught by it and
+    # left a real "LD_PRELOAD library injected … <- probe-one" warning (2.9.7). They now live only during the check.
+    one = h.spawn(bindir, "probe-one", seconds=5, env=env)
     ws, entry = warnings_for(lib)
     digest = hashlib.sha256(open(lib, "rb").read()).hexdigest()[:12]
     R.check("one warning per unknown library, carrying the sha256 of the file",
             len(ws) == 1 and f"{lib} (sha256 {digest}) <- " in ws[0] and len(entry["notes"][ws[0]]) == 1, ws)
     k0 = key("processes", ws[0]) if ws else None
-    h.spawn(bindir, "probe-two", env=env)
+    two = h.spawn(bindir, "probe-two", seconds=5, env=env)
     ws2, _ = warnings_for(lib)
     R.check("a new program carrying the library changes the text but not the key",
             len(ws2) == 1 and "probe-two" in ws2[0] and key("processes", ws2[0]) == k0, ws2)
@@ -86,6 +88,9 @@ else:
         f.write(open(src_lib, "rb").read() + b"\0changed")
     os.replace(lib + ".new", lib)
     ws3, _ = warnings_for(lib)
+    for p in (one, two):
+        p.kill()
+        p.wait()
     R.check("replacing the library file changes its key (approval no longer applies)",
             len(ws3) == 1 and key("processes", ws3[0]) != k0, ws3)
 

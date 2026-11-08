@@ -4698,7 +4698,7 @@ def parse_lynis_report(path="/var/log/lynis-report.dat", log_path="/var/log/lyni
     return rep
 
 
-CHK_RULES_VERSION = 8              # built-in classification rules; an older report is redone at startup
+CHK_RULES_VERSION = 9              # built-in classification rules; an older report is redone at startup
 CHK_NOISE = ("RTNETLINK answers", "ip: ", "ifconfig:", "ls: ", "find: ", "grep: ", "netstat:", "ss: ", "Usage:",
              "/usr/sbin/chkrootkit:", "chkrootkit:", "chkproc:", "chkdirs:", "chkutmp:", "eth", "wlan")   # tool messages, not findings
 CHK_NOISE = tuple(x for x in CHK_NOISE if x not in ("eth", "wlan"))
@@ -5109,18 +5109,50 @@ def classify_init(head):
     return [{"path": real, "verdict": "benign", "reason": "init_verified", "package": pkg}]
 
 
+# Shell error messages mixed into a tool's output: never a finding (2.9.7). chkproc moves into /proc/<pid> to read
+# each process and runs ps from there; when that process has just ended, the shell prints "sh: 0: getcwd() failed:
+# No such file or directory" — the same short-lived process that made chkproc report a difference.
+SHELL_NOISE = re.compile(r"^(?:/bin/|/usr/bin/)?(?:sh|bash|dash)(?:: \d+)?: ")
+CHKPROC_PATHS = ("/usr/lib/chkrootkit/chkproc", "/usr/lib64/chkrootkit/chkproc", "/usr/libexec/chkrootkit/chkproc")
+
+
+def chkproc_verbose():
+    """Runs chkproc again in verbose mode (chkrootkit -q runs it without -v: it only says "something differs", never
+    which process). (exit code, output), or None when chkproc is not found."""
+    exe = next((p for p in CHKPROC_PATHS if os.access(p, os.X_OK)), None)
+    if not exe:
+        return None
+    try:
+        r = subprocess.run([exe, "-v", "-v", "-p", "2"], capture_output=True, text=True, timeout=120, cwd="/",
+                           env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL": "C"})
+    except Exception:  # noqa: BLE001
+        return None
+    return r.returncode, (r.stdout or "") + (r.stderr or "")
+
+
 def classify_lkm(lines):
     """"chkproc: Possible LKM Trojan installed": chkproc compares /proc and ps at two moments; a process that ended
     in between (or is now visible normally) is a false positive; a process present but missing from ps
-    still needs checking (kernel-module rootkit)."""
-    pids = []
-    for ln in lines:
-        for m in re.finditer(r"PID\s+(\d+)", ln):
-            pid = int(m.group(1))
-            if pid not in pids:
-                pids.append(pid)
+    still needs checking (kernel-module rootkit). Without process numbers (chkrootkit runs chkproc without -v),
+    chkproc is run again in verbose mode (2.9.7): nothing hidden any more → transient."""
+    lines = [ln for ln in lines if ln.strip() and not SHELL_NOISE.match(ln.strip())]
+
+    def pids_in(texts):
+        found = []
+        for ln in texts:
+            for m in re.finditer(r"PID\s+(\d+)", ln):
+                if int(m.group(1)) not in found:
+                    found.append(int(m.group(1)))
+        return found
+
+    pids = pids_in(lines)
     if not pids:
-        return [{"path": (lines[0].strip() if lines else "chkproc"), "verdict": "unknown", "reason": "lkm"}]
+        again = chkproc_verbose()
+        if again is not None and again[0] == 0:
+            return [{"path": "chkproc", "verdict": "benign", "reason": "lkm_transient"}]
+        pids = pids_in(again[1].splitlines()) if again else []
+    if not pids:
+        return [{"path": "chkproc", "verdict": "unknown", "reason": "lkm"}]
     visible = set()
     r = run_quiet(["ps", "-eo", "pid="], timeout=20)
     for tok in (r.stdout or "").split():
@@ -5197,7 +5229,8 @@ def chkrootkit_analysis(out):
         elif "chkproc" in head and "lkm" in head:
             verdicts = classify_lkm(lines[1:])
         elif "chkdirs" in head and "lkm" in head:
-            verdicts = [{"path": ln.strip(), "verdict": "unknown", "reason": "lkm_dirs"} for ln in lines[1:] if ln.strip()] or None
+            verdicts = [{"path": ln.strip(), "verdict": "unknown", "reason": "lkm_dirs"} for ln in lines[1:]
+                        if ln.strip() and not SHELL_NOISE.match(ln.strip())] or [{"path": "chkdirs", "verdict": "unknown", "reason": "lkm_dirs"}]
         elif "slapper" in head:
             verdicts = classify_ports(list(SLAPPER_PORTS))
         elif "scalper" in head:
