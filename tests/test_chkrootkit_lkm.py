@@ -5,7 +5,8 @@ the header was a shell error, "sh: 0: getcwd() failed: No such file or directory
 
 - shell error lines are never findings;
 - chkproc is run again in verbose mode: nothing hidden any more → known false positive (short-lived process);
-- process numbers from the verbose run are classified as before; chkproc missing → still to check.
+- process numbers from the verbose run are classified as before; chkproc missing → still to check;
+- 2.9.8: those numbers include every thread: compared with "ps -eL" (threads included) and grouped on one line.
 """
 import _harness as h
 
@@ -28,6 +29,24 @@ try:
     notes = (res["benign"] or [{}])[0].get("notes") or []
     R.check("process number from the verbose run, process gone → classified as before (transient)",
             not res["warnings"] and [n["reason"] for n in notes] == ["pid_transient"], res)
+
+    # 2.9.8: chkproc -v lists every thread; a real thread of this test is visible to "ps -eL", not hidden
+    import threading
+    stop, tids = threading.Event(), []
+    th = threading.Thread(target=lambda: (tids.append(threading.get_native_id()), stop.wait(20)), daemon=True)
+    th.start()
+    while not tids:
+        pass
+    gone = [4194300 - i for i in range(12)]
+    d.chkproc_verbose = lambda: (1, "".join(f"PID {t}(/proc/{t}): not in readdir output\nPID {t}: not in ps output\n"
+                                            for t in [tids[0]] + gone))
+    res = d.chkrootkit_analysis(OUT)
+    notes = (res["benign"] or [{}])[0].get("notes") or []
+    stop.set()
+    R.check("threads listed by chkproc -v are visible to ps -eL → known false positive, grouped on one line per reason",
+            not res["warnings"] and sorted(n["reason"] for n in notes) == ["pid_transient", "pid_visible"]
+            and str(tids[0]) in next(n["path"] for n in notes if n["reason"] == "pid_visible")
+            and "(+4)" in next(n["path"] for n in notes if n["reason"] == "pid_transient"), res)
 
     d.chkproc_verbose = lambda: None
     res = d.chkrootkit_analysis(OUT)

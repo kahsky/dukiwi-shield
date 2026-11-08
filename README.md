@@ -78,6 +78,11 @@ sudo dnf remove dukiwi-shield   # Fedora
 
 ## Features
 
+- **2.9.8: no more hundreds of "hidden" processes after 2.9.7** — the verbose chkproc run added in 2.9.7 lists every
+  thread, and the shield compared them with the process list alone (`ps -e`), so every ordinary thread (auditd,
+  systemd-resolved, Python…) looked hidden from ps. They are now compared with `ps -eL` (threads included), as a
+  kernel-module rootkit hides the threads of the process it hides too; ended or visible ones are grouped on one line.
+  The rootkit report is redone once after the update.
 - **2.9.7: "chkproc: Possible LKM Trojan" without a process number is checked again** — chkrootkit runs chkproc
   without its verbose mode, so it only says that /proc and ps differ, never which process; the only line shown was
   a shell error (`sh: 0: getcwd() failed`), printed when chkproc looks at a process that has just ended. The shell

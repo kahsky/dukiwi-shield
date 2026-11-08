@@ -4698,7 +4698,7 @@ def parse_lynis_report(path="/var/log/lynis-report.dat", log_path="/var/log/lyni
     return rep
 
 
-CHK_RULES_VERSION = 9              # built-in classification rules; an older report is redone at startup
+CHK_RULES_VERSION = 10              # built-in classification rules; an older report is redone at startup
 CHK_NOISE = ("RTNETLINK answers", "ip: ", "ifconfig:", "ls: ", "find: ", "grep: ", "netstat:", "ss: ", "Usage:",
              "/usr/sbin/chkrootkit:", "chkrootkit:", "chkproc:", "chkdirs:", "chkutmp:", "eth", "wlan")   # tool messages, not findings
 CHK_NOISE = tuple(x for x in CHK_NOISE if x not in ("eth", "wlan"))
@@ -5153,19 +5153,29 @@ def classify_lkm(lines):
         pids = pids_in(again[1].splitlines()) if again else []
     if not pids:
         return [{"path": "chkproc", "verdict": "unknown", "reason": "lkm"}]
+    # Threads included (2.9.8): chkproc -v lists every thread ("PID 1485: not in ps output" for a thread of auditd);
+    # compared with the process list alone, hundreds of ordinary threads looked hidden from ps
     visible = set()
-    r = run_quiet(["ps", "-eo", "pid="], timeout=20)
+    r = run_quiet(["ps", "-eLo", "pid=,lwp="], timeout=20)
     for tok in (r.stdout or "").split():
         if tok.isdigit():
             visible.add(int(tok))
-    notes = []
+    gone, seen, notes = [], [], []
     for pid in pids:
         if not os.path.exists(f"/proc/{pid}"):
-            notes.append({"path": f"PID {pid}", "verdict": "benign", "reason": "pid_transient"})
+            gone.append(str(pid))
         elif pid in visible:
-            notes.append({"path": f"PID {pid} ({_read_text(f'/proc/{pid}/comm') or '?'})", "verdict": "benign", "reason": "pid_visible"})
+            seen.append(f"{pid} ({_read_text(f'/proc/{pid}/comm') or '?'})")
         else:
-            notes.append({"path": f"PID {pid}", "verdict": "unknown", "reason": "pid_hidden"})
+            notes.append({"path": f"PID {pid} ({_read_text(f'/proc/{pid}/comm') or '?'})", "verdict": "unknown", "reason": "pid_hidden"})
+
+    def summary(items):
+        return "PID " + ", ".join(items[:8]) + (f" … (+{len(items) - 8})" if len(items) > 8 else "")
+    # Benign ones grouped on one line each: a thread-by-thread list ran to hundreds of lines
+    if seen:
+        notes.insert(0, {"path": summary(seen), "verdict": "benign", "reason": "pid_visible"})
+    if gone:
+        notes.insert(0, {"path": summary(gone), "verdict": "benign", "reason": "pid_transient"})
     return notes
 
 
