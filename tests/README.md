@@ -22,6 +22,8 @@ include the tests that open windows.
 | `test_camera_listing.py` | Camera opened only to list the devices (light off): no popup, checked every second until closed; filming (USB alternate setting above 0) still reported; bulk / non-USB cameras as before (2.9.4) |
 | `test_chkrootkit_bpfdoor.py` | chkrootkit BPFDoor rule: a program waiting on a UNIX seqpacket socket is a known false positive, a raw packet socket (`packet_recvmsg`) stays a warning (2.9.5) |
 | `test_chkrootkit_lkm.py` | chkproc finding without a process number: shell errors ignored, chkproc run again in verbose mode (nothing hidden → false positive, PIDs → classified, chkproc missing → to check) (2.9.7), threads compared with `ps -eL` and grouped (2.9.8) |
+| `test_own_extension.py` | The shield's own Link Guard / E-mail Protection extensions: recognized by id in Chromium and Firefox profiles, no alert, not counted outside the store; unpacked copy of the id and temporary add-on still reported; ids from `manifest-info.json` (2.9.10) |
+| `test_urlguard_brands.py` | Link Guard: admin area of one's own site and everyday words are not brand imitations, real imitations still caught (2.9.9) |
 
 `_harness.py` holds the shared pieces: `isolate()` / `load()` to import the code under test with private state
 folders, `TestDaemon` to run the service in test mode on a given starting state and talk to it, `Results` for the

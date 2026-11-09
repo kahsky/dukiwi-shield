@@ -876,12 +876,12 @@ function renderPersistence() {
         </div>`).join('') : `<p class="text-muted">${t('system.persistence.none')}</p>`;
     const exts = p.extensions || [];
     $('extensionsList').innerHTML = exts.length ? exts.map(e => `
-        <div class="package-item ${e.from_store ? '' : 'security'}">
+        <div class="package-item ${e.from_store || e.own ? '' : 'security'}">
             <span class="scope-badge scope-user">${escapeHtml(e.browser)}</span>
             <span class="package-name">${escapeHtml(e.name)}</span>
             <span class="package-versions">${escapeHtml(e.id)} · ${escapeHtml(e.version)}${e.enabled === false ? ` · ${t('system.extensions.disabled')}` : ''}</span>
             <span class="alert-meta">${escapeHtml(e.user)}</span>
-            ${e.approved ? `<span class="scope-badge scope-user">${t('system.persistence.approved')}</span> <button class="btn btn-secondary btn-sm" onclick="acknowledgePersistence('${escapeJs(e.key || '')}', true)">${t('settings.trusted.remove')}</button>` : e.from_store ? `<span class="scope-badge scope-user">${t('system.extensions.store')}</span>` : `<span class="scope-badge scope-danger">${t('system.extensions.outside_store')}</span> <button class="btn btn-secondary btn-sm" onclick="acknowledgePersistence('${escapeJs(e.key || '')}')">${t('popup.btn.its_me')}</button>`}
+            ${e.approved ? `<span class="scope-badge scope-user">${t('system.persistence.approved')}</span> <button class="btn btn-secondary btn-sm" onclick="acknowledgePersistence('${escapeJs(e.key || '')}', true)">${t('settings.trusted.remove')}</button>` : e.own ? `<span class="scope-badge scope-system">${t('system.extensions.own')}</span>` : e.from_store ? `<span class="scope-badge scope-user">${t('system.extensions.store')}</span>` : `<span class="scope-badge scope-danger">${t('system.extensions.outside_store')}</span> <button class="btn btn-secondary btn-sm" onclick="acknowledgePersistence('${escapeJs(e.key || '')}')">${t('popup.btn.its_me')}</button>`}
         </div>`).join('') : `<p class="text-muted">${t('system.extensions.none')}</p>`;
 }
 

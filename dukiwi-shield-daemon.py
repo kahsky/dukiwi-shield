@@ -4101,6 +4101,36 @@ def extension_risks(perms):
     return sorted(out)
 
 
+# Dukiwi Shield's own extensions (Link Guard for Chrome/Chromium/Edge/Brave and Firefox, E-mail Protection for
+# Thunderbird): installed by the shield itself through the browser policies, outside the stores by design, and they
+# need "all sites" plus the native messaging host to do their job. Not a new extension to report.
+OWN_EXTENSION_IDS = ("mlalfbgmkhhphmbobefgkaojgeliinll",          # Chrome id derived from the signing key (stable)
+                     "urlguard@dukiwi-shield.dukiwi.com", "mailguard@dukiwi-shield.dukiwi.com")
+_OWN_EXTENSIONS = {"ids": None}
+
+
+def own_extension_ids():
+    """Identifiers of the shield's own extensions: the known ones plus those of extensions/manifest-info.json
+    (shipped with the package, so a future key or id is recognized without a code change)."""
+    if _OWN_EXTENSIONS["ids"] is None:
+        ids = set(OWN_EXTENSION_IDS)
+        try:
+            with open(os.path.join(APP_DIR, "extensions", "manifest-info.json"), encoding="utf-8") as f:
+                info = json.load(f)
+            ids.update(x for x in [info.get("chrome_id")] + list(info.get("gecko_ids") or []) if isinstance(x, str) and x)
+        except (OSError, ValueError, TypeError):
+            pass
+        _OWN_EXTENSIONS["ids"] = ids
+    return _OWN_EXTENSIONS["ids"]
+
+
+def own_chromium_extension(ext_id, pref):
+    """Our extension in a Chromium profile: our id, and not loaded unpacked (location 4) or from the command line
+    (8) — anyone can copy a public key into a manifest and get the same id, but only a CRX signed with our key
+    installs normally under it."""
+    return ext_id in own_extension_ids() and pref.get("location") not in (4, 8)
+
+
 def desktop_exec(path):
     try:
         with open(path, errors="replace") as f:
@@ -4283,6 +4313,7 @@ def collect_persistence():
                     perms = extension_risks([str(x) for x in list(man.get("permissions") or []) + list(man.get("host_permissions") or []) + scripts])
                     extensions.append({"browser": browser, "user": user, "profile": profile.name, "id": ext_dir.name, "perms": perms,
                                        "name": str(name)[:80], "version": str(version), "from_store": bool(pref.get("from_webstore", True)),
+                                       "own": own_chromium_extension(ext_dir.name, pref),
                                        "enabled": pref.get("state", 1) == 1, "key": f"{browser}:{user}:{ext_dir.name}"})
         for ext_json in safe_glob(Path(home, ".mozilla/firefox"), "*/extensions.json"):
             try:
@@ -4298,6 +4329,7 @@ def collect_persistence():
                                    "perms": extension_risks(list(up.get("permissions") or []) + list(up.get("origins") or [])),
                                    "name": str(a.get("defaultLocale", {}).get("name") or a.get("id", ""))[:80],
                                    "version": str(a.get("version", "")), "from_store": a.get("signedState", 0) not in (0, None) or a.get("location") == "app-system-defaults",
+                                   "own": a.get("id", "") in own_extension_ids() and a.get("location") != "app-temporary",
                                    "enabled": bool(a.get("active")), "key": f"firefox:{user}:{a.get('id', '')}"})
     for user, home in user_homes():
         try:
@@ -4306,7 +4338,7 @@ def collect_persistence():
             pass
     return {"checked_at": now_iso(), "items": items, "extensions": extensions, "pending": pending_homes(),
             "counts": {"items": len(items), "untrusted": sum(1 for it in items if not it["trusted"]),
-                       "extensions": len(extensions), "ext_outside_store": sum(1 for e in extensions if not e["from_store"])}}
+                       "extensions": len(extensions), "ext_outside_store": sum(1 for e in extensions if not e["from_store"] and not e.get("own"))}}
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -7195,11 +7227,14 @@ class Daemon:
                 pers["extensions"] += [e for e in prev.get("extensions", []) if e.get("user") == name]
             if pers.get("pending"):
                 pers["counts"] = {"items": len(pers["items"]), "untrusted": sum(1 for it in pers["items"] if not it.get("trusted")),
-                                  "extensions": len(pers["extensions"]), "ext_outside_store": sum(1 for e in pers["extensions"] if not e.get("from_store"))}
+                                  "extensions": len(pers["extensions"]), "ext_outside_store": sum(1 for e in pers["extensions"] if not e.get("from_store") and not e.get("own"))}
             self.state.update(persistence=pers)
             if prev.get("items") is not None and (prev_keys or prev_ext):
                 new_items = [it for it in pers["items"] if it["key"] not in prev_keys]
                 new_ext = [e for e in pers["extensions"] if e["key"] not in prev_ext]
+                for e in [e for e in new_ext if e.get("own")]:
+                    self.write_log(f"extension: own {e['browser']} extension {e['name']} ({e['user']}) installed, no alert")
+                new_ext = [e for e in new_ext if not e.get("own")]
                 # More than four new items at once: not an installation but a change of baseline (imported
                 # profile, new account, restore) → a single notice, not a burst of popups.
                 if len(new_items) > 4:
@@ -7227,7 +7262,7 @@ class Daemon:
                                         "pid": 0, "comm": "", "exe": "", "count": 0, "top_dir": "", "reasons": ["ext_new"], "sample": []})
                 for e in pers["extensions"]:
                     old = prev_ext.get(e["key"])
-                    if old is None:
+                    if old is None or e.get("own"):
                         continue
                     added = sorted(set(e.get("perms") or []) - set(old.get("perms") or []))
                     if added and "perms" in old:
@@ -8399,7 +8434,7 @@ class Daemon:
             e["approved"] = e.get("key") in ack
         pers["counts"] = {"items": len(items), "untrusted": sum(1 for it in items if not it.get("trusted")),
                           "extensions": len(exts),
-                          "ext_outside_store": sum(1 for e in exts if not e.get("from_store") and not e.get("approved"))}
+                          "ext_outside_store": sum(1 for e in exts if not e.get("from_store") and not e.get("approved") and not e.get("own"))}
         return pers
 
     def compute_overall(self):

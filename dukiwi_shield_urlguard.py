@@ -141,6 +141,11 @@ BRANDS = {
     "ch-portal": ["ch.ch"],
 }
 BRAND_MIN_LEN = 4
+# Brands that are also everyday words (2.9.9): "admin" (admin.ch) is in countless addresses ("/admin/login",
+# admin.mysite.ch), "orange", "steam", "sunrise"… For them only the strong signs count: the real domain placed at the
+# start of another host (admin.ch.evil.ru), replaced characters (0utlook.com) and the combinations listed here.
+GENERIC_BRANDS = {"admin", "orange", "steam", "sunrise", "ledger", "outlook"}
+GENERIC_BRAND_COMBOS = {"admin": ("admin-ch", "adminch", "ch-admin", "chadmin", "swiss-admin", "swissadmin", "admin-swiss")}
 # Neighbouring keys (QWERTZ, QWERTY and AZERTY combined) and visually similar letters: "amazom", "paypai"
 KEY_NEIGHBOURS = {"q": "wasz", "w": "qeasdzx", "e": "wrsdf", "r": "etdfg", "t": "ryfgh", "y": "tughj", "u": "yihjk", "i": "uojkl", "o": "ipkl",
                   "p": "ol", "a": "qwszx", "s": "awedzxc", "d": "serfxcv", "f": "drtgcvb", "g": "ftyhvbn", "h": "gyujbnm", "j": "huiknm",
@@ -260,6 +265,13 @@ def brand_check(host):
     for brand, legit in BRANDS.items():
         if len(brand) < BRAND_MIN_LEN:
             continue
+        if brand in GENERIC_BRANDS:
+            if normalized == brand and sld != brand:
+                return "homoglyph", brand                          # 0utlook.com
+            combos = GENERIC_BRAND_COMBOS.get(brand, ())
+            if not shared and (sld in combos or any(label in combos for label in labels[:-len(reg.split("."))])):
+                return "brand_combo", brand                        # admin-ch.com, admin-ch.evil.net
+            continue
         if sld == brand and not shared:
             return "brand_other_tld", brand                        # paypal.xyz
         if normalized == brand and sld != brand:
@@ -354,9 +366,11 @@ def analyze(url, context=None):
         reasons.append("phishing_pattern")
     if login and not is_ip and not meta.get("brand"):
         # brand quoted in the path or parameters of a domain that is not its own: "/paypal/login"
-        low = path_q.lower()
+        # Whole words only and never an everyday word (2.9.9): "/admin/login" is not admin.ch, "/pineapple" not Apple
+        words = set(re.split(r"[^a-z0-9]+", path_q.lower()))
         for brand, legit in BRANDS.items():
-            if len(brand) >= 5 and brand in low and not any(host == d or host.endswith("." + d) for d in legit):
+            if len(brand) >= 5 and brand not in GENERIC_BRANDS and brand in words \
+                    and not any(host == d or host.endswith("." + d) for d in legit):
                 reasons.append("brand_in_path")
                 meta["brand"] = brand
                 break

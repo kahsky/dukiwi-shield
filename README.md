@@ -78,6 +78,19 @@ sudo dnf remove dukiwi-shield   # Fedora
 
 ## Features
 
+- **2.9.10: the shield no longer reports its own Link Guard extension** — after a browser set-up, Link Guard
+  (installed by the shield itself through the Edge, Chrome, Chromium, Brave and Firefox policies) came back as
+  "New extension … sensitive permissions: read and change all sites, talk to a program on the computer" and was
+  listed in red as "outside store". The shield now recognizes its own extensions by their identifiers (the Chrome id
+  derived from its signing key, the Gecko ids, plus those shipped in `extensions/manifest-info.json`): no
+  notification, a "Dukiwi Shield's own extension" badge in the list, and they no longer count as outside the store.
+  An extension loaded unpacked with a copied key, or a temporary Firefox add-on with the same id, is still reported.
+- **2.9.9: Link Guard no longer blocks the admin area of your own sites** — "admin" is on the list of imitated brands
+  for admin.ch (Swiss federal administration), so `https://mysite.ch/admin/login`, `admin.mysite.ch` or `admin.fr`
+  were blocked as "login page of a brand hosted on another domain". Brands that are everyday words (admin, orange,
+  steam, sunrise, ledger, outlook) now count only on strong signs: the real domain at the start of another host
+  (`admin.ch.evil.ru`), replaced characters (`0utlook.com`), `admin-ch`-style names. A brand in the path of an address
+  must be a whole word (`/pineapple` is no longer Apple). Real imitations of the other brands are unchanged.
 - **2.9.8: no more hundreds of "hidden" processes after 2.9.7** — the verbose chkproc run added in 2.9.7 lists every
   thread, and the shield compared them with the process list alone (`ps -e`), so every ordinary thread (auditd,
   systemd-resolved, Python…) looked hidden from ps. They are now compared with `ps -eL` (threads included), as a
